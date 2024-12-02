@@ -1,8 +1,8 @@
 import os
 import re
-import statistics
 from collections import defaultdict
 
+import numpy as np
 import pandas as pd
 from bs4 import BeautifulSoup
 from sklearn import metrics
@@ -133,12 +133,11 @@ def merge_student_step_with_kc(ss_path: str, kc_path: str,
     return ss
 
 
-def read_cv_results(res_path: str, num_cv_runs: int = 10, reduction: str = "both") -> pd.DataFrame:
-    assert reduction in {"both", "mean", "std"}
-
+def read_cv_results(res_path: str, num_cv_runs: int = 10) -> tuple[pd.DataFrame, pd.DataFrame]:
     with open(res_path, "r") as f:
         soup = BeautifulSoup(f, features="html.parser")
 
+    # Extract results
     results = defaultdict(lambda: defaultdict(list))
     for model in soup.find_all("model"):
         name = model.find("name").string
@@ -150,26 +149,31 @@ def read_cv_results(res_path: str, num_cv_runs: int = 10, reduction: str = "both
         for tag in model.find("name").next_siblings:
             if tag.name:
                 val = float(tag.string)
-                results[name][tag.name].append(val)
+                results[tag.name][name].append(val)
 
-    # Check there is a correct number of results
-    for model in results:
-        for metric in results[model]:
-            num_results = len(results[model][metric])
+    # Verify there is a correct number of results
+    for metric in results:
+        for model in results[metric]:
+            num_results = len(results[metric][model])
             assert num_results == num_cv_runs, f"Expected {num_cv_runs} results, got {num_results} for '{model}'"
-            mean, std = statistics.fmean(results[model][metric]), statistics.pstdev(results[model][metric])
-            match reduction:
-                case "both":
-                    results[model][metric] = f"{mean:.4f} ({std:.4f})"
-                case "mean":
-                    results[model][metric] = mean
-                case "std":
-                    results[model][metric] = std
-                case _:
-                    raise ValueError(f"Unrecognized reduction: {reduction}")
 
-    res_df = pd.DataFrame.from_dict(results, orient="index")
-    return res_df
+    # Build a machine-readable result table for further processing
+    res_table = dict()
+    for metric in results:
+        res_table[metric] = pd.DataFrame(results[metric])
+        if metric in {"aic", "bic", "log_likelihood"}:
+            res_table[metric] = res_table[metric].mean(axis=0).to_frame().T
+    res_table = pd.concat(res_table)
+
+    # Build a human-readable result table for use in a paper
+    pub_table = defaultdict(lambda: dict())
+    for metric in results:
+        for model in results[metric]:
+            mean, std = np.mean(results[metric][model]), np.std(results[metric][model])
+            pub_table[metric][model] = f"{mean:.4f} ({std:.4f})"
+    pub_table = pd.DataFrame.from_dict(pub_table, orient="columns")
+
+    return res_table, pub_table
 
 
 def eval_datashop_kc(kcm_path: str, true_kcm: str, pred_kcm: str) -> dict[str, float | tuple[float, ...]]:
