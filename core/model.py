@@ -98,7 +98,7 @@ class LargeLangModel:
 
         return -torch.sum(loss, dim=-1)  # (N,)
 
-    def encode(self, texts: list[str], contexts: list[str] = None, pad_to_multiple_of: int = None):
+    def encode(self, texts: list[str], contexts: list[str] = None, pad_to_multiple_of: int = None) -> torch.Tensor:
         """Encodes a batch of texts (with optional contexts) using mean-pooled last-layer hidden states"""
         if not contexts:
             contexts = [self.pad_token] * len(texts)

@@ -3,7 +3,7 @@
 #SBATCH --job-name=concept
 #SBATCH --account=yumouwei0
 #SBATCH --partition=spgpu
-#SBATCH --time=7-00:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --gpu_cmode=exclusive
 #SBATCH --nodes=1
