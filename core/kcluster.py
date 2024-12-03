@@ -3,14 +3,27 @@ import json
 import os
 from functools import cached_property
 from operator import itemgetter
+from typing import Callable
 
+import numpy as np
 import pandas as pd
 import torch
 from sklearn.cluster import affinity_propagation
+from sklearn.metrics import pairwise_distances
 
 from core.model import LargeLangModel
 from core.question import Question
 from experiments.run_concept import extract_concepts
+
+
+class Embedding:
+    def __init__(self, embed_path: str, num_questions: int):
+        self.embeds = np.load(embed_path)
+        n_embeds = self.embeds.shape[0]
+        assert n_embeds == num_questions, f"Expected {num_questions} questions, got {n_embeds} embeddings"
+
+    def sim_mtx(self, metric: str):
+        return -pairwise_distances(self.embeds, metric=metric)
 
 
 class PointwiseMutualInfo:
@@ -65,28 +78,48 @@ class PointwiseMutualInfo:
 
 
 class KCluster:
-    def __init__(self, pmi_dir: str, normalize_pmi: bool = True):
-        self.questions = self.load_questions(pmi_dir)
-        self.pmi = PointwiseMutualInfo(pmi_dir, len(self.questions), normalize_pmi)
+    def __init__(self, sim_dir: str, metric: str = "pmi", embed_type: str = "question", normalize_pmi: bool = True):
+        assert metric in ("cosine", "euclidean", "pmi"), f"Unknown similarity type: {metric}"
+        assert embed_type in ("question", "concept"), f"Unknown embedding type: {embed_type}"
+
+        # Load questions
+        self.questions = self.load_questions(sim_dir)
+
+        # Determine the similarity matrix
+        if metric == "pmi":
+            pmi = PointwiseMutualInfo(sim_dir, len(self.questions), normalize_pmi)
+            self.sim_mtx = pmi.pmi_mat.cpu().numpy()
+        else:
+            [fname] = glob.glob(f"*-{embed_type}-embeds.npy", root_dir=sim_dir)
+            embed = Embedding(os.path.join(sim_dir, fname), len(self.questions))
+            self.sim_mtx = embed.sim_mtx(metric)
+
+    @staticmethod
+    def load_questions(sim_dir: str) -> list[Question]:
+        [fname] = glob.glob("args*.json", root_dir=sim_dir)
+        with open(os.path.join(sim_dir, fname), "r") as f:
+            data_path = json.load(f)["data_path"]
+        with open(data_path, "r") as f:
+            questions = [Question(eval(line)) for line in f]
+        return questions
 
     def create_new_kc(self, use_p: str = "median", **ap_kwargs) -> pd.DataFrame:
         """
-        Create a new KC model from a similarity matrix
+        Create a new KC model from the similarity matrix
         :param use_p: Determine how to compute preference
         :param ap_kwargs: Additional arguments for the Affinity Propagation algorithm, e.g., damping=0.7
         :return: The new KC model in a DataFrame
         """
         assert use_p in ("median", "mean", "min", "max"), f"Invalid value for 'use_p': {use_p}"
 
-        S = self.pmi.pmi_mat
         # Determine p
-        func = {"median": torch.median, "mean": torch.mean, "min": torch.amin, "max": torch.amax}
-        p = func[use_p](S[~torch.eye(len(self.questions), dtype=torch.bool)])
+        func: dict[str, Callable] = {"median": np.median, "mean": np.mean, "min": np.amin, "max": np.amax}
+        p = func[use_p](self.sim_mtx[~np.eye(len(self.questions), dtype=bool)])
 
         # Run AP
-        centers, labels, num_iters = affinity_propagation(S, preference=p,
-                                                          random_state=42, return_n_iter=True, **ap_kwargs)
-        print(f"Affinity Propagation completed in {num_iters} iterations")
+        centers, labels, num_iters = affinity_propagation(self.sim_mtx, preference=p,
+                                                          return_n_iter=True, random_state=42, **ap_kwargs)
+        print(f"Affinity Propagation completed in {num_iters} iterations and created {len(centers)} clusters")
 
         # Collect clustering results
         res_dicts = []
@@ -95,7 +128,6 @@ class KCluster:
             q_dict.pop("images", None)
             q_dict["KC"] = f"KC-{centers[label]}"
             res_dicts.append(q_dict)
-
         return pd.DataFrame.from_records(res_dicts)
 
     def populate_concepts(self, llm: LargeLangModel, kc: pd.DataFrame,
@@ -125,12 +157,3 @@ class KCluster:
         kc["KC"] = kc["exemplar"].apply(ids_to_concepts.get)  # populate "KC" column with concepts
         kc.drop(columns=["exemplar"], inplace=True)
         return kc
-
-    @staticmethod
-    def load_questions(pmi_dir: str) -> list[Question]:
-        [fname] = glob.glob("args*.json", root_dir=pmi_dir)
-        with open(os.path.join(pmi_dir, fname), "r") as f:
-            data_path = json.load(f)["data_path"]
-        with open(data_path, "r") as f:
-            questions = [Question(eval(line)) for line in f]
-        return questions
