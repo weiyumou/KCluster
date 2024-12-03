@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import torch
 from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
 from transformers.utils import logging
 
 from core.model import LargeLangModel, batched
@@ -51,6 +50,7 @@ def build_res_df(questions: list[Question], concepts: list[str]) -> pd.DataFrame
     q_dicts = []
     for q, c in zip(questions, concepts):
         q_dict = q.flat_dict
+        q_dict.pop("images", None)
         q_dict["KC"] = c
         q_dicts.append(q_dict)
 
@@ -76,7 +76,12 @@ def main(args):
     concepts = extract_concepts(llm, questions, args.batch_size, pad_to_multiple_of=8, do_sample=False,
                                 num_beams=args.num_beams, length_penalty=args.length_penalty)
 
-    # Compute (concept) similarity matrix
+    # Save results
+    fname = os.path.splitext(os.path.basename(args.data_path))[0]
+    res_df = build_res_df(questions, concepts)
+    res_df.to_csv(os.path.join(args.output_dir, f"{fname}-concept.csv"), index=False)
+
+    # Compute concept embeddings
     if hasattr(args, "sent_path"):
         model = SentenceTransformer(args.sent_path, local_files_only=True)
     else:
@@ -84,18 +89,14 @@ def main(args):
 
     with torch.inference_mode():
         embeddings = model.encode(concepts)
-        sim_mtx = cosine_similarity(embeddings.cpu().numpy() if isinstance(embeddings, torch.Tensor) else embeddings)
-
+        if isinstance(embeddings, torch.Tensor):
+            embeddings = embeddings.cpu().numpy()
     # Save results
-    fname = os.path.splitext(os.path.basename(args.data_path))[0]
-    res_df = build_res_df(questions, concepts)
-    res_df.to_csv(os.path.join(args.output_dir, f"{fname}-concept.csv"), index=False)
-    np.save(os.path.join(args.output_dir, f"{fname}-sim_mtx-concept.npy"), sim_mtx)
+    np.save(os.path.join(args.output_dir, f"{fname}-concept-embeds.npy"), embeddings)
 
-    # Compute and save (question) similarity matrix
+    # Compute question embeddings
     embeddings = extract_question_embeds(llm, questions, args.batch_size).cpu().numpy()
-    sim_mtx = cosine_similarity(embeddings)
-    np.save(os.path.join(args.output_dir, f"{fname}-sim_mtx-question.npy"), sim_mtx)
+    np.save(os.path.join(args.output_dir, f"{fname}-question-embeds.npy"), embeddings)
 
     # Save arguments
     with open(os.path.join(args.output_dir, f"args-{fname}.json"), "w") as f:
