@@ -2,7 +2,6 @@ import glob
 import json
 import os
 from functools import cached_property
-from operator import itemgetter
 from typing import Callable
 
 import numpy as np
@@ -11,9 +10,7 @@ import torch
 from sklearn.cluster import affinity_propagation
 from sklearn.metrics import pairwise_distances
 
-from core.model import LargeLangModel
 from core.question import Question
-from experiments.run_concept import extract_concepts
 
 
 class Embedding:
@@ -129,31 +126,3 @@ class KCluster:
             q_dict["KC"] = f"KC-{centers[label]}"
             res_dicts.append(q_dict)
         return pd.DataFrame.from_records(res_dicts)
-
-    def populate_concepts(self, llm: LargeLangModel, kc: pd.DataFrame,
-                          batch_size: int = 16, num_beams: int = 5, length_penalty: float = -0.1,
-                          pad_to_multiple_of: int = 8, **kwargs) -> pd.DataFrame:
-        """
-        Use LLM to generate concept labels for an existing KC model
-        :param llm: An instance of LargeLangModel
-        :param kc: The existing KC model in a pd.DataFrame
-        :param batch_size: Number of questions to process in a batch
-        :param num_beams: Number of beams to use
-        :param length_penalty: Penalty applied to encourage shorter concept labels
-        :param pad_to_multiple_of: Padding to utilize tensor cores efficiently
-        :param kwargs: Any additional keyword args
-        :return: An updated KC model with concept labels
-        """
-        kc["exemplar"] = kc["KC"].str.split("-").apply(itemgetter(1)).apply(int)
-        exemplars = kc["exemplar"].unique().tolist()
-        questions = [self.questions[idx] for idx in exemplars]
-
-        concepts = extract_concepts(llm, questions, batch_size=batch_size,
-                                    num_beams=num_beams, length_penalty=length_penalty,
-                                    pad_to_multiple_of=pad_to_multiple_of, **kwargs)
-
-        ids_to_concepts = dict(zip(exemplars, concepts))
-        kc["KC-raw"] = kc["KC"]  # retain the raw KC labels
-        kc["KC"] = kc["exemplar"].apply(ids_to_concepts.get)  # populate "KC" column with concepts
-        kc.drop(columns=["exemplar"], inplace=True)
-        return kc
