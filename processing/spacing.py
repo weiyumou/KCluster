@@ -249,25 +249,27 @@ def convert_existing_kc(data_path: str, kc_path: str, step_kc_path: str,
     return kc
 
 
-def create_datashop_kc(kc: pd.DataFrame, temp_path: str, step_kc_path: str,
-                       new_kc_name: str, save_to_file: bool = False) -> pd.DataFrame:
+def create_datashop_kc(kc_temp: str | pd.DataFrame, kc: str | pd.DataFrame,
+                       step_kc_path: str, new_kc_name: str) -> pd.DataFrame:
     """
     Populate a custom Datashop KC model
-    :param kc: A DataFrame representing a human-readable KC model
-    :param temp_path: A path to an empty DataShop KC template file, e.g., "data/datashop/ds6160-spacing/kc_temp.txt"
+    :param kc_temp: Either a path to a DataShop KC template file,
+        e.g., "data/datashop/ds6160-spacing/kc_temp.txt",
+        or a pd.DataFrame of a loaded template
+    :param kc: Either a path to a human-readable KC model or a pd.DataFrame of such
     :param step_kc_path: A path to a (system-generated) unique-step KC model,
             e.g., "data/datashop/ds6160-spacing/unique-step.txt"
     :param new_kc_name: The name given to the new KC model, e.g., "KCluster"
-    :param save_to_file: Whether to save the new KC models to a file
     :return: The new KC model as a DataFrame
-
-    An example of creating a custom Datashop KC model:
-    kc = create_new_kc(data_path, mtx_path, is_pmi=True, use_p="median")
-    kc = populate_concepts(llm, data_path, kc) # optionally, generate interpretable KC labels
-    kc = create_datashop_kc(kc, temp_path, step_kc_path, "KCluster-All-med")
     """
     # Load KC template
-    kc_temp = pd.read_csv(temp_path, sep="\t").dropna(axis="columns", how="all")
+    if isinstance(kc_temp, str):
+        kc_temp = pd.read_csv(kc_temp, sep="\t").dropna(axis="columns", how="all")
+    assert isinstance(kc_temp, pd.DataFrame), "Incorrect type for 'kc_temp'"
+
+    if isinstance(kc, str):
+        kc = pd.read_csv(kc)
+    assert isinstance(kc, pd.DataFrame), "Incorrect type for 'kc'"
 
     # Load the unique-step KC model
     step_kc = pd.read_csv(step_kc_path, sep="\t").dropna(axis="columns", how="all")
@@ -277,9 +279,5 @@ def create_datashop_kc(kc: pd.DataFrame, temp_path: str, step_kc_path: str,
     stems_to_kcs = dict(zip(kc["problem-name"], kc["KC"]))
     kc_temp[f"KC ({new_kc_name})"] = kc_temp["Problem Name"].apply(stems_to_kcs.get)
     kc_temp.loc[step_mask, f"KC ({new_kc_name})"] = None
-
-    if save_to_file:
-        save_path = os.path.join(os.path.dirname(temp_path), f"{new_kc_name}.txt")
-        kc_temp.to_csv(save_path, sep="\t", index=False)
 
     return kc_temp
