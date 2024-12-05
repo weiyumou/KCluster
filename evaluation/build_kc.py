@@ -39,6 +39,8 @@ def main(args):
     [fname] = glob.glob("*-concept.csv", root_dir=args.concept_dir)
     concept_df = pd.read_csv(os.path.join(args.concept_dir, fname))
     assert concept_df["KC"].apply(bool).sum() == concept_df.shape[0], "Some concepts are invalid"
+    if q_types := getattr(args, "q_types", None):
+        concept_df = concept_df.loc[concept_df["type"].isin(q_types)]
     concept_df.to_csv(os.path.join(output_dir, f"concept-kc.csv"), index=False)
 
     # Create KC for baselines
@@ -46,7 +48,7 @@ def main(args):
         for metric in ("cosine", "euclidean"):
             kcluster = KCluster(args.concept_dir, metric=metric, embed_type=embed_type)
             print(f"*** Building KCs based on {embed_type}, metric='{metric}' ***")
-            kc = create_kc(concept_df, kcluster)
+            kc = create_kc(concept_df, kcluster, predicate=(lambda q: q.q_type in q_types) if q_types else None)
             if isinstance(kc, pd.DataFrame):
                 kc.to_csv(os.path.join(output_dir, f"{embed_type}-{metric}-kc.csv"), index=False)
                 print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
@@ -54,7 +56,7 @@ def main(args):
     # Create KC for KCluster-PMI
     kcluster = KCluster(args.pmi_dir, metric="pmi", normalize_pmi=True)
     print("*** Building KCs for KCluster-PMI ***")
-    kc = create_kc(concept_df, kcluster)
+    kc = create_kc(concept_df, kcluster, predicate=(lambda q: q.q_type in q_types) if q_types else None)
     if isinstance(kc, pd.DataFrame):
         kc.to_csv(os.path.join(output_dir, f"pmi-kc.csv"), index=False)
         print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
@@ -64,5 +66,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--concept_dir", required=True, type=str, help="Path to a directory containing concepts")
     parser.add_argument("--pmi_dir", required=True, type=str, help="Path to a directory containing PMI values")
+    parser.add_argument("--q_types", default=argparse.SUPPRESS, type=str, nargs="*", help="Question types to consider")
     cl_args = parser.parse_args()
     main(cl_args)

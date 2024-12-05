@@ -1,4 +1,5 @@
 import glob
+import itertools
 import json
 import os
 from functools import cached_property
@@ -100,27 +101,37 @@ class KCluster:
             questions = [Question(eval(line)) for line in f]
         return questions
 
-    def create_new_kc(self, use_p: str = "median", **ap_kwargs) -> pd.DataFrame:
+    def create_new_kc(self, predicate: Callable[[Question], bool] = None,
+                      use_p: str = "median", **ap_kwargs) -> pd.DataFrame:
         """
         Create a new KC model from the similarity matrix
+        :param predicate: A function indicating if a question should be considered
         :param use_p: Determine how to compute preference
         :param ap_kwargs: Additional arguments for the Affinity Propagation algorithm, e.g., damping=0.7
         :return: The new KC model in a DataFrame
         """
         assert use_p in ("median", "mean", "min", "max"), f"Invalid value for 'use_p': {use_p}"
 
+        # Determine the questions and similarity matrix
+        questions, sim_mtx = self.questions, self.sim_mtx
+        if predicate is not None:
+            is_valid = [predicate(q) for q in questions]
+            questions = list(itertools.compress(questions, is_valid))
+            sim_mtx = sim_mtx[np.ix_(is_valid, is_valid)]
+        assert sim_mtx.shape == (len(questions), len(questions)), "The shape of the similarity matrix is incorrect"
+
         # Determine p
         func: dict[str, Callable] = {"median": np.median, "mean": np.mean, "min": np.amin, "max": np.amax}
-        p = func[use_p](self.sim_mtx[~np.eye(len(self.questions), dtype=bool)])
+        p = func[use_p](sim_mtx[~np.eye(len(questions), dtype=bool)])
 
         # Run AP
-        centers, labels, num_iters = affinity_propagation(self.sim_mtx, preference=p,
+        centers, labels, num_iters = affinity_propagation(sim_mtx, preference=p,
                                                           return_n_iter=True, random_state=42, **ap_kwargs)
         print(f"Affinity Propagation completed in {num_iters} iterations and created {len(centers)} clusters")
 
         # Collect clustering results
         res_dicts = []
-        for q, label in zip(self.questions, labels):
+        for q, label in zip(questions, labels, strict=True):
             q_dict = q.flat_dict
             q_dict.pop("images", None)
             q_dict["KC"] = f"KC-{centers[label]}"
