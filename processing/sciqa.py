@@ -4,7 +4,7 @@ from collections import Counter
 
 import pandas as pd
 
-from processing.util import compute_metrics
+from processing.util import compute_clustering_metrics
 
 
 def write_questions(data_path: str, output_dir: str, min_choice_cnt: int = 2, min_skill_cnt: int = 100):
@@ -48,4 +48,4 @@ def write_questions(data_path: str, output_dir: str, min_choice_cnt: int = 2, mi
 
 def evaluate_kc(kc_path: str, true_kc: str = "skill"):
     kc = pd.read_csv(kc_path)
-    return compute_metrics(kc[true_kc], kc["kc"])
+    return compute_clustering_metrics(kc[true_kc], kc["kc"])

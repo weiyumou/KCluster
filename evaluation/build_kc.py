@@ -39,6 +39,7 @@ def main(args):
     [fname] = glob.glob("*-concept.csv", root_dir=args.concept_dir)
     concept_df = pd.read_csv(os.path.join(args.concept_dir, fname))
     assert concept_df["KC"].apply(bool).sum() == concept_df.shape[0], "Some concepts are invalid"
+    concept_df.to_csv(os.path.join(output_dir, f"concept-kc.csv"), index=False)
 
     # Create KC for baselines
     for embed_type in ("concept", "question"):

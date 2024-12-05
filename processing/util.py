@@ -11,22 +11,6 @@ from sklearn.preprocessing import LabelEncoder
 KC_PAT = r"KC \((?P<name>.+?)(-\d+)?\)"
 
 
-def compute_metrics(true_kcs: list[str], pred_kcs: list[str]) -> dict[str, float | tuple[float, ...]]:
-    """https://scikit-learn.org/stable/modules/clustering.html#clustering-performance-evaluation"""
-    true_kcs = LabelEncoder().fit_transform(true_kcs)
-    pred_kcs = LabelEncoder().fit_transform(pred_kcs)
-
-    return {
-        "Rand Index [0, 1]": metrics.rand_score(true_kcs, pred_kcs),
-        "Adj Rand Index [-1, 1]": metrics.adjusted_rand_score(true_kcs, pred_kcs),
-        "Norm MI [0, 1]": metrics.normalized_mutual_info_score(true_kcs, pred_kcs),
-        "Adj MI (-∞, 1]": metrics.adjusted_mutual_info_score(true_kcs, pred_kcs),
-        "Homogeneity, Completeness and V-measure [0, 1]":
-            metrics.homogeneity_completeness_v_measure(true_kcs, pred_kcs),
-        "Fowlkes-Mallows Index [0, 1]": metrics.fowlkes_mallows_score(true_kcs, pred_kcs),
-    }
-
-
 def adjust_existing_kc(kc: pd.DataFrame, prob_mask: pd.Series, step_kc_path: str,
                        old_to_new_kc: dict = None, new_kc_suffix: str = "new") -> pd.DataFrame:
     """
@@ -176,18 +160,42 @@ def read_cv_results(res_path: str, num_cv_runs: int = 10) -> tuple[pd.DataFrame,
     return res_table, pub_table
 
 
-def eval_datashop_kc(kcm_path: str, true_kcm: str, pred_kcm: str) -> dict[str, float | tuple[float, ...]]:
+def compute_clustering_metrics(true_kcs: list[str], pred_kcs: list[str]) -> dict[str, float]:
+    """https://scikit-learn.org/stable/modules/clustering.html#clustering-performance-evaluation"""
+    true_kcs = LabelEncoder().fit_transform(true_kcs)
+    pred_kcs = LabelEncoder().fit_transform(pred_kcs)
+
+    return {
+        "Rand Index [0, 1]": metrics.rand_score(true_kcs, pred_kcs),
+        "Adj Rand Index [-1, 1]": metrics.adjusted_rand_score(true_kcs, pred_kcs),
+        "Norm MI [0, 1]": metrics.normalized_mutual_info_score(true_kcs, pred_kcs),
+        "Adj MI (-∞, 1]": metrics.adjusted_mutual_info_score(true_kcs, pred_kcs),
+        "Fowlkes-Mallows Index [0, 1]": metrics.fowlkes_mallows_score(true_kcs, pred_kcs),
+        "Homogeneity [0, 1]": metrics.homogeneity_score(true_kcs, pred_kcs),
+        "Completeness [0, 1]": metrics.completeness_score(true_kcs, pred_kcs),
+        "V-measure [0, 1]": metrics.v_measure_score(true_kcs, pred_kcs),
+    }
+
+
+def eval_datashop_kc(kc_temp: str | pd.DataFrame, true_kcm: str) -> pd.DataFrame:
     """
     Evaluate a Datashop KC model against the "ground truth".
-    :param kcm_path: A path to a combo KC model file that contain multiple KC models,
-            e.g., "data/datashop/ds5426-elearning/ds5426_kcm.txt"
+    :param kc_temp:
+        Either a path to a DataShop KC template file that contain multiple KC models,
+        e.g., "data/datashop/ds5426-elearning/ds5426_kcm.txt", or a pd.DataFrame of such
     :param true_kcm: Name of the 'ground-truth' KC model
-    :param pred_kcm: Name of the evaluated KC model
     :return: A dictionary containing the results of evaluation
     """
-    combo_kc = pd.read_csv(kcm_path, sep="\t").dropna(axis="columns")
-    mask = combo_kc[f"KC ({pred_kcm})"].str.strip().apply(bool)
+    if isinstance(kc_temp, str):
+        kc_temp = pd.read_csv(kc_temp, sep="\t").dropna(axis="columns", how="all")
+    assert isinstance(kc_temp, pd.DataFrame), "Incorrect type for 'kc_temp'"
 
-    true_kcs = combo_kc.loc[mask, f"KC ({true_kcm})"]
-    pred_kcs = combo_kc.loc[mask, f"KC ({pred_kcm})"]
-    return compute_metrics(true_kcs, pred_kcs)
+    results = dict()
+    kc_names = [re.match(KC_PAT, col).group("name") for col in kc_temp.filter(regex=KC_PAT).columns]
+    for pred_kcm in kc_names:
+        mask = kc_temp[f"KC ({pred_kcm})"].str.strip().apply(bool)
+        true_kcs = kc_temp.loc[mask, f"KC ({true_kcm})"]
+        pred_kcs = kc_temp.loc[mask, f"KC ({pred_kcm})"]
+        results[pred_kcm] = compute_clustering_metrics(true_kcs, pred_kcs)
+
+    return pd.DataFrame.from_dict(results, orient="index")
