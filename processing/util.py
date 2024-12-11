@@ -10,44 +10,6 @@ from sklearn.preprocessing import LabelEncoder
 KC_PAT = r"KC \((?P<name>.+?)(-\d+)?\)"
 
 
-def adjust_existing_kc(kc: pd.DataFrame, prob_mask: pd.Series, step_kc_path: str,
-                       old_to_new_kc: dict = None, new_kc_suffix: str = "new") -> pd.DataFrame:
-    """
-    Adjust existing KC models based on available problems
-    :param kc: a pd.DataFrame containing KC models
-    :param prob_mask: A binary mask with 1 indicating unavailable problems
-    :param step_kc_path: A path to a (system-generated) unique-step KC model,
-            e.g., "data/datashop/ds6160-spacing/unique-step.txt"
-    :param old_to_new_kc: A mapping between old and new KC names
-    :param new_kc_suffix: If `old_to_new_kc` is not provided, extend old KC names by `new_kc_suffix`
-    :return: A modified KC model as a DataFrame
-    """
-    # Extract existing KC models
-    kc_names = [re.match(KC_PAT, col).group("name") for col in kc.filter(regex=KC_PAT).columns]
-
-    # Adjust old-to-new KC mappings
-    old_to_new_kc = old_to_new_kc or {}
-    old_to_new_kc = {f"KC ({key})": f"KC ({val})" for key, val in old_to_new_kc.items()}
-    default_mapping = {f"KC ({kcm})": f"KC ({kcm.replace(' ', '-')}-{new_kc_suffix})" for kcm in kc_names}
-    old_to_new_kc = default_mapping | old_to_new_kc
-
-    # Load the unique-step KC model
-    step_kc = pd.read_csv(step_kc_path, sep="\t").dropna(axis="columns", how="all")
-    step_mask = ~step_kc["KC (Unique-step)"].str.strip().apply(bool)
-
-    # Empty any cells where the problem name is not found in available questions
-    mask = prob_mask | step_mask
-    kc.loc[mask, [f"KC ({kcm})" for kcm in kc_names]] = None
-
-    # Strip out the extraneous period for LO
-    if (lo_kc := "KC (LO)") in kc:
-        kc[lo_kc] = kc[lo_kc].str.rstrip(".")
-
-    # Rename the new KC model
-    kc = kc.rename(columns=old_to_new_kc)
-    return kc
-
-
 def read_cv_results(res_path: str, num_cv_runs: int = 10) -> tuple[pd.DataFrame, pd.DataFrame]:
     with open(res_path, "r") as f:
         soup = BeautifulSoup(f, features="html.parser")
