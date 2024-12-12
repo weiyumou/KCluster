@@ -25,9 +25,6 @@ export PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.6,max_split_size_m
 
 LLM_PATH="/home/yumouwei/turbo/llm/phi-2"
 
-DATA_PATH="data/spacing/spacing-all.jsonl"
-BATCH_SZ=16
-
 DATA_PATH="data/elearning/elearning-mcq.jsonl"
 BATCH_SZ=16
 
