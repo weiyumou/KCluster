@@ -44,7 +44,7 @@ def merge_student_step_with_kc(ss_path: str, kc_path: str,
     ss["Problem Hierarchy"] = ss["Problem Hierarchy"].str.replace("(", "").str.replace(")", "")
 
     # Merge KCs into student-step
-    ss = pd.merge(ss, kc_cols, how="left", on=key_cols)
+    ss = pd.merge(ss, kc_cols, how="left", on=key_cols, validate="many_to_one")
 
     if minimal:  # Transcribe columns to minimize file size
         ss["Anon Student Id"] = [f"ST-{lbl}" for lbl in LabelEncoder().fit_transform(ss["Anon Student Id"])]
