@@ -208,6 +208,17 @@ def convert_existing_kc(data_path: str, kc_path: str, step_kc_path: str, year: s
     return kc
 
 
+def get_step_to_kc(kc: pd.DataFrame, year: str) -> dict[str, str]:
+    steps, labels = [], []
+    for step, label in kc[["step-name", "KC"]].itertuples(index=False):
+        step = step.split("~")
+        steps.extend(step)
+        labels.extend([label] * len(step))
+    if year == "2023":
+        steps = [s.split("_")[-1] for s in steps]
+    return dict(zip(steps, labels))
+
+
 def create_datashop_kc(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
                        step_kc_path: str, new_kc_name: str, year: str) -> pd.DataFrame:
     """
@@ -237,17 +248,8 @@ def create_datashop_kc(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
     step_kc = pd.read_csv(step_kc_path, sep="\t", na_values=" ").dropna(axis="columns", how="all")
     step_mask = step_kc["KC (Unique-step)"].isna()
 
-    # Extract step:KC mappings
-    steps, labels = [], []
-    for step, label in zip(kc["step-name"], kc["KC"]):
-        step = step.split("~")
-        steps.extend(step)
-        labels.extend([label] * len(step))
-    if year == "2023":
-        steps = [s.split("_")[-1] for s in steps]
-
     # Fill in KC
-    step_to_kc = dict(zip(steps, labels))
+    step_to_kc = get_step_to_kc(kc, year)
     kc_temp[f"KC ({new_kc_name})"] = get_step_name(kc_temp, year, filter_by_kc).apply(step_to_kc.get)
     kc_temp.loc[step_mask, f"KC ({new_kc_name})"] = None
 

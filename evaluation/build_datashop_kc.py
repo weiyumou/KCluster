@@ -11,7 +11,7 @@ from processing.elearning import create_datashop_kc
 from processing.util import KC_PAT
 
 
-def merge_student_step_with_kc(ss_path: str, kc_path: str,
+def merge_student_step_with_kc(ss_path: str, kc: str | pd.DataFrame,
                                minimal: bool = False, multiplier: int = 1) -> pd.DataFrame:
     """
     This function inserts (multiple) KC models contained in a DataShop KC template into a student-step file.
@@ -19,7 +19,7 @@ def merge_student_step_with_kc(ss_path: str, kc_path: str,
     If `minimal=False` and `multiplier=1`, it inserts KC models into a DataShop student-step file similar to what DataShop does.
     KC template -> Student Step -> Student Step with duplicate columns
     :param ss_path: Path to a student-step file
-    :param kc_path: Path to a filled KC template
+    :param kc: Either a path to a filled KC template or a DataFrame containing KC models
     :param minimal: Whether to retain the essential columns only
     :param multiplier: Duplicate the KC columns by `multiplier` times
     :return: A student-step file with KC models inserted, ready for evaluation
@@ -29,7 +29,9 @@ def merge_student_step_with_kc(ss_path: str, kc_path: str,
     key_cols = ["Problem Hierarchy", "Problem Name", "Step Name"]  # primary-key columns
 
     # Identify all KC models
-    kc = pd.read_csv(kc_path, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+    if isinstance(kc, str):
+        kc = pd.read_csv(kc, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+    assert isinstance(kc, pd.DataFrame), "Incorrect type for 'kc'"
     kc["Problem Hierarchy"] = kc["Problem Hierarchy"].str.replace("(", "").str.replace(")", "")
     kc_cols = kc.set_index(key_cols).filter(regex=KC_PAT)
     kc_names = [re.match(KC_PAT, col).group("name") for col in kc_cols.columns]
@@ -96,7 +98,7 @@ def main(args):
     if ss_path := getattr(args, "ss_path", None):
         multiplier = getattr(args, "multiplier", 1)
         print("*** Merging KCs with student steps ***")
-        ss = merge_student_step_with_kc(ss_path, kc_path, minimal=True, multiplier=multiplier)
+        ss = merge_student_step_with_kc(ss_path, kc_temp, minimal=True, multiplier=multiplier)
         ss.to_csv(f"{os.path.splitext(kc_path)[0]}-merged.txt", sep="\t", index=False)
 
 
