@@ -8,6 +8,7 @@ from tqdm import tqdm
 from transformers import pipeline, set_seed
 from transformers.utils import logging
 
+from core.model import batched
 from core.question import Question
 
 
@@ -28,13 +29,14 @@ def main(args):
 
     # Load an LLM
     pipe = pipeline("text-generation", model=args.llm_path, device_map="auto")
+    end_think_id = pipe.tokenizer.convert_tokens_to_ids("</think>")
 
     # Run data through the pipeline
     responses = []
-    for outputs in tqdm(pipe(read_questions(args.data_path),
-                             max_new_tokens=1280, do_sample=True, top_p=0.95, temperature=0.6), desc="Deep thinking"):
-        rsp = outputs[0]["generated_text"][-1]["content"]
-        responses.append(re.search(r"<think>(.*?)</think>", rsp, re.DOTALL).group(1).strip())
+    for batch in tqdm(batched(read_questions(args.data_path), args.batch_size), desc="Deep thinking"):
+        for output in pipe(batch, eos_token_id=end_think_id, max_new_tokens=12800, top_p=0.95, temperature=0.6):
+            rsp = output[0]["generated_text"][-1]["content"]
+            responses.append(re.search(r"<think>(.*?)</think>", rsp, re.DOTALL).group(1).strip())
 
     # Save results
     fname = os.path.splitext(os.path.basename(args.data_path))[0]
@@ -54,6 +56,7 @@ if __name__ == "__main__":
     parser.add_argument("--llm_path", required=True, type=str, help="Path to a downloaded LLM")
     parser.add_argument("--data_path", required=True, type=str, help="Path to a jsonl file of questions")
     parser.add_argument("--output_dir", default=argparse.SUPPRESS, type=str, help="Path to the output directory")
+    parser.add_argument("--batch_size", default=4, type=int, help="Batch size for processing questions")
 
     cl_args = parser.parse_args()
     main(cl_args)

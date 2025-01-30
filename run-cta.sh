@@ -26,10 +26,10 @@ export PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.6,max_split_size_m
 LLM_PATH="/home/yumouwei/turbo/llm/DeepSeek-R1-Distill-Llama-8B/"
 
 DATA_PATH="data/elearning/elearning-mcq.jsonl"
+BATCH_SZ=4
+
+#DATA_PATH="data/sciqa/sciqa-skill-10.jsonl"
 #BATCH_SZ=16
 
-DATA_PATH="data/sciqa/sciqa-skill-10.jsonl"
-#BATCH_SZ=16
 
-
-python -m experiments.run_cta --llm_path "$LLM_PATH" --data_path "$DATA_PATH"
+python -m experiments.run_cta --llm_path "$LLM_PATH" --data_path "$DATA_PATH" --batch_size $BATCH_SZ
