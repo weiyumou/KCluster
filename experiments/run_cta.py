@@ -16,8 +16,7 @@ def read_questions(data_path: str):
     # An iterator yielding questions read from a jsonl file
     with open(data_path, "r") as f:
         for line in f:
-            q = Question(eval(line))
-            yield [{"role": "system", "content": ""}, {"role": "user", "content": q.body}]
+            yield Question(eval(line))
 
 
 def main(args):
@@ -32,16 +31,18 @@ def main(args):
     end_think_id = pipe.tokenizer.convert_tokens_to_ids("</think>")
 
     # Run data through the pipeline
-    responses = []
-    for batch in tqdm(batched(read_questions(args.data_path), args.batch_size), desc="Deep thinking"):
-        for output in pipe(batch, eos_token_id=end_think_id, max_new_tokens=12800, top_p=0.95, temperature=0.6):
-            rsp = output[0]["generated_text"][-1]["content"]
-            responses.append(re.search(r"<think>(.*?)</think>", rsp, re.DOTALL).group(1).strip())
-
-    # Save results
     fname = os.path.splitext(os.path.basename(args.data_path))[0]
-    with open(os.path.join(args.output_dir, f"{fname}-cta.txt"), "w") as f:
-        f.write("\n".join(responses))
+    with open(os.path.join(args.output_dir, f"{fname}-cta.jsonl"), "w") as f_out:
+        for batch in tqdm(batched(read_questions(args.data_path), args.batch_size), desc="Deep thinking"):
+            prompts = [[{"role": "system", "content": ""}, {"role": "user", "content": q.body}] for q in batch]
+            for idx, output in enumerate(pipe(prompts, eos_token_id=end_think_id,
+                                              forced_bos_token_id=end_think_id, forced_eos_token_id=end_think_id,
+                                              max_new_tokens=12800, top_p=0.95, temperature=0.6)):
+                rsp = output[0]["generated_text"][-1]["content"]
+                d = {"q_id": batch[idx]["id"], "thinking": ""}
+                if m := re.search(r"<think>(.*?)</think>", rsp, re.DOTALL):
+                    d["thinking"] = m.group(1).strip()
+                f_out.write(json.dumps(d) + "\n")
 
     # Save arguments
     with open(os.path.join(args.output_dir, f"args-{fname}.json"), "w") as f:
