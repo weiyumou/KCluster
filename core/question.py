@@ -1,11 +1,10 @@
 from collections import UserDict
-from functools import cached_property
 
 
 class Question(UserDict):
     SPACE = chr(32)
 
-    @cached_property
+    @property
     def flat_dict(self) -> dict:
         """Returns a flattened dict repr"""
         q_dict = dict(self.data)
@@ -23,7 +22,7 @@ class Question(UserDict):
     def stem(self) -> str:
         return self["question"]["stem"]
 
-    @cached_property
+    @property
     def body(self) -> str:
         if self.q_type == "Multiple Choice":  # body = stem + choices
             choices = [f"{item['label']}){self.SPACE}{item['text']}" for item in self["question"]["choices"]]
