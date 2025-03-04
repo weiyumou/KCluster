@@ -1,23 +1,23 @@
-Explain differences between KLI? Knowledge Components, Learning Events, Instructional Events, Assessment Events
+Explain differences between KLI elements: Knowledge Components, Learning Events, Instructional Events, Assessment Events
 Explain backward design and the interrelationships between goals, assessment, and instruction
 Categorize knowledge components (KCs) along (four) dimensions
 Identify key hypotheses of the KLI framework
-Map elements of Bloom? taxonomy to examples
-Evaluate and modify assessment questions based on KLI and Bloom? taxonomy
-Evaluate and improve goals using KLI, Bloom? taxonomy, and ABCD
-Explain why ?f-then? production rules are a good way to express the output (model & insights) of a Cognitive Task Analysis
+Map elements of Bloom's taxonomy to examples
+Evaluate and modify assessment questions based on KLI and Bloom's taxonomy
+Evaluate and improve goals using KLI, Bloom's taxonomy, and ABCD
+Explain why if-then production rules are a good way to express the output (model & insights) of a Cognitive Task Analysis
 Compare the purpose of formative and summative assessments
 Recognize the value and limitations of self-assessment
 Explain and exemplify how Cognitive Task Analysis can be used to identify learning goals
 Compare and contrast the interview process of CTA via structured interviews with Contextual Inquiry
-Explain the importance of focus setting in Contextual Inquiry and preparation in Clark? structured interview approach to CTA
+Explain the importance of focus setting in Contextual Inquiry and preparation in Clark's structured interview approach to CTA
 Use structured interviews (Cognitive Task Analysis) and contextual inquiry to identify course goals
 Evaluate and redesign based from CTA and data mining
 Explain how student interactions in an e-learning system can be used to perform Cognitive Task Analysis
 Recognize the features of a good learning curve
 Use learning curves to do Cognitive Task Analysis
 Distinguish between four kinds of CTA (theoretical vs. empirical, descriptive vs. prescriptive)
-4 key learning events/principles
+Identify four key learning events/principles
 Use think aloud as a CTA technique
 Recall elements of the course big picture diagram
 Compare and contrast Difficulty Factors with prior CTA techniques
@@ -27,12 +27,12 @@ Compare and contrast think aloud and theoretical CTA with other CTA methods
 Identify the good, bad, & ugly of e-learning: Promises & pitfalls
 Classify kinds of e-learning based on learning goals: inform, perform procedure or perform principle
 Evaluate research evidence on media comparisons
-3 learning principles & processes
+Identify three learning principles & processes
 Explain why instructional design is complex because optimal instructional choices change depending on content
 Distinguish 3 forms of cognitive processing/load during learning
 Distinguish learning vs. instruction
 Define Instructional goals, KCs, learning processes
-Explain the interrelationships between KCs and the ?est? corresponding learning process
+Explain the interrelationships between KCs and the corresponding learning process
 Use KLI to choose instructional principles that match the desired KCs and learning processes
 Design a learning experiment (or A/B test) to evaluate whether one e-learning design is better than a close alternative
 Explain why optimizing near term performance (e.g., through better UX design) does not guarantee optimal learning

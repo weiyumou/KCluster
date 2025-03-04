@@ -3,7 +3,7 @@ import glob
 import json
 import os
 import time
-from functools import partial
+from functools import partial, cached_property
 
 import lightning as L
 import pandas as pd
@@ -11,12 +11,64 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from transformers.utils import logging
 
-from core.kcluster import PointwiseMutualInfo
 from core.model import LargeLangModel
 from core.question import Question
-from run_pmi import question_collate, PMI, CustomWriter
+from experiments.run_pmi import question_collate, PMI, CustomWriter
 
 SPACE = Question.SPACE
+
+
+class PointwiseMutualInfo:
+    def __init__(self, pmi_dir: str, nrows: int, ncols: int, normalize: bool = True):
+        self._vec, self._mat = self.load_probs(pmi_dir, nrows, ncols)
+        self._normalize = normalize
+
+    @cached_property
+    def marginals(self) -> torch.Tensor:
+        # normalize the marginals
+        return torch.log_softmax(self._vec, dim=-1) if self._normalize else self._vec
+
+    @cached_property
+    def conditionals(self) -> torch.Tensor:
+        # use PMI to re-calculate conditionals
+        return self.pmi_mat + self.marginals
+
+    @cached_property
+    def pmi_mat(self) -> torch.Tensor:
+        mat = torch.log_softmax(self._mat, dim=-1) if self._normalize else self._mat
+        mat = mat - self.marginals
+        if mat.shape[0] == mat.shape[1]:
+            mat = (mat + mat.T) / 2  # make symmetric
+        return mat
+
+    @staticmethod
+    def load_probs(pmi_dir: str, nrows: int, ncols: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Load conditional and marginal log-probabilities from a result folder
+        :param pmi_dir: A path to saved log-probability data produced by 'run_pmi.py'
+        :param nrows: The number of conditioning items
+        :param ncols: The number of conditioned items
+        :return: A Tuple consisting of
+         - a `ncols` vector of marginal log-probabilities
+         - a `nrows x ncols` conditional-log-probability matrix
+        """
+        # Prepare an empty matrix of the appropriate size to fill in
+        mtx = torch.full((nrows * ncols + ncols,), torch.inf)
+
+        # Load data from all available files
+        rank = 0
+        while os.path.exists(fname := os.path.join(pmi_dir, f"batch_indices_{rank}.pt")):
+            batch_inds = torch.load(fname)[0]
+            predictions = torch.load(os.path.join(pmi_dir, f"predictions_{rank}.pt"))
+            for inds, preds in zip(batch_inds, predictions, strict=True):
+                mtx[inds] = preds
+            rank += 1
+        assert torch.isinf(mtx).sum() == 0, "Number of questions doesn't match the save value"
+
+        mtx = mtx.reshape(-1, ncols).float()
+        marginals = mtx[0]  # first row is the marginals
+        conds = mtx[1:]  # second row and below is the conditionals
+        return marginals, conds
 
 
 class QuestionLO(Dataset):
@@ -131,7 +183,7 @@ def main(args):
         json.dump(all_los, f)
 
     # Save arguments
-    with open(os.path.join(args.output_dir, f"args-pmi-{fname}.json"), "w") as f:
+    with open(os.path.join(args.output_dir, f"args-classify-{fname}.json"), "w") as f:
         json.dump(vars(args), f, indent=2)
 
 
