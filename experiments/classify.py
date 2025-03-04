@@ -79,7 +79,7 @@ class QuestionLO(Dataset):
                 self.header = f"The exercise below is designed to test whether a student can{SPACE}"
             case "facts":
                 self.los = [lo.rstrip().rstrip(".") for lo in los]
-                self.header = f"The exercise below is designed to test whether a student knows:\n"
+                self.header = f"The exercise below is designed to test whether a student understands{SPACE}"
             case _:
                 raise ValueError(f"Invalid lo_type: '{lo_type}'")
 
@@ -105,7 +105,7 @@ def classify_from_pmi(root_dir: str, topk: int = 3) -> pd.DataFrame:
     torch.set_default_dtype(torch.float16)
 
     # Read the args json file to extract data_path
-    [args_f] = glob.glob(os.path.join(root_dir, "args-pmi-*.json"))
+    [args_f] = glob.glob(os.path.join(root_dir, "args-classify-*.json"))
     with open(args_f, "r") as f:
         args = json.load(f)
 
@@ -122,20 +122,12 @@ def classify_from_pmi(root_dir: str, topk: int = 3) -> pd.DataFrame:
 
     # Top K predictions
     preds = torch.topk(pmi.pmi_mat, k=topk, dim=0).indices.T  # (n_questions, topk)
-    records, matched = [], []
+    records = []
     for idx, q in enumerate(all_questions):
-        d, is_matched = q.flat_dict, False
+        d = q.flat_dict
         for k, p in enumerate(preds[idx], 1):
             d |= {f"pred_lo_{k}": all_los[p]}
-            is_matched |= q["lo"] == all_los[p]
         records.append(d)
-        if is_matched:
-            matched.append(q)
-
-    # Save matched questions
-    with open(os.path.join(root_dir, f"matched-top{topk}.jsonl"), "w") as f:
-        f.write("\n".join(repr(q) for q in matched))
-    print(f"Matched {len(matched)} questions out of {len(all_questions)}")
 
     # Save classification results
     res_df = pd.DataFrame.from_records(records)

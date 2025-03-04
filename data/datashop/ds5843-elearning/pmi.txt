@@ -1,0 +1,92 @@
+the four dimensions that determine the type of a knowledge component
+aligning goals and assessments with KLI categorizations
+the Instructional Design Process – BIG PICTURE diagram
+knowledge components
+inference
+social-contextual basis of learning
+Bloom’s taxonomy
+measurable and observable learning objectives
+instructor-centered and student-centered objectives
+well-written goals using KLI
+CTA-based instruction
+validity in research studies
+the Feldon paper and the Instructional Design Process
+the Feldon paper
+Cognitive Task Analysis CTA
+self-assessment
+focused knowledge elicitation methods in Clark’s structured interview CTA
+Contextual Inquire
+using metaphors for insight into the work being supported
+expert blind spot in Contextual Inquiry
+Follow-up Cognitive Task Analysis
+“what they practice” and how it can be misinterpreted
+causality
+learning curve analysis
+error rate learning curves
+prescriptive CTA approach
+selective attention
+instructional design and its impact on learning
+production rules
+an empirical qualitative CTA
+Difficulty Factors Assessment
+a difficulty factors assessment
+Designing & administering a DFA
+composed vs
+designing and administering a Difficulty Factors Assessment
+not providing help while observing users
+fading
+"think-alouds" in Cognitive Task Analysis
+theoretical descriptive CTA
+intermediate steps or subgoals
+subgoals in CTA
+CTA
+near and far transfer
+a valid design for media comparison approach
+e-learning pitfalls
+learner control
+providing a continue button on each screen in asynchronous e-learning
+Instructional Design
+instructional design process
+“too much of a good thing” in e-learning material
+instructional principles
+pre-training
+essential processing
+instructional choice
+the modality principle
+knowledge taxonomy
+guided discovery and how it aligns with KLI's 3 categories of learning processes
+A/B testing
+blocking
+learning from struggle
+a good experiment
+research design
+experimental comparison
+blocked practice
+practice types
+the diminishing rate of skill improvement over multiple practice sessions
+explanatory feedback
+corrective feedback
+seductive details
+the coherence principle
+Sanji's lesson
+the redundancy principle
+value-added research
+pretraining
+transfer in e-learning
+KC type and learning process
+matching instructional methods to the complexity of knowledge involved
+varied context worked examples
+redundancy principle
+exceptions to the redundancy principle
+coherence in e-learning
+the learning styles view
+interpretive graphics
+the practice or testing effect
+generative and extraneous processing
+a good objective according to ABCD method
+empirical CTA
+instructional methods
+the Redundancy Effect
+the KLI framework
+worked examples
+practice testing
