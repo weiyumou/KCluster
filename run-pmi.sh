@@ -38,8 +38,6 @@ LLM_PATH="/home/yumouwei/turbo/llm/phi-2"
 #DATA_PATH="data/elearning/elearning23-mcq.jsonl"
 #BATCH_SZ=80
 
-# default value
-BATCH_SZ="${BATCH_SZ:-80}"
 
 srun python -m experiments.run_pmi --llm_path "$LLM_PATH" --data_path "$DATA_PATH" \
                                    --batch_size "$BATCH_SZ" --output_dir "results/pmi/$TIME" \

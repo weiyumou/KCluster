@@ -89,7 +89,7 @@ def main(args):
         ds = SkillQuestion(args.data_path, args.skill_path, args.skill_type)
     else:
         ds = PairQuestion(args.data_path)
-    dl = DataLoader(ds, batch_size=args.batch_size, pin_memory=True, shuffle=False,
+    dl = DataLoader(ds, batch_size=args.batch_size, pin_memory=True, shuffle=False, num_workers=args.num_workers,
                     collate_fn=partial(collate_pair, tokenizer=tokenizer, pad_to_multiple_of=args.pad_to_multiple_of))
 
     pred_writer = CustomWriter(output_dir=args.output_dir, write_interval="epoch")
@@ -113,6 +113,7 @@ if __name__ == "__main__":
                         choices=("actions", "facts"), help="Type of skills")
     parser.add_argument("--batch_size", type=int, default=16, help="Number of questions to process in a batch")
     parser.add_argument("--output_dir", type=str, default=argparse.SUPPRESS, help="Path to the output directory")
+    parser.add_argument("--num_workers", type=int, default=0, help="Number of workers for DataLoader")
     parser.add_argument("--pad_to_multiple_of", type=int, default=None, help="Pad to multiple of")
 
     cl_args = parser.parse_args()
