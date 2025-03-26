@@ -14,9 +14,17 @@ from core.question import Question
 
 
 @torch.inference_mode()
-def extract_concepts(llm: LargeLangModel, questions: list[Question], batch_size: int, **kwargs) -> list[str]:
+def extract_concepts(llm: LargeLangModel, questions: list[Question],
+                     batch_size: int, verbal: bool = False, **kwargs) -> list[str]:
     """Extracts the key concept for a list of Questions"""
     SPACE = Question.SPACE
+
+    # determine whether the generated concept should begin with a verb
+    if verbal:
+        trailer = "whether the student can"  # +verbal phrase
+    else:
+        trailer = "whether the student understands the concept of"  # +noun phrase
+
     all_concepts = []
     for batch in batched(questions, batch_size):
         prompts = []
@@ -24,8 +32,7 @@ def extract_concepts(llm: LargeLangModel, questions: list[Question], batch_size:
             q_type = q.q_type.lower().replace(SPACE, "-")
             prompt = (
                 f"{q.prompt()}{SPACE}{q.answer}\n\n"
-                f"Remark:\nThe above exercise is a {q_type} question{SPACE}"
-                f"that tests whether the student understands the concept of"
+                f"Remark:\nThe above exercise is a {q_type} question that tests {trailer}"
             )
             prompts.append(prompt)
 
@@ -73,7 +80,8 @@ def main(args):
         questions = [Question(eval(line)) for line in f]
 
     # Extract concepts
-    concepts = extract_concepts(llm, questions, args.batch_size, pad_to_multiple_of=8, do_sample=False,
+    concepts = extract_concepts(llm, questions, args.batch_size, verbal=args.verbal,
+                                do_sample=False, pad_to_multiple_of=8,
                                 num_beams=args.num_beams, length_penalty=args.length_penalty)
 
     # Save results
@@ -81,22 +89,20 @@ def main(args):
     res_df = build_res_df(questions, concepts)
     res_df.to_csv(os.path.join(args.output_dir, f"{fname}-concept.csv"), index=False)
 
-    # Compute concept embeddings
-    if hasattr(args, "sent_path"):
-        model = SentenceTransformer(args.sent_path, local_files_only=True)
-    else:
-        model = llm
-
-    with torch.inference_mode():
-        embeddings = model.encode(concepts)
-        if isinstance(embeddings, torch.Tensor):
-            embeddings = embeddings.cpu().numpy()
-    # Save results
-    np.save(os.path.join(args.output_dir, f"{fname}-concept-embeds.npy"), embeddings)
+    # Compute concept embeddings if path to SentenceTransformer is provided
+    if sent_path := getattr(args, "sent_path", None):
+        model = SentenceTransformer(sent_path, local_files_only=True)
+        with torch.inference_mode():
+            embeddings = model.encode(concepts)
+            if isinstance(embeddings, torch.Tensor):
+                embeddings = embeddings.cpu().numpy()
+        # Save results
+        np.save(os.path.join(args.output_dir, f"{fname}-concept-embeds.npy"), embeddings)
 
     # Compute question embeddings
-    embeddings = extract_question_embeds(llm, questions, args.batch_size).cpu().numpy()
-    np.save(os.path.join(args.output_dir, f"{fname}-question-embeds.npy"), embeddings)
+    if args.q_embeds:
+        embeddings = extract_question_embeds(llm, questions, args.batch_size).cpu().numpy()
+        np.save(os.path.join(args.output_dir, f"{fname}-question-embeds.npy"), embeddings)
 
     # Save arguments
     with open(os.path.join(args.output_dir, f"args-{fname}.json"), "w") as f:
@@ -110,7 +116,9 @@ if __name__ == "__main__":
     parser.add_argument("--llm_path", required=True, type=str, help="Path to a downloaded LLM")
     parser.add_argument("--data_path", required=True, type=str, help="Path to a jsonl file of questions")
     parser.add_argument("--output_dir", default=argparse.SUPPRESS, type=str, help="Path to the output directory")
+    parser.add_argument("--verbal", action="store_true", help="Whether the concept should start with a verb")
     parser.add_argument("--sent_path", type=str, default=argparse.SUPPRESS, help="Path to a SentenceTransformer")
+    parser.add_argument("--q_embeds", action="store_true", help="Whether to compute question embeddings")
     parser.add_argument("--batch_size", type=int, default=16, help="Number of questions to process in a batch")
     parser.add_argument("--num_beams", type=int, default=5, help="Number of beams employed in beam search")
     parser.add_argument("--length_penalty", type=float, default=-0.1, help="Length penalty for beam search")

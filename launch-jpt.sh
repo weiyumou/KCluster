@@ -12,12 +12,12 @@
 #SBATCH --mail-type=BEGIN,END,FAIL
 
 # Load modules
-module load python3.11-anaconda/2024.02 cuda/12.1.1 cudnn/12.1-v8.9.0
+module load python3.11-anaconda/2024.02 cuda/12.6.3 cudnn/12.6-v9.6.0
 module list
 
 # Run code
 source /sw/pkgs/arc/python3.11-anaconda/2024.02-1/etc/profile.d/conda.sh
-conda activate llm-new
+conda activate llm
 cd /gpfs/accounts/yumouwei_root/yumouwei0/yumouwei/KCluster/ || exit
 
 
