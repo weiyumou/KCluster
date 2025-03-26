@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import torch
 from sentence_transformers import SentenceTransformer
+from tqdm import tqdm
 from transformers.utils import logging
 
 from core.model import LargeLangModel, batched
@@ -26,7 +27,7 @@ def extract_concepts(llm: LargeLangModel, questions: list[Question],
         trailer = "whether the student understands the concept of"  # +noun phrase
 
     all_concepts = []
-    for batch in batched(questions, batch_size):
+    for batch in tqdm(batched(questions, batch_size), desc="Extracting concepts"):
         prompts = []
         for q in batch:
             q_type = q.q_type.lower().replace(SPACE, "-")
@@ -45,7 +46,7 @@ def extract_concepts(llm: LargeLangModel, questions: list[Question],
 @torch.inference_mode()
 def extract_question_embeds(llm: LargeLangModel, questions: list[Question], batch_size: int, **kwargs) -> torch.Tensor:
     all_embeddings = []
-    for batch in batched(questions, batch_size):
+    for batch in tqdm(batched(questions, batch_size), desc="Extracting question embeddings"):
         contexts = [f"{q.header(2)}\n" for q in batch]
         texts = [str(q) for q in batch]
         all_embeddings.append(llm.encode(texts, contexts, **kwargs))
@@ -66,8 +67,7 @@ def build_res_df(questions: list[Question], concepts: list[str]) -> pd.DataFrame
 
 def main(args):
     # Create a folder to store results
-    if not hasattr(args, "output_dir"):
-        args.output_dir = os.path.join("results", "concept", time.asctime())
+    args.output_dir = getattr(args, "output_dir", os.path.join("results", "concept", time.asctime()))
     args.output_dir = args.output_dir.replace(' ', '_').replace(':', '-')
     os.makedirs(args.output_dir, exist_ok=True)
 

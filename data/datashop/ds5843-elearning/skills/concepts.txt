@@ -1,0 +1,360 @@
+identify the cognitive process described in the passage
+identify the technique used to increase psychological engagement
+identify a technique to offset a lesson that involves too much essential processing
+identify the cognitive process supported by the review exercise
+identify the primary purpose of instructional methods designed to support integration of words and pictures
+identify the cognitive process that an arrow used to draw the eye to an important part of a graphic most directly supports
+identify the primary location of active learning processes
+identify the cognitive science principle that underlies the use of audio in e-lessons
+identify the cognitive science principle that underlies cognitive overload
+identify the reason why e-learning material with the pitfall “too much of a good thing” hurts learning
+calculate the number of paths in a design space
+identify the instructional principle that most specifically serves the function of improving memory
+identify an instructional principle that serves the function of improving induction
+identify an instructional principle that serves the function of improving sense-making
+differentiate between instructional choices in different contexts
+identify the best instructional choice for novice learners vs
+differentiate between immediate and delayed feedback
+identify the best instructional choice in a given context
+identify the correct cognitive process
+identify extraneous processing
+differentiate between essential and extraneous processing
+differentiate between learning and instruction
+identify an instructional principle that serves the function of improving memory
+identify the most valid statement based on media comparison research
+identify the primary purpose of an e-learning lesson
+identify the location of Goal setting in the Instructional Design Process diagram
+identify the location of Assessment Task Design in The BIG PICTURE diagram
+identify the component of the Instructional Design Process that is directly influenced by models and insights
+identify the component of the Instructional Design Process that is used to guide and justify the decisions for model building and insight creation
+identify the location of models and insights in the instructional design process
+identify the location of Intuition and Experience in the Instructional Design Process diagram
+identify the location of data in the instructional design process
+identify the correct starting point in backward design
+identify the correct answer among the given options
+identify the correct answer from the given options
+identify what belongs in 7 because it results from instructional design and is used to improve models
+identify the unique feature of e-Learning leveraged in Marcie's course
+identify the key factor in adaptive instruction
+identify the e-learning pitfall illustrated by the screen
+identify the e-learning pitfall illustrated in the screenshot
+identify the e-learning pitfall illustrated in the image
+recall the definition of the knowledge component in the KLI framework
+identify the correct statement regarding KLI's learning taxonomy
+identify the correct statement from the given options
+identify the best instructional principle for memory and fluency
+identify the best instructional principle for a lesson on math facts
+identify the best instructional principle for induction & refinement
+identify the best instructional principle for a specific lesson
+identify the best instructional principle for a lesson that focuses on understanding & sense-making
+identify the best instructional principle for a physics lesson on the concept of motion
+identify the type of CTA
+identify the correct combination of CTA approaches used for a Difficulty Factors Assessment
+identify other CTA techniques that use the same empirical approach as Difficulty Factors Assessment
+differentiate between qualitative and quantitative CTA
+differentiate between qualitative and quantitative CTA techniques
+identify the correct definition of an empirical qualitative CTA
+recall the main claim of the KLI dependency hypothesis
+identify the reason why blocking practice problems does not always yield better performance on a final test
+differentiate between fill-in-the-gaps problems and open-ended questions
+identify the correct answer
+identify the instructional method that leads to better learning
+identify the purpose of the visual
+identify the type of graphic that a screen capture is
+recall the multimedia principle
+identify the type of visual on the screen
+identify the most effective lesson version based on current evidence
+apply the multimedia principle
+identify the cognitive science principle that underlies the contiguity principle
+understand the concept of split attention
+recall the contiguity principle
+identify the best way to improve the screen above for learning
+identify the application of the contiguity principle in the given scenario
+identify how a CTA can be used to improve the application of the multimedia principle
+recall the purpose of the modality principle
+identify the cognitive science principle that the modality principle is based on
+understand the modality principle
+identify the cognitive science principle that underlies the redundancy principle
+identify which principle is violated by a visual described by on-screen text and audio narration of that text
+identify the principle of using audio narration rather than text to describe a demonstration of how to input a formula in Excel
+identify the correct application of the modality principle
+apply the modality principle
+apply the redundancy principle
+identify the redundancy principle
+identify how Cognitive Task Analysis (CTA) can be used to improve the application of the Coherence Principle
+recall the main idea of the paragraph
+identify the principle that supports the finding
+identify which screen version is more effective for learning
+identify which lesson edit applies the coherence principle
+apply the coherence principle
+identify a violation of the coherence principle
+identify which version of the visual is more effective for learning
+identify the correct application of the coherence principle
+understand the application of the segmenting principle
+apply the pretraining principle
+identify the principle that is being implemented in the given scenario
+identify the technique illustrated in the graphic
+identify the principle that recommends providing a continue button on each screen in asynchronous e-learning
+identify the feature in e-learning that enables the segmenting principle
+recall the segmenting principle
+identify the application of the segmenting principle
+identify the appropriate measurement for A/B testing
+correctly interpret the results of an A/B test
+recall the definition of experimental control
+identify the research plan that gives the most valid indication of whether learning is better when graphics are added
+identify a good example of an experimental comparison
+identify an important characteristic of a good experiment
+recall the redundancy principle
+identify an exception to the redundancy principle
+identify the type of graphic that best represents Boyle's Law
+identify which treatment is better for learning
+identify the argument against the learning styles view
+identify which statement is more valid
+differentiate between procedures
+identify a seductive detail in a multimedia lesson
+recall the results of the study
+predict which instructional method will better help text memory in the short term
+predict the outcome of an experiment
+identify the theory behind the observed results
+correctly interpret the results of the three kinds of assessments
+identify which Contextual Inquiry principle is best associated with the step involving data analysis and verification in Clark’s structured interview
+identify the contextual inquiry principle that is equivalent to using relationship models in Contextual Inquiry Design
+recall the knowledge taxonomy described in KLI
+identify the knowledge taxonomy described in KLI
+identify key features of a good experiment
+understand the concept of random assignment
+identify the better e-learning case for student learning
+identify the primary principle being applied in the e-learning example
+identify the principle that facilitates better learning
+identify which e-learning case is better for student learning
+recall and apply the concept of generative processing
+identify the primary principle being applied in the e-learning case
+identify which component of the Instructional Design Process is aligned with the first step in Clark’s structured interview CTA
+identify which component of the Instructional Design Process is aligned with applying focused knowledge elicitation methods
+identify which component of the Instructional Design Process is aligned with the step of analyzing and verifying data collected in Clark’s structured interview CTA
+identify which component of the Instructional Design Process is aligned with the last step in Clark’s structured interview CTA
+identify the component of the Instructional Design Process that aligns with the step described in the Feldon paper
+identify the component of the Instructional Design Process that aligns with the Feldon paper's step
+identify the correct component of the Instructional Design Process represented in the Big Picture diagram
+identify the best example of a far transfer task for low-knowledge learners
+understand the concept of varied context worked examples
+identify the teaching method used by Sanji
+identify the purpose of varied context worked examples
+identify the best learning from negotiation worked examples
+apply the varied context principle
+understand the concept of expertise reversal effect with worked examples
+recall the information from the paragraph
+identify a beneficial step for learning far transfer tasks
+identify the correct step for learning far transfer tasks
+understand the concept of generative and extraneous processing
+recall the definition of deliberate practice
+identify the missing element of deliberate practice
+recall the main finding of the paragraph
+identify the best practice schedule for long-term learning
+recall the concept of spacing effect
+identify the best feedback to a correct answer in a simulation
+identify the reason why practice exercises in a quiz show style may result in less transfer
+understand the importance of repetition in language learning
+understand the concept of blocked practice
+recall the key concept of the power law of practice
+identify the relationship between additional practice and performance improvement
+identify the correct explanation for the diminishing rate of skill improvement over multiple practice sessions
+identify the key difference between explanatory feedback and corrective feedback
+identify feedback that leads to better learning
+apply the research of Corbalan
+identify the best way to improve the feedback
+identify blocked practice
+differentiate between different types of feedback
+differentiate between different types of practice
+identify the type of feedback present in a submit and compare question
+identify the better e-learning case based on the given information
+understand the concept of generative processing
+understand the importance of designing activities that promote meaningful learning
+understand the importance of designing assessments that engage the learner
+understand the concept of the spacing effect
+identify the type of feedback present in a given example
+differentiate between explanatory and corrective feedback
+recall what they learned in the course
+recall the information from the lecture
+identify an example of an ineffective pairing of a KC with a learning process
+identify how the 3 learning metaphors -- response strengthening
+identify how the 3 learning metaphors align with KLI's 3 categories of learning processes
+identify the least effective combination of KC type and learning process
+identify the relationship between the complexity of instructional methods and the type of knowledge component
+identify why complex instructional methods are not relevant to simple kinds of knowledge component goals
+identify the next step in the process of building a control chart
+identify the technique used by Sanji
+identify the technique applied to accommodate expertise reversal
+recall the findings of the worked example research
+identify the appropriate learner control navigational options
+identify the negative impact of high learner control on learning
+identify when high learner control is recommended
+identify the navigation device that should be provided in asynchronous e-learning
+identify the delivery medium that is most likely to support high learner control
+identify a possible disadvantage of too much learner control
+identify the condition under which it is better for a learner to have control of their movement through a course
+identify the condition under which it is better for a program to control a learner’s movement through a course for the most learning to occur
+identify a reasonable procedure for fading worked examples
+understand the concept of faded worked examples
+identify a good reason for adding a self-explanation prompt to a worked example
+identify the better e-learning case
+understand the concept of near transfer in e-learning
+recall the results of experiment 2
+understand the concept of the redundancy effect
+differentiate between near and far transfer
+differentiate between two worked examples
+understand the concept of worked examples
+understand the concept of worked examples and problem solving
+understand the concept of the Worked Example Effect
+identify the type of practice the instructor is using
+differentiate between video lessons and asynchronous e-learning in terms of learner control
+understand the information provided in the paragraph
+understand the concept of the worked example effect
+recall the findings of Schoenfeld's study
+identify the primary goal of cognitive task analysis
+differentiate between games and traditional e-learning lessons
+identify an advantage of using educational games
+identify the advantage of providing immediate explanations or advice on errors in games
+identify which feedback message violates the application of personalization features in a game to encourage children to try again
+identify the violation of the pretraining principle
+understand the concept of value-added research
+identify the instructional feature that has maximum effect on novice students learning based on existing evidence
+identify a valid design for media comparison approach
+identify one of the characteristics of games that leads to high behavioral activity
+identify the methodology that provides the most certainty with respect to answering instructional design questions about which game features promote learning
+recall the rationale they chose and explained in the previous question
+accurately recall information from the paper
+identify the correct step in the phase of designing and administering a Difficulty Factors Assessment
+identify the step of designing & administering a DFA in the E-Learning Big Picture
+identify the correct part of the E-Learning Big Picture where analysis of results of a DFA occurs
+identify the difficulty in solving a problem
+identify the factor that shows little to no effect on student performance in the Heffernan paper
+differentiate between the KLI framework and cognitive neuroscience
+understand the main idea of the paragraph
+identify the motivation behind the KLI framework
+identify the primary focus of KLI and socio-cultural education research
+correctly identify whether the statement is true or false
+identify the focus of the KLI framework
+identify the purpose of the KLI framework
+identify the motivation of the KLI framework
+identify the appropriate empirical CTA based on the given description
+identify the correct location of designing and administering a DFA in the E-Learning Big Picture
+identify the correct difficulty factor to test
+recall the steps involved in designing and administering a Difficulty Factors Assessment
+identify the correct combinations of CTA approaches used for a Difficulty Factors Assessment
+identify the correct answer based on the information provided in the paragraph
+identify the recommended action when engaging in the partnership step of Contextual Inquiry (CI). The correct answer is option b
+identify the role of focus setting in Contextual Inquiry Design
+identify the correct step in the Contextual Inquiry process
+identify the main difference between the older and newer versions of Bloom’s taxonomy
+recall the main difference between the older and newer versions of Bloom’s taxonomy
+identify the difference between the older and newer versions of Bloom’s taxonomy
+re-write a goal using KLI
+identify a well-written goal using KLI
+identify the knowledge component of a learning goal
+understand and apply the concept of KLI
+identify a student centered objective with an observable outcome
+identify which learning objective is less ambiguous
+identify the issue with the learning objective
+identify the correct verb to use in a Learning Objective
+identify a measurable and observable learning objective
+differentiate between the CI and CTA methods
+identify which response is more likely to provide good data for cues and decision points in the process of debugging a code
+identify the correct step in the interpretation step of Contextual Inquire
+understand the factors that users consider when learning Spanish
+identify the most appropriate question to ask a technician during a think-aloud
+identify an intermediate step in the theoretical CTA
+identify the benefit of identifying intermediate steps or subgoals
+identify the benefits of intermediate steps in course design
+identify the correct objective for using a theoretical prescriptive CTA
+identify the correct objective for using a prescriptive think aloud
+identify the correct objective for using a theoretical descriptive CTA
+identify the incorrect step in the think aloud process
+correctly identify which production rules apply in a given problem
+identify the correct production rule for a given problem
+correctly interpret the verbal protocol in Table 1
+identify the reason why the design of the instructional materials facilitated the reflection -- "That is wrong" in line 10 in the verbal protocol in Table 1 of Zhu & Simon -- on the part of the student
+identify a key benefit of a think aloud study
+recall information from the paper
+recall the information from the paper
+recall the correct information from the paper
+recall the specific step mentioned in the paper
+identify the technique of Cognitive Task Analysis used in the paper
+apply the production rule correctly
+identify the best CTA technique for uncovering how a task should be completed
+identify the correct CTA technique for uncovering misconceptions
+identify the best CTA technique for determining instructional goals
+identify the purpose of think alouds of novices
+identify the prescriptive approach to cognitive task analysis
+identify an example of an empirical cognitive task analysis
+identify the type of CTA performed in the Feldon paper
+identify the type of CTA approach that focuses on experts’ knowledge and how a task should be performed
+identify the type of CTA approach that looks at how a task is performed and models errors
+identify the correct combination of CTA approaches
+identify the correct combination of CTA approaches for setting goals
+identify the best combination of CTA approaches for targeting misconceptions
+identify the correct initial and final stages for a theoretical cognitive task analysis (CTA) for a given domain task
+identify the type of knowledge component for which it would be best to use a descriptive think aloud
+identify the type of cognitive task analysis (CTA) method that is best suited for mapping the process of balancing a chemical equation
+identify different types of knowledge components
+identify the type of each knowledge component
+identify the type of knowledge component
+recall the main idea of the Koedinger et al
+correctly interpret the statement “students learn what they practice”
+identify the different ways in which an improved cognitive model can be used to redesign a tutor
+recall the name of a knowledge component that resulted from improving the previous cognitive model in the “Geometry Area (1996-97)” data set
+understand the limitations of the study
+identify the characteristics of a good learning curve
+identify which step is not used as part of the wash-rinse-repeat iteration
+differentiate between learning curve analysis and CTA
+identify the best CTA technique for uncovering how a task is actually performed
+identify an empirical qualitative CTA
+interpret the error rate learning curves from DataShop
+understand the concept of variance in error rate
+identify the correct type of CTA
+apply the assessment design strategy of aligning goals and assessments with KLI categorizations
+identify which assessment design strategy was applied to suggest the improve modify the below new assessment item below
+identify the step in the Instructional Design Process – BIG PICTURE diagram that maps to the LOGO image on debugging
+identify the step in the Instructional Design Process – BIG PICTURE diagram that maps to Klahr and Carver’s quote
+identify which step in the Instructional Design Process – BIG PICTURE diagram maps to finding which strategy was used to solve the problem
+identify the step in the Instructional Design Process that maps to the development of a debugging curriculum
+recall the definition of self-assessment
+identify a disadvantage of self-assessment
+differentiate between true and false statements
+recall information from the Feldon paper
+identify the benefits of CTA
+identify the valid criticisms for the study design used in the Feldon study
+identify an accurate criticism of the Feldon et al
+identify one of the four dimensions that determine the type of a knowledge component
+identify the principle according to the KLI framework
+differentiate between LEs
+identify an observable event
+differentiate between Instructional Events
+differentiate between knowledge components and assessment events
+differentiate between knowledge components and instructional events
+differentiate between knowledge components and learning events
+identify the correct statement
+identify the correct definition of Cognitive Task Analysis CTA
+identify the primary goal of CTA
+recall the definition of CTA
+identify the difference between the CTA results used to redesign instruction and the original instruction in the Feldon paper
+identify the correct statement regarding the CTA results used to redesign instruction
+understand the difference between traditional instruction and CTA-based instruction
+identify the kind of questions asked by the CTA interviewer in the Feldon paper
+identify the kind of question that the CTA interviewer asked the Experts in the Feldon paper
+identify the type of question asked by the CTA interviewer in the Feldon paper
+identify the correct application of focused knowledge elicitation methods
+identify the benefits of using cognitive task analysis (CTA) methods to improve instruction
+identify the step in the Instructional Design Process that maps to Klahr and Carver’s quote
+identify the step in the BIG PICTURE that corresponds with the image on the right
+identify the direct causal link between an IE and a learning event
+identify the hypothesis suggested by the KLI framework
+identify the motivation for the KLI framework
+identify the statement that is not supported by the KLI framework
+identify Bloom’s taxonomy
+identify a good objective according to ABCD method
+identify a bad objective according to ABCD method
+differentiate between instructor-centered and student-centered objectives
+identify a poorly defined learning objective
+identify the type of assessment that helps faculty recognize where students are struggling and address problems immediately
+identify the correct Bloom’s level for a given objective
