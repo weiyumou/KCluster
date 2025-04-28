@@ -42,6 +42,7 @@ def main(args):
     # Check all concepts are correctly filled
     [fname] = glob.glob("*-concept.csv", root_dir=args.concept_dir)
     concept_df = pd.read_csv(os.path.join(args.concept_dir, fname))
+
     assert concept_df["KC"].str.strip().all(), "Some concepts are invalid"
 
     # if kc_path is provided, adjust concept_df accordingly
