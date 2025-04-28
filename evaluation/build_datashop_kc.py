@@ -7,10 +7,11 @@ from collections import defaultdict
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
+from processing.elearning import create_datashop_kc
 from processing.util import KC_PAT
 
 
-def merge_student_step_with_kc(ss_path: str, kc_path: str,
+def merge_student_step_with_kc(ss_path: str, kc: str | pd.DataFrame,
                                minimal: bool = False, multiplier: int = 1) -> pd.DataFrame:
     """
     This function inserts (multiple) KC models contained in a DataShop KC template into a student-step file.
@@ -18,35 +19,38 @@ def merge_student_step_with_kc(ss_path: str, kc_path: str,
     If `minimal=False` and `multiplier=1`, it inserts KC models into a DataShop student-step file similar to what DataShop does.
     KC template -> Student Step -> Student Step with duplicate columns
     :param ss_path: Path to a student-step file
-    :param kc_path: Path to a filled KC template
+    :param kc: Either a path to a filled KC template or a DataFrame containing KC models
     :param minimal: Whether to retain the essential columns only
     :param multiplier: Duplicate the KC columns by `multiplier` times
     :return: A student-step file with KC models inserted, ready for evaluation
     """
     minimal_cols = ["Anon Student Id", "Problem Hierarchy",
-                    "Problem Name", "Step Name", "First Transaction Time", "First Attempt"]
+                    "Problem Name", "Step Name", "First Transaction Time", "First Attempt"]  # required columns
+    key_cols = ["Problem Hierarchy", "Problem Name", "Step Name"]  # primary-key columns
 
     # Identify all KC models
-    kc = pd.read_csv(kc_path, sep="\t").dropna(axis="columns", how="all")
-    kc_cols = kc.set_index(["Problem Name", "Step Name"]).filter(regex=KC_PAT)
+    if isinstance(kc, str):
+        kc = pd.read_csv(kc, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+    assert isinstance(kc, pd.DataFrame), "Incorrect type for 'kc'"
+    kc["Problem Hierarchy"] = kc["Problem Hierarchy"].str.replace("(", "").str.replace(")", "")
+    kc_cols = kc.set_index(key_cols).filter(regex=KC_PAT)
     kc_names = [re.match(KC_PAT, col).group("name") for col in kc_cols.columns]
     if minimal:  # Transcribe KC labels to minimize file size
-        for col in kc_cols.columns:
-            mask = kc_cols[col].notnull()
-            kc_cols.loc[mask, col] = [f"KC-{lbl}" for lbl in LabelEncoder().fit_transform(kc_cols.loc[mask, col])]
+        for col in kc_cols:
+            mask = kc_cols[col].isna()
+            kc_cols[col] = [f"KC-{lbl}" for lbl in LabelEncoder().fit_transform(kc_cols[col])]
+            kc_cols.loc[mask, col] = None
 
     # Load student-step data
     ss = pd.read_csv(ss_path, sep="\t", dtype={"Anon Student Id": str}, usecols=minimal_cols)
+    ss["Problem Hierarchy"] = ss["Problem Hierarchy"].str.replace("(", "").str.replace(")", "")
 
     # Merge KCs into student-step
-    ss = pd.merge(ss, kc_cols, how="left", on=["Problem Name", "Step Name"])
+    ss = pd.merge(ss, kc_cols, how="left", on=key_cols, validate="many_to_one")
 
-    # Adjust columns to minimize file size
-    if minimal:
-        # Empty nonessential columns
-        ss["Problem Hierarchy"] = None
-        # Transcribe columns
+    if minimal:  # Transcribe columns to minimize file size
         ss["Anon Student Id"] = [f"ST-{lbl}" for lbl in LabelEncoder().fit_transform(ss["Anon Student Id"])]
+        ss["Problem Hierarchy"] = [f"PH-{lbl}" for lbl in LabelEncoder().fit_transform(ss["Problem Hierarchy"])]
         ss["Problem Name"] = [f"PN-{lbl}" for lbl in LabelEncoder().fit_transform(ss["Problem Name"])]
         ss["Step Name"] = [f"SN-{lbl}" for lbl in LabelEncoder().fit_transform(ss["Step Name"])]
 
@@ -78,45 +82,33 @@ def merge_student_step_with_kc(ss_path: str, kc_path: str,
 
 
 def main(args):
-    match args.dataset:
-        case "elearning":
-            from processing.elearning import create_datashop_kc
-        case "spacing":
-            from processing.spacing import create_datashop_kc
-        case _:
-            raise ValueError("Unknown dataset")
-
-    output_dir = {
-        "elearning": "data/datashop/ds5426-elearning",
-        "spacing": "data/datashop/ds6160-spacing",
-    }
-
     # Add KCs to the template
     kc_temp = args.kc_temp
-    kc_dir = os.path.join("results/concept/", args.dataset, "kc")
-    for fname in glob.iglob("*.csv", root_dir=kc_dir):
+    for fname in glob.iglob("*.csv", root_dir=args.kc_dir):
         new_kc_name = re.match(r".+?(?=-kc)", os.path.splitext(fname)[0]).group(0)
         print(f"*** Adding KC '{new_kc_name}' to the template ***")
-        kc = os.path.join(kc_dir, fname)
-        kc_temp = create_datashop_kc(kc_temp, kc, args.step_kc, new_kc_name)
+        kc = os.path.join(args.kc_dir, fname)
+        kc_temp = create_datashop_kc(kc, kc_temp, args.step_kc, new_kc_name, args.year)
 
     # Save the template
-    kc_path = os.path.join(output_dir[args.dataset], "all-kc.txt")
+    kc_path = os.path.join(args.kc_dir, "all-kc.txt")
     kc_temp.to_csv(kc_path, sep="\t", index=False)
 
     # Merge KCs into student step (for cross-validation) if a path is present
     if ss_path := getattr(args, "ss_path", None):
         multiplier = getattr(args, "multiplier", 1)
         print("*** Merging KCs with student steps ***")
-        ss = merge_student_step_with_kc(ss_path, kc_path, minimal=True, multiplier=multiplier)
+        ss = merge_student_step_with_kc(ss_path, kc_temp, minimal=True, multiplier=multiplier)
         ss.to_csv(f"{os.path.splitext(kc_path)[0]}-merged.txt", sep="\t", index=False)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--dataset", required=True, type=str, choices=("elearning", "spacing"))
+    parser.add_argument("--kc_dir", required=True, type=str, help="Path to a directory containing non-DataShop KCs")
     parser.add_argument("--kc_temp", required=True, type=str, help="Path to a DataShop KC template file")
     parser.add_argument("--step_kc", required=True, type=str, help="Path to a DataShop step-KC file")
+    parser.add_argument("--year", required=True, type=str,
+                        choices=("2022", "2023"), help="The year of the E-learning dataset to use")
     parser.add_argument("--ss_path", default=argparse.SUPPRESS, type=str, help="Path to a DataShop student-step file")
     parser.add_argument("--multiplier", default=argparse.SUPPRESS, type=int,
                         help="Number of times to duplicate each KC model for cross-validation")

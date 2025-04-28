@@ -1,5 +1,7 @@
+import random
 import re
 from collections import defaultdict
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -8,44 +10,6 @@ from sklearn import metrics
 from sklearn.preprocessing import LabelEncoder
 
 KC_PAT = r"KC \((?P<name>.+?)(-\d+)?\)"
-
-
-def adjust_existing_kc(kc: pd.DataFrame, prob_mask: pd.Series, step_kc_path: str,
-                       old_to_new_kc: dict = None, new_kc_suffix: str = "new") -> pd.DataFrame:
-    """
-    Adjust existing KC models based on available problems
-    :param kc: a pd.DataFrame containing KC models
-    :param prob_mask: A binary mask with 1 indicating unavailable problems
-    :param step_kc_path: A path to a (system-generated) unique-step KC model,
-            e.g., "data/datashop/ds6160-spacing/unique-step.txt"
-    :param old_to_new_kc: A mapping between old and new KC names
-    :param new_kc_suffix: If `old_to_new_kc` is not provided, extend old KC names by `new_kc_suffix`
-    :return: A modified KC model as a DataFrame
-    """
-    # Extract existing KC models
-    kc_names = [re.match(KC_PAT, col).group("name") for col in kc.filter(regex=KC_PAT).columns]
-
-    # Adjust old-to-new KC mappings
-    old_to_new_kc = old_to_new_kc or {}
-    old_to_new_kc = {f"KC ({key})": f"KC ({val})" for key, val in old_to_new_kc.items()}
-    default_mapping = {f"KC ({kcm})": f"KC ({kcm.replace(' ', '-')}-{new_kc_suffix})" for kcm in kc_names}
-    old_to_new_kc = default_mapping | old_to_new_kc
-
-    # Load the unique-step KC model
-    step_kc = pd.read_csv(step_kc_path, sep="\t").dropna(axis="columns", how="all")
-    step_mask = ~step_kc["KC (Unique-step)"].str.strip().apply(bool)
-
-    # Empty any cells where the problem name is not found in available questions
-    mask = prob_mask | step_mask
-    kc.loc[mask, [f"KC ({kcm})" for kcm in kc_names]] = None
-
-    # Strip out the extraneous period for LO
-    if (lo_kc := "KC (LO)") in kc:
-        kc[lo_kc] = kc[lo_kc].str.rstrip(".")
-
-    # Rename the new KC model
-    kc = kc.rename(columns=old_to_new_kc)
-    return kc
 
 
 def read_cv_results(res_path: str, num_cv_runs: int = 10) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -91,7 +55,7 @@ def read_cv_results(res_path: str, num_cv_runs: int = 10) -> tuple[pd.DataFrame,
     return res_table, pub_table
 
 
-def compute_clustering_metrics(true_kcs: list[str], pred_kcs: list[str]) -> dict[str, float]:
+def compute_clustering_metrics(true_kcs: Sequence[str], pred_kcs: Sequence[str]) -> dict[str, float]:
     """https://scikit-learn.org/stable/modules/clustering.html#clustering-performance-evaluation"""
     true_kcs = LabelEncoder().fit_transform(true_kcs)
     pred_kcs = LabelEncoder().fit_transform(pred_kcs)
@@ -108,25 +72,52 @@ def compute_clustering_metrics(true_kcs: list[str], pred_kcs: list[str]) -> dict
     }
 
 
-def eval_datashop_kc(kc_temp: str | pd.DataFrame, true_kcm: str) -> pd.DataFrame:
+def eval_datashop_kc(kc_temp: str | pd.DataFrame, true_kcm: str, random_kc: bool = False, **kwargs) -> pd.DataFrame:
     """
     Evaluate a Datashop KC model against the "ground truth".
     :param kc_temp:
         Either a path to a DataShop KC template file that contain multiple KC models,
         e.g., "data/datashop/ds5426-elearning/ds5426_kcm.txt", or a pd.DataFrame of such
     :param true_kcm: Name of the 'ground-truth' KC model
+    :param random_kc: Whether to compare with a random KC model
     :return: A dictionary containing the results of evaluation
     """
     if isinstance(kc_temp, str):
-        kc_temp = pd.read_csv(kc_temp, sep="\t").dropna(axis="columns", how="all")
+        kc_temp = pd.read_csv(kc_temp, sep="\t", na_values=" ").dropna(axis="columns", how="all")
     assert isinstance(kc_temp, pd.DataFrame), "Incorrect type for 'kc_temp'"
 
     results = dict()
-    kc_names = [re.match(KC_PAT, col).group("name") for col in kc_temp.filter(regex=KC_PAT).columns]
+    kc_names = [re.match(KC_PAT, col).group("name") for col in kc_temp.filter(regex=KC_PAT)]
     for pred_kcm in kc_names:
-        mask = kc_temp[f"KC ({pred_kcm})"].str.strip().apply(bool)
-        true_kcs = kc_temp.loc[mask, f"KC ({true_kcm})"]
-        pred_kcs = kc_temp.loc[mask, f"KC ({pred_kcm})"]
-        results[pred_kcm] = compute_clustering_metrics(true_kcs, pred_kcs)
+        mask = kc_temp[f"KC ({pred_kcm})"].notna()
+        true_kcs = kc_temp.loc[mask, f"KC ({true_kcm})"].to_list()
+        pred_kcs = kc_temp.loc[mask, f"KC ({pred_kcm})"].to_list()
+        num_kcs = kc_temp[f"KC ({pred_kcm})"].nunique(dropna=True)
+        results[f"{pred_kcm} ({num_kcs} KCs)"] = compute_clustering_metrics(true_kcs, pred_kcs)
+
+        if random_kc:
+            results[f"{pred_kcm}-rand ({num_kcs} KCs)"] = evaluate_random_kc(true_kcs, pred_kcs, **kwargs)
 
     return pd.DataFrame.from_dict(results, orient="index")
+
+
+def evaluate_random_kc(true_kcs: Sequence[str], pred_kcs: Sequence[str],
+                       num_runs: int = 30, seed: int = 42) -> dict[str, float]:
+    """
+    This function evaluates the alignment between a ground-truth KC model and a random KC model
+    :param true_kcs: A list of KC labels in the ground-truth KC model
+    :param pred_kcs: A list of KC labels that will be random shuffled
+    :param num_runs: Number of simulations to run
+    :param seed: Random seed for reproducibility
+    :return: A dictionary containing the results of evaluation
+    """
+    rng = random.Random(seed)
+    results = dict()
+    for _ in range(num_runs):
+        random_kcs = rng.sample(pred_kcs, k=len(pred_kcs))
+        for m, v in compute_clustering_metrics(true_kcs, random_kcs).items():
+            results.setdefault(m, []).append(v)
+
+    for m in results:
+        results[m] = np.mean(results[m])
+    return results

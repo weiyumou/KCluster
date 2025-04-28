@@ -7,7 +7,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 
 from core.question import Question
-from processing.util import adjust_existing_kc
+from processing.util import KC_PAT
 
 
 def parse_mcq(data_path: str) -> list[dict]:
@@ -137,69 +137,120 @@ def write_mcqs(root_dir: str, out_dir: str, temp_path: str = None):
     pd.DataFrame.from_records(q_dicts).to_csv(os.path.join(out_dir, "elearning-mcq.csv"), index=False)
 
 
-def convert_existing_kc(data_path: str, kc_path: str, step_kc_path: str,
-                        save_to_file: bool = False, **kwargs) -> pd.DataFrame:
+def get_step_name(kc_temp: str | pd.DataFrame, year: str, filter_by_kc: bool = False) -> pd.Series:
+    if isinstance(kc_temp, str):
+        kc_temp = pd.read_csv(kc_temp, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+    assert isinstance(kc_temp, pd.DataFrame), "Incorrect type for 'kc_temp'"
+
+    match year:
+        case "2022":
+            step_name = kc_temp["Step Name"].apply(lambda x: x.split(" ")[0])
+        case "2023":
+            step_name = kc_temp["Step Name"].apply(lambda x: re.search(r"(?<=part ).+", x).group(0).split()[0])
+        case _:
+            raise ValueError(f"Unknown year {year}")
+
+    kc_mask = kc_temp.filter(regex=KC_PAT).isna().any(axis=1)
+    return step_name[~kc_mask] if filter_by_kc else step_name
+
+
+def convert_existing_kc(data_path: str, kc_path: str, step_kc_path: str, year: str,
+                        save_to_file: bool = False, old_to_new_kc: dict = None,
+                        new_kc_suffix: str = "new") -> pd.DataFrame:
     """
     Modify and save existing KC models according to available questions
     :param data_path: A path to a jsonl file containing questions, e.g., "data/elearning/elearning-mcq.jsonl"
     :param kc_path: A path to a (filled) DataShop KC template file, e.g., "data/datashop/ds5426-elearning/LOs.txt"
     :param step_kc_path: A path to a (system-generated) unique-step KC model,
         e.g., "data/datashop/ds5426-elearning/unique-step.txt"
+    :param year: Specify which year of the dataset to use
     :param save_to_file: Whether to save the new KC models to a file
+    :param old_to_new_kc: A mapping between old and new KC names
+    :param new_kc_suffix: If `old_to_new_kc` is not provided, extend old KC names by `new_kc_suffix`
     :return: A modified KC model as a DataFrame
     """
-    # Load questions and collect problem ids
+    # Load the existing KC model and identify the KC mask
+    kc = pd.read_csv(kc_path, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+    kc_mask = kc.filter(regex=KC_PAT).isna().any(axis=1)
+    # Extract existing KC models
+    kc_names = [re.match(KC_PAT, col).group("name") for col in kc.filter(regex=KC_PAT).columns]
+
+    # Load questions and identify the problem mask
     with open(data_path, "r") as f:
-        q_dicts = [eval(line) for line in f]
-    prob_ids = set(itertools.chain.from_iterable(item["step-name"] for item in q_dicts))
+        questions = [Question(eval(line)) for line in f]
+    match year:
+        case "2022":
+            prob_ids = set(itertools.chain.from_iterable(q["step-name"] for q in questions))
+        case "2023":
+            prob_ids = set(x.split("_")[-1] for x in itertools.chain.from_iterable(q["step-name"] for q in questions))
+        case _:
+            raise ValueError(f"Unknown year '{year}'")
+    prob_mask = get_step_name(kc, year).apply(lambda x: x not in prob_ids)
 
-    # Load the existing KC model
-    kc = pd.read_csv(kc_path, sep="\t").dropna(axis="columns", how="all")
-    prob_mask = kc["Step Name"].apply(lambda x: x.split(" ")[0]).apply(lambda x: x not in prob_ids)
+    # Load the unique-step KC model
+    step_kc = pd.read_csv(step_kc_path, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+    step_mask = step_kc["KC (Unique-step)"].isna()
 
-    kc = adjust_existing_kc(kc, prob_mask, step_kc_path, **kwargs)
+    # Empty any cells where the problem name is not found in available questions
+    mask = kc_mask | prob_mask | step_mask
+    kc.loc[mask, [f"KC ({kcm})" for kcm in kc_names]] = None
+
+    # Adjust old-to-new KC mappings
+    old_to_new_kc = old_to_new_kc or {}
+    old_to_new_kc = {f"KC ({key})": f"KC ({val})" for key, val in old_to_new_kc.items()}
+    default_mapping = {f"KC ({kcm})": f"KC ({kcm.replace(' ', '-')}-{new_kc_suffix})" for kcm in kc_names}
+    old_to_new_kc = default_mapping | old_to_new_kc
+
+    # Rename and save KC models
+    kc = kc.rename(columns=old_to_new_kc)
     if save_to_file:
         kc.to_csv(f"{os.path.splitext(kc_path)[0]}-new.txt", sep="\t", index=False)
     return kc
 
 
-def create_datashop_kc(kc_temp: str | pd.DataFrame, kc: str | pd.DataFrame,
-                       step_kc_path: str, new_kc_name: str) -> pd.DataFrame:
+def get_step_to_kc(kc: pd.DataFrame, year: str) -> dict[str, str]:
+    steps, labels = [], []
+    for step, label in kc[["step-name", "KC"]].itertuples(index=False):
+        step = step.split("~")
+        steps.extend(step)
+        labels.extend([label] * len(step))
+    if year == "2023":
+        steps = [s.split("_")[-1] for s in steps]
+    return dict(zip(steps, labels))
+
+
+def create_datashop_kc(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
+                       step_kc_path: str, new_kc_name: str, year: str) -> pd.DataFrame:
     """
     Populate a custom Datashop KC model
+    :param kc: Either a path to a human-readable KC model or a pd.DataFrame of such
     :param kc_temp: Either a path to DataShop KC template file,
             e.g., "data/datashop/ds5426-elearning/kc_temp.txt",
             or a pd.DataFrame of a loaded template
-    :param kc: Either a path to a human-readable KC model or a pd.DataFrame of such
     :param step_kc_path: A path to a (system-generated) unique-step KC model,
             e.g., "data/datashop/ds5426-elearning/unique-step.txt"
     :param new_kc_name: The name given to the new KC model, e.g., "KCluster"
+    :param year: Specify which year of the dataset to use
     :return: The new DataShop KC model as a DataFrame
     """
-    # Load KC template
-    if isinstance(kc_temp, str):
-        kc_temp = pd.read_csv(kc_temp, sep="\t").dropna(axis="columns", how="all")
-    assert isinstance(kc_temp, pd.DataFrame), "Incorrect type for 'kc_temp'"
-
     # Load KC model
     if isinstance(kc, str):
         kc = pd.read_csv(kc)
     assert isinstance(kc, pd.DataFrame), "Incorrect type for 'kc'"
 
-    # Load the unique-step KC model
-    step_kc = pd.read_csv(step_kc_path, sep="\t").dropna(axis="columns", how="all")
-    step_mask = ~step_kc["KC (Unique-step)"].str.strip().apply(bool)
+    # Load KC template
+    if isinstance(kc_temp, str):
+        kc_temp = pd.read_csv(kc_temp, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+    assert isinstance(kc_temp, pd.DataFrame), "Incorrect type for 'kc_temp'"
+    filter_by_kc = (kc_temp.filter(regex=KC_PAT).shape[1] != 0)
 
-    # Extract step:KC mappings
-    steps, labels = [], []
-    for step, label in zip(kc["step-name"], kc["KC"]):
-        step = step.split("~")
-        steps.extend(step)
-        labels.extend([label] * len(step))
+    # Load the unique-step KC model
+    step_kc = pd.read_csv(step_kc_path, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+    step_mask = step_kc["KC (Unique-step)"].isna()
 
     # Fill in KC
-    step_to_kc = dict(zip(steps, labels))
-    kc_temp[f"KC ({new_kc_name})"] = kc_temp["Step Name"].apply(lambda x: x.split(" ")[0]).apply(step_to_kc.get)
+    step_to_kc = get_step_to_kc(kc, year)
+    kc_temp[f"KC ({new_kc_name})"] = get_step_name(kc_temp, year, filter_by_kc).apply(step_to_kc.get)
     kc_temp.loc[step_mask, f"KC ({new_kc_name})"] = None
 
     return kc_temp

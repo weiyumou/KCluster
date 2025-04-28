@@ -1,10 +1,12 @@
+import glob
 import json
 import os
+import re
 from collections import Counter
 
 import pandas as pd
 
-from processing.util import compute_clustering_metrics
+from processing.util import compute_clustering_metrics, evaluate_random_kc
 
 
 def write_questions(data_path: str, output_dir: str, min_choice_cnt: int = 2, min_skill_cnt: int = 100):
@@ -46,6 +48,16 @@ def write_questions(data_path: str, output_dir: str, min_choice_cnt: int = 2, mi
     print(f"Wrote {len(sel_questions)} questions to {output_path}")
 
 
-def evaluate_kc(kc_path: str, true_kc: str = "skill"):
-    kc = pd.read_csv(kc_path)
-    return compute_clustering_metrics(kc[true_kc], kc["kc"])
+def evaluate_kc(kc_dir: str, true_kc: str = "skill", random_kc: bool = False, **kwargs) -> pd.DataFrame:
+    metrics = dict()
+    for fname in glob.iglob("*.csv", root_dir=kc_dir):
+        kc = pd.read_csv(os.path.join(kc_dir, fname))
+        kc_name = re.match(r".+?(?=-kc)", os.path.splitext(fname)[0]).group(0)
+        true_kcs, pred_kcs = kc[true_kc].to_list(), kc["KC"].to_list()
+        metrics[f"{kc_name} ({kc['KC'].nunique()} KCs)"] = compute_clustering_metrics(true_kcs, pred_kcs)
+
+        # Create random KCs as baseline
+        if random_kc:
+            metrics[f"{kc_name}-rand ({kc['KC'].nunique()} KCs)"] = evaluate_random_kc(true_kcs, pred_kcs, **kwargs)
+
+    return pd.DataFrame.from_dict(metrics, orient="index")

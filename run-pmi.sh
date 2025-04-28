@@ -26,16 +26,12 @@ export PYTORCH_CUDA_ALLOC_CONF=garbage_collection_threshold:0.6,max_split_size_m
 TIME="$(date)"
 LLM_PATH="/home/yumouwei/turbo/llm/phi-2"
 
-# spacing
-DATA_PATH="data/spacing/spacing-all.jsonl"
-BATCH_SZ=128
+# elearning
+DATA_PATH="data/elearning/elearning-mcq.jsonl"
+BATCH_SZ=96
 
 # sciqa
 DATA_PATH="data/sciqa/sciqa-skill-10.jsonl"
-BATCH_SZ=96
-
-# elearning
-DATA_PATH="data/elearning/elearning-mcq.jsonl"
 BATCH_SZ=96
 
 srun python -m experiments.run_pmi --llm_path "$LLM_PATH" --data_path "$DATA_PATH" \
