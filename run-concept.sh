@@ -40,4 +40,5 @@ BATCH_SZ=16
 
 python -m experiments.run_concept --llm_path "$LLM_PATH" --data_path "$DATA_PATH" \
                                   --sent_path "$SENT_PATH" --q_embeds \
-                                  --batch_size "$BATCH_SZ" --num_beams 5 --length_penalty -0.1
+                                  --batch_size "$BATCH_SZ" --num_beams 5 --length_penalty -0.1 \
+                                  --pad_to_multiple_of 8

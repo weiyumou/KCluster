@@ -43,8 +43,7 @@ def main(args):
     tokenizer = LargeLangModel.load_tokenizer(args.llm_path)
 
     # Load model
-    model = PMI(args.llm_path, trust_remote_code=True,
-                torch_dtype=torch.float16, attn_implementation="flash_attention_2")
+    model = PMI(args.llm_path, trust_remote_code=True, torch_dtype=torch.float16)
 
     # Compute PMI
     ds = PairQuestion(args.data_path)
@@ -57,7 +56,7 @@ def main(args):
 
     # Save arguments
     fname = os.path.splitext(os.path.basename(args.data_path))[0]
-    with open(os.path.join(args.output_dir, f"args-{fname}.json"), "w") as f:
+    with open(os.path.join(args.output_dir, f"args-pmi-{fname}.json"), "w") as f:
         json.dump(vars(args), f, indent=2)
 
 

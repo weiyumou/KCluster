@@ -72,8 +72,7 @@ def main(args):
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Load an LLM
-    llm = LargeLangModel(args.llm_path, trust_remote_code=True,
-                         torch_dtype=torch.float16, attn_implementation="flash_attention_2")
+    llm = LargeLangModel(args.llm_path, trust_remote_code=True, torch_dtype=torch.float16)
 
     # Read all questions
     with open(args.data_path, "r") as f:
@@ -81,7 +80,7 @@ def main(args):
 
     # Extract concepts
     concepts = extract_concepts(llm, questions, args.batch_size, verbal=args.verbal,
-                                do_sample=False, pad_to_multiple_of=8,
+                                do_sample=False, pad_to_multiple_of=args.pad_to_multiple_of,
                                 num_beams=args.num_beams, length_penalty=args.length_penalty)
 
     # Save results
@@ -105,7 +104,7 @@ def main(args):
         np.save(os.path.join(args.output_dir, f"{fname}-question-embeds.npy"), embeddings)
 
     # Save arguments
-    with open(os.path.join(args.output_dir, f"args-{fname}.json"), "w") as f:
+    with open(os.path.join(args.output_dir, f"args-concept-{fname}.json"), "w") as f:
         json.dump(vars(args), f, indent=2)
 
 
@@ -122,6 +121,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=16, help="Number of questions to process in a batch")
     parser.add_argument("--num_beams", type=int, default=5, help="Number of beams employed in beam search")
     parser.add_argument("--length_penalty", type=float, default=-0.1, help="Length penalty for beam search")
+    parser.add_argument("--pad_to_multiple_of", type=int, default=None, help="Pad to multiple of")
 
     cl_args = parser.parse_args()
     main(cl_args)
