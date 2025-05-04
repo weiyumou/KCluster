@@ -48,9 +48,9 @@ class CustomWriter(BasePredictionWriter):
 
 
 class PointwiseMutualInfo:
-    def __init__(self, pmi_dir: str, nrows: int, ncols: int,
-                 normalize: bool = False, symmetric: bool = True):
-        self._vec, self._mat = self.load_probs(pmi_dir, nrows, ncols)
+    def __init__(self, pmi_dir: str, nrows: int, ncols: int, cond_on_dim: int = 0,
+                 normalize: bool = False, symmetric: bool = True, dtype: torch.dtype = torch.float16):
+        self._vec, self._mat = self.load_probs(pmi_dir, nrows, ncols, cond_on_dim, dtype)
         self._normalize, self._symmetric = normalize, symmetric
 
     @cached_property
@@ -72,30 +72,35 @@ class PointwiseMutualInfo:
         return mat.T  # so that each (i, k) entry represents log P(i | k) - log P(i), if not symmetric
 
     @staticmethod
-    def load_probs(pmi_dir: str, nrows: int, ncols: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def load_probs(pmi_dir: str, nrows: int, ncols: int,
+                   cond_on_dim: int = 0, dtype: torch.dtype = torch.float16) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Load conditional and marginal log-probabilities from a result folder
         :param pmi_dir: A path to saved log-probability data produced by 'run_pmi.py'
         :param nrows: The number of conditioning items
         :param ncols: The number of conditioned items
+        :param cond_on_dim: The index of the conditioning dimension; set cond_on_dim=1 to load legacy values
+        :param dtype: The data type of the loaded tensors
         :return: A Tuple consisting of
          - a `ncols` vector of marginal log-probabilities
          - a `nrows x ncols` conditional-log-probability matrix
         """
         # Prepare an empty matrix of the appropriate size to fill in
-        mtx = torch.full((nrows * ncols + ncols,), torch.inf)
+        mtx = torch.full((nrows * ncols + ncols,), torch.inf, dtype=dtype)
 
         # Load data from all available files
         rank = 0
         while os.path.exists(fname := os.path.join(pmi_dir, f"batch_indices_{rank}.pt")):
-            batch_inds = torch.load(fname)[0]
+            [batch_inds] = torch.load(fname)
             predictions = torch.load(os.path.join(pmi_dir, f"predictions_{rank}.pt"))
             for inds, preds in zip(batch_inds, predictions, strict=True):
                 mtx[inds] = preds
             rank += 1
-        assert torch.isinf(mtx).sum() == 0, "Number of questions doesn't match the save value"
+        assert torch.isinf(mtx).sum() == 0, "The size of the matrix does not match what is saved"
 
         mtx = mtx.reshape(-1, ncols).float()
         # first row is the marginals; second row and below is the conditionals
         marginals, conds = mtx[0], mtx[1:]
+        if cond_on_dim == 1:  # keep dim 0 as the conditioning dimension
+            conds = conds.T
         return marginals, conds

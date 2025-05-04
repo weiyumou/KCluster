@@ -3,12 +3,12 @@
 #SBATCH --job-name=pmi
 #SBATCH --account=yumouwei0
 #SBATCH --partition=spgpu
-#SBATCH --time=5-00:00:00
-#SBATCH --gres=gpu:4
+#SBATCH --time=1-00:00:00
+#SBATCH --gres=gpu:2
 #SBATCH --gpu_cmode=exclusive
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
-#SBATCH --cpus-per-task=2
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=2gb
 #SBATCH --mail-type=BEGIN,END,FAIL
 
@@ -32,11 +32,11 @@ BATCH_SZ=80
 
 # elearning-22
 DATA_PATH="data/elearning/elearning22-mcq.jsonl"
-BATCH_SZ=80
+BATCH_SZ=40
 
 # elearning-23
 DATA_PATH="data/elearning/elearning23-mcq.jsonl"
-BATCH_SZ=80
+BATCH_SZ=40
 
 
 srun python -m experiments.run_pmi --llm_path "$LLM_PATH" --data_path "$DATA_PATH" \
