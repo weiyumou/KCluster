@@ -272,6 +272,17 @@ def adjust_datashop_kc(data_path: str, kc_path: str, step_kc_path: str, save_to_
     return kc
 
 
+def get_step_to_kc(kc: pd.DataFrame) -> dict[str, str]:
+    """Create a dictionary mapping step names to KC labels"""
+    steps, labels = [], []
+    for step, label in kc[["ds-step-name", "KC"]].itertuples(index=False):
+        step = step.split("~")
+        steps.extend(step)
+        labels.extend([label] * len(step))
+    step_to_kc = dict(zip(steps, labels, strict=True))
+    return step_to_kc
+
+
 def create_datashop_kc(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
                        step_kc_path: str, new_kc_name: str,
                        match_other_kc: bool = True, drop_other_kc: bool = True) -> pd.DataFrame:
@@ -312,13 +323,7 @@ def create_datashop_kc(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
     step_mask = step_kc["KC (Unique-step)"].isna()
 
     # Fill in KC
-    steps, labels = [], []
-    for step, label in kc[["ds-step-name", "KC"]].itertuples(index=False):
-        step = step.split("~")
-        steps.extend(step)
-        labels.extend([label] * len(step))
-    step_to_kc = dict(zip(steps, labels, strict=True))
-
+    step_to_kc = get_step_to_kc(kc)
     kc_temp[f"KC ({new_kc_name})"] = kc_temp["Step Name"].map(step_to_kc)
     kc_temp.loc[kc_mask | step_mask, f"KC ({new_kc_name})"] = None
 
