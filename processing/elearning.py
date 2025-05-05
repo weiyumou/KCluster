@@ -1,5 +1,7 @@
+import copy
 import glob
 import itertools
+import json
 import os
 import re
 
@@ -78,12 +80,11 @@ def parse_mcq(data_path: str) -> list[dict]:
     return questions
 
 
-def parse_all_mcqs(root_dir: str, temp_path: str = None) -> list[Question]:
+def parse_all_mcqs(root_dir: str) -> list[Question]:
     """
-    Parse all unique MCQs from a root directory, with optional reference to a KC model file
+    Parse all unique MCQs from a root directory
     :param root_dir: A path to downloaded HTML files,
     e.g., "Downloads/_E-Learning_Design_Principles_and_Methods__v_4_2/e_learning_dp-4.2_27gtpdr5/Course_Syllabus"
-    :param temp_path: An optional path to a KC model file, e.g., "data/datashop/ds5426-elearning/kc_temp.txt"
     :return: A list of unique Questions
     """
     all_questions = []
@@ -94,13 +95,7 @@ def parse_all_mcqs(root_dir: str, temp_path: str = None) -> list[Question]:
     # Remove duplicates
     all_questions = list({repr(q): q for q in all_questions}.values())
 
-    # If path to a KC template is provided, retain only MCQs in the template
-    if temp_path:
-        kc_temp = pd.read_csv(temp_path, sep="\t")
-        step_names = set(kc_temp["Step Name"].apply(lambda x: x.split(" ")[0]))
-        all_questions = [q for q in all_questions if q["step-name"] in step_names]
-
-    # Fold MCQs with identical content into one
+    # Fold MCQs with identical content into one MCQ
     uniques = dict()
     for idx, q in enumerate(all_questions):
         skillref = q.pop("skillref", "")
@@ -115,26 +110,101 @@ def parse_all_mcqs(root_dir: str, temp_path: str = None) -> list[Question]:
     return list(uniques.values())
 
 
-def write_mcqs(root_dir: str, out_dir: str, temp_path: str = None):
+def load_datashop_temp(path: str) -> pd.DataFrame:
+    """Load KC models from a DataShop template file"""
+    return pd.read_csv(path, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+
+
+def write_elearning22_mcqs(root_dir: str, out_dir: str, temp_path: str):
     """
-    Extract MCQs from 'root_dir' and write them to 'out_dir'
+    Extract MCQs from the E-learning 2022 dataset and write them to a JSON file
     :param root_dir: A path to downloaded HTML files,
     e.g., "Downloads/_E-Learning_Design_Principles_and_Methods__v_4_2/e_learning_dp-4.2_27gtpdr5/Course_Syllabus"
     :param out_dir: A path to an output dir, e.g., data/elearning/
-    :param temp_path: An optional path to a KC model file, e.g., "data/datashop/ds5426-elearning/kc_temp.txt"
+    :param temp_path: A path to a KC model file, e.g., "data/datashop/ds5426-elearning/ds5426_kcm.txt"
     :return: None
     """
-    mcqs = parse_all_mcqs(root_dir, temp_path)
+    # Load the KC template
+    kc_temp = load_datashop_temp(temp_path)
+    kc_mask = kc_temp.filter(regex=KC_PAT).notna().all(axis=1)
+
+    raw_step_names = list(kc_temp.loc[kc_mask, "Step Name"].unique())
+    step_names = [x.split(" ")[0] for x in raw_step_names]
+
+    # Create a mapping between step names and raw step names
+    step_dict = dict()
+    for step, raw_step in zip(step_names, raw_step_names, strict=True):
+        step_dict.setdefault(step, []).append(raw_step)
+
+    # Parse all MCQs
+    all_questions = parse_all_mcqs(root_dir)
+
+    # Filter out questions that are not in the template
+    elearning22 = []
+    for q in all_questions:
+        mask = [step in step_dict for step in q["step-name"]]
+        if sum(mask) > 0:
+            qc = copy.deepcopy(q)
+            qc["skillref"] = list(itertools.compress(q["skillref"], mask))
+            qc["step-name"] = list(itertools.compress(q["step-name"], mask))
+
+            qc["ds-step-name"] = []
+            for s in qc["step-name"]:
+                qc["ds-step-name"].extend(step_dict[s])
+            elearning22.append(qc)
 
     # Write MCQs to a JSON file for program readability
-    out_path = os.path.join(out_dir, "elearning-mcq.jsonl")
+    out_path = os.path.join(out_dir, "elearning22-mcq.jsonl")
     with open(out_path, "w") as f:
-        f.write("\n".join([repr(q) for q in mcqs]))
-    print(f"Wrote {len(mcqs)} questions to {out_path}")
+        for q in elearning22:
+            f.write(json.dumps(q.data) + "\n")
+    print(f"Wrote {len(elearning22)} questions to {out_path}")
 
-    # Write MCQs to a CSV file for human readability
-    q_dicts = [q.flat_dict for q in mcqs]
-    pd.DataFrame.from_records(q_dicts).to_csv(os.path.join(out_dir, "elearning-mcq.csv"), index=False)
+
+def write_elearning23_mcqs(root_dir: str, out_dir: str, temp_path: str):
+    """
+    Extract MCQs from the E-learning 2023 dataset and write them to a JSON file
+    :param root_dir: A path to downloaded HTML files,
+    e.g., "Downloads/_E-Learning_Design_Principles_and_Methods__v_4_2/e_learning_dp-4.2_27gtpdr5/Course_Syllabus"
+    :param out_dir: A path to an output dir, e.g., data/elearning/
+    :param temp_path: A path to a KC model file, e.g., "data/datashop/ds5843-elearning/ds5843_kcm.txt"
+    :return: None
+    """
+    # Load the KC template
+    kc_temp = load_datashop_temp(temp_path)
+    kc_mask = kc_temp.filter(regex=KC_PAT).notna().all(axis=1)
+
+    raw_step_names = list(kc_temp.loc[kc_mask, "Step Name"].unique())
+    step_names = [re.search(r"(?<=part ).+", x).group(0).split()[0] for x in raw_step_names]
+
+    # Create a mapping between step names and raw step names
+    step_dict = dict()
+    for step, raw_step in zip(step_names, raw_step_names, strict=True):
+        step_dict.setdefault(step, []).append(raw_step)
+
+    # Parse all MCQs
+    all_questions = parse_all_mcqs(root_dir)
+
+    # Filter out questions that are not in the template
+    elearning23 = []
+    for q in all_questions:
+        mask = [step.split("_")[-1] in step_dict for step in q["step-name"]]
+        if sum(mask) > 0:
+            qc = copy.deepcopy(q)
+            qc["skillref"] = list(itertools.compress(q["skillref"], mask))
+            qc["step-name"] = list(itertools.compress(q["step-name"], mask))
+
+            qc["ds-step-name"] = []
+            for s in qc["step-name"]:
+                qc["ds-step-name"].extend(step_dict[s.split("_")[-1]])
+            elearning23.append(qc)
+
+    # Write MCQs to a JSON file for program readability
+    out_path = os.path.join(out_dir, "elearning23-mcq.jsonl")
+    with open(out_path, "w") as f:
+        for q in elearning23:
+            f.write(json.dumps(q.data) + "\n")
+    print(f"Wrote {len(elearning23)} questions to {out_path}")
 
 
 def get_step_name(kc_temp: str | pd.DataFrame, year: str, filter_by_kc: bool = False) -> pd.Series:
@@ -154,41 +224,35 @@ def get_step_name(kc_temp: str | pd.DataFrame, year: str, filter_by_kc: bool = F
     return step_name[~kc_mask] if filter_by_kc else step_name
 
 
-def convert_existing_kc(data_path: str, kc_path: str, step_kc_path: str, year: str,
-                        save_to_file: bool = False, old_to_new_kc: dict = None,
-                        new_kc_suffix: str = "new") -> pd.DataFrame:
+def adjust_datashop_kc(data_path: str, kc_path: str, step_kc_path: str, save_to_file: bool = False,
+                       old_to_new_kc: dict = None, new_kc_suffix: str = "new") -> pd.DataFrame:
     """
-    Modify and save existing KC models according to available questions
-    :param data_path: A path to a jsonl file containing questions, e.g., "data/elearning/elearning-mcq.jsonl"
-    :param kc_path: A path to a (filled) DataShop KC template file, e.g., "data/datashop/ds5426-elearning/LOs.txt"
+    Adjust existing DataShop KC models according to available questions
+    :param data_path: A path to a jsonl file containing questions, e.g., "data/elearning/elearning22-mcq.jsonl"
+    :param kc_path: A path to a (filled) DataShop KC template file, e.g., "data/datashop/ds5426-elearning/ds5426_kcm.txt"
     :param step_kc_path: A path to a (system-generated) unique-step KC model,
         e.g., "data/datashop/ds5426-elearning/unique-step.txt"
-    :param year: Specify which year of the dataset to use
     :param save_to_file: Whether to save the new KC models to a file
     :param old_to_new_kc: A mapping between old and new KC names
     :param new_kc_suffix: If `old_to_new_kc` is not provided, extend old KC names by `new_kc_suffix`
     :return: A modified KC model as a DataFrame
     """
     # Load the existing KC model and identify the KC mask
-    kc = pd.read_csv(kc_path, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+    kc = load_datashop_temp(kc_path)
     kc_mask = kc.filter(regex=KC_PAT).isna().any(axis=1)
+
     # Extract existing KC models
     kc_names = [re.match(KC_PAT, col).group("name") for col in kc.filter(regex=KC_PAT).columns]
 
     # Load questions and identify the problem mask
     with open(data_path, "r") as f:
         questions = [Question(eval(line)) for line in f]
-    match year:
-        case "2022":
-            prob_ids = set(itertools.chain.from_iterable(q["step-name"] for q in questions))
-        case "2023":
-            prob_ids = set(x.split("_")[-1] for x in itertools.chain.from_iterable(q["step-name"] for q in questions))
-        case _:
-            raise ValueError(f"Unknown year '{year}'")
-    prob_mask = get_step_name(kc, year).apply(lambda x: x not in prob_ids)
+
+    ds_step_names = set(itertools.chain.from_iterable(q["ds-step-name"] for q in questions))
+    prob_mask = ~kc["Step Name"].isin(ds_step_names)
 
     # Load the unique-step KC model
-    step_kc = pd.read_csv(step_kc_path, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+    step_kc = load_datashop_temp(step_kc_path)
     step_mask = step_kc["KC (Unique-step)"].isna()
 
     # Empty any cells where the problem name is not found in available questions
@@ -202,25 +266,26 @@ def convert_existing_kc(data_path: str, kc_path: str, step_kc_path: str, year: s
     old_to_new_kc = default_mapping | old_to_new_kc
 
     # Rename and save KC models
-    kc = kc.rename(columns=old_to_new_kc)
+    kc.rename(columns=old_to_new_kc, inplace=True)
     if save_to_file:
         kc.to_csv(f"{os.path.splitext(kc_path)[0]}-new.txt", sep="\t", index=False)
     return kc
 
 
-def get_step_to_kc(kc: pd.DataFrame, year: str) -> dict[str, str]:
+def get_step_to_kc(kc: pd.DataFrame) -> dict[str, str]:
+    """Create a dictionary mapping step names to KC labels"""
     steps, labels = [], []
-    for step, label in kc[["step-name", "KC"]].itertuples(index=False):
+    for step, label in kc[["ds-step-name", "KC"]].itertuples(index=False):
         step = step.split("~")
         steps.extend(step)
         labels.extend([label] * len(step))
-    if year == "2023":
-        steps = [s.split("_")[-1] for s in steps]
-    return dict(zip(steps, labels))
+    step_to_kc = dict(zip(steps, labels, strict=True))
+    return step_to_kc
 
 
 def create_datashop_kc(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
-                       step_kc_path: str, new_kc_name: str, year: str) -> pd.DataFrame:
+                       step_kc_path: str, new_kc_name: str,
+                       match_other_kc: bool = True, drop_other_kc: bool = True) -> pd.DataFrame:
     """
     Populate a custom Datashop KC model
     :param kc: Either a path to a human-readable KC model or a pd.DataFrame of such
@@ -230,7 +295,9 @@ def create_datashop_kc(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
     :param step_kc_path: A path to a (system-generated) unique-step KC model,
             e.g., "data/datashop/ds5426-elearning/unique-step.txt"
     :param new_kc_name: The name given to the new KC model, e.g., "KCluster"
-    :param year: Specify which year of the dataset to use
+    :param match_other_kc: Whether to match other KC models in the template;
+            if True, the new KC model will not map to steps that are not mapped by other KC models
+    :param drop_other_kc: Whether to drop other KC models in the template
     :return: The new DataShop KC model as a DataFrame
     """
     # Load KC model
@@ -240,17 +307,24 @@ def create_datashop_kc(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
 
     # Load KC template
     if isinstance(kc_temp, str):
-        kc_temp = pd.read_csv(kc_temp, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+        kc_temp = load_datashop_temp(kc_temp)
     assert isinstance(kc_temp, pd.DataFrame), "Incorrect type for 'kc_temp'"
-    filter_by_kc = (kc_temp.filter(regex=KC_PAT).shape[1] != 0)
+
+    kc_mask = False
+    if match_other_kc:
+        kc_mask = kc_temp.filter(regex=KC_PAT).isna().any(axis=1)  # match other KC models if any
+
+    if drop_other_kc:
+        kc_cols = kc_temp.filter(regex=KC_PAT).columns
+        kc_temp.drop(columns=kc_cols, inplace=True)  # drop other KC models if any
 
     # Load the unique-step KC model
-    step_kc = pd.read_csv(step_kc_path, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+    step_kc = load_datashop_temp(step_kc_path)
     step_mask = step_kc["KC (Unique-step)"].isna()
 
     # Fill in KC
-    step_to_kc = get_step_to_kc(kc, year)
-    kc_temp[f"KC ({new_kc_name})"] = get_step_name(kc_temp, year, filter_by_kc).apply(step_to_kc.get)
-    kc_temp.loc[step_mask, f"KC ({new_kc_name})"] = None
+    step_to_kc = get_step_to_kc(kc)
+    kc_temp[f"KC ({new_kc_name})"] = kc_temp["Step Name"].map(step_to_kc)
+    kc_temp.loc[kc_mask | step_mask, f"KC ({new_kc_name})"] = None
 
     return kc_temp

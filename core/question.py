@@ -45,4 +45,6 @@ class Question(UserDict):
         return f"{self.header(q_num)}\n{self.body}\n{self.trailer}"
 
     def __str__(self) -> str:
-        return f"{self.body}\n{self.trailer}{self.SPACE}{self.answer}" if self.answer else self.body
+        if self.answer:
+            return f"{self.body}\n{self.trailer}{self.SPACE}{self.answer}"
+        return self.body

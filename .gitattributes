@@ -1,0 +1,2 @@
+data/datashop/ds5426-elearning/ds5426_ss.txt filter=lfs diff=lfs merge=lfs -text
+data/datashop/ds5843-elearning/ds5843_ss.txt filter=lfs diff=lfs merge=lfs -text

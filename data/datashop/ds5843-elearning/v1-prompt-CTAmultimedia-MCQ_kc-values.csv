@@ -1,0 +1,76 @@
+,KC Name,Number of Unique Steps,Number of Observations,Intercept (logit) at Opportunity 1,Intercept (probability) at Opportunity 1,Slope
+0,1.1 Recall elements of the course big picture diagram,45,947,1.64168653,0.837764293,0.0
+1,"1.2 Classify kinds of e-learning based on learning goals: inform, perform procedure or perform principle",7,268,1.451042839,0.810158876,0.0
+2,1.3 Evaluate research evidence on media comparisons,3,113,2.148059168,0.895487274,0.0
+3,"1.4 Identify the good, bad, & ugly of e-learning: Promises & pitfalls",18,394,0.828604609,0.696059801,0.007458546
+4,10.1 Explain how student interactions in an e-learning system can be used to perform Cognitive Task Analysis,5,380,0.118112211,0.529493773,0.150409631
+5,10.2 Recognize the features of a good learning curve,7,435,1.968069628,0.877403621,0.01294587
+6,10.3 Use learning curves to do Cognitive Task Analysis,20,763,0.610097948,0.647963145,0.047236989
+7,10.7 Evaluate and redesign based from CTA and data mining,37,869,0.451923511,0.611096468,0.043542713
+8,11.1 Explain which learning processes are needed for which kinds of knowledge,23,783,0.87503337,0.705791957,0.067040011
+9,"11.2 Given an instructional principle, explain what learning process(es) it facilitates",18,537,0.654617132,0.658050167,0.083109909
+10,"11.3 Given a learning objective, identify the associated kind(s) of Knowledge & Learning needed to select appropriate Instructional principles",4,331,-0.14715885,0.463276536,0.393119745
+11,12.1 Explain how deliberate practice is different from the general idea of practice,8,393,0.29249283,0.572606309,0.204989294
+12,12.2 Apply evidence on how much practice to include,14,657,0.553563127,0.634961868,0.081801593
+13,12.3 Apply evidence on what kind of practice is best and how to distribute it,41,1946,-0.041994339,0.489502958,0.040975003
+14,12.4 Apply evidence on what kind of feedback is best,16,712,0.812618654,0.692667243,0.079972082
+15,12.5 Apply evidence on how to layout practice exercises,4,168,0.099898264,0.524953817,0.057460656
+16,13.1 Design a faded worked example,14,451,0.390261297,0.5963456,0.177594866
+17,13.2 Add self-explanation questions,11,317,1.466797214,0.81257009,0.234414578
+18,13.3 Use variation & comparison to design for far transfer learning,30,888,0.644208728,0.655704229,0.052546909
+19,13.4 Apply evidence on when & how to transition from examples to practice,15,558,0.954037255,0.721926377,0.024002835
+20,13.5 Provide structure for inexperienced learners,21,350,0.114366844,0.528560587,0.131227335
+21,13.6 Make practice the default,9,204,-0.335502192,0.41690246,0.851874923
+22,13.7 Give pacing control to learner,10,265,1.280016225,0.782452538,0.185283929
+23,13.8 Articulate reasons pro and con learner control,10,313,1.073662411,0.745292781,0.383663692
+24,14.5 Base lessons on cognitive task analysis,6,303,1.26337128,0.779605909,0.058141018
+25,14.6 Explain how games are different from the general idea of practice,7,377,0.637265377,0.654135034,0.11962454
+26,14.7 Describe features demonstrated in value-added research to increase the instructional effectiveness of computer games,22,816,0.744091339,0.677889871,0.022843007
+27,14.8 Explain and apply value-added and media comparison experimental research designs,4,367,0.153263653,0.538241086,0.200175696
+28,15.1 Describe the multimedia principle and why it is effective for learning,18,705,0.300646084,0.57460045,0.076967513
+29,15.2 Recognize when the multimedia principle has been violated and when it has been applied well,15,614,0.27145183,0.567449292,0.066309163
+30,15.3 Describe the contiguity principle and why it is effective for learning,9,413,0.631146294,0.652749335,0.128211784
+31,15.4 Recognize when the contiguity principle has been violated and when it has been applied well,12,292,0.292448,0.572595338,0.323010851
+32,15.5 Describe how CTA can be used to improve the application of the Multimedia principle,3,272,0.495950942,0.621507317,0.251350762
+33,16.1 Describe the modality principle and why it is effective for learning,19,366,1.29902875,0.785671478,0.081300369
+34,16.2 Recognize when the modality principle has been violated and when it has been applied well,18,785,0.628973005,0.652256558,0.078209835
+35,16.3 Describe the redundancy principle and why it is effective for learning,24,401,0.382550842,0.594488187,0.05416478
+36,16.4 Recognize when the redundancy principle has been violated and when it has been applied well,17,444,1.253816384,0.777959796,0.042640419
+37,17.2 Recognize when the coherence principle has been violated and when it has been applied well,27,658,0.477872264,0.617245315,0.075356868
+38,17.4 Recognize when the personalization and embodiment principles have been violated and when they have been applied well,11,465,0.991869079,0.729456942,0.184738372
+39,17.5 Describe how CTA can be used to improve the application of the Coherence principle,5,358,0.465837071,0.614397975,0.170063074
+40,18.1 Recognize when the segmenting principle has been violated and when it has been applied well,12,427,0.923559031,0.715766728,0.175537664
+41,18.2 Recognize when the pretraining principle has been violated and when it has been applied well,12,489,0.918601369,0.714757039,0.090710326
+42,18.3 Describe how CTA can be used to improve the application of the pretraining principles,3,135,-0.196270719,0.451089232,0.914786492
+43,18.4 Describe how CTA can be used to improve the application of the segmenting principles,4,296,0.618238947,0.649817919,0.322027863
+44,19.1 Identify the characteristics of a good experiment,28,728,1.098635145,0.750004286,0.06978572
+45,"19.2 Explain why optimizing near term performance (e.g., through better UX design) does not guarantee optimal learning",20,554,1.165949591,0.762412105,0.045995525
+46,19.4 Design a learning experiment (or A/B test) to evaluate whether one e-learning design is better than a close alternative,13,389,1.749642023,0.851907645,0.055529057
+47,2.1 Distinguish learning vs. instruction,2,125,0.831575057,0.696687864,0.129574435
+48,2.2 4 key learning events/principles,9,479,1.32554584,0.79010291,0.066462013
+49,2.3 3 learning principles & processes,9,546,1.68721714,0.843857836,0.041324725
+50,2.4 Distinguish 3 forms of cognitive processing/load during learning,15,624,0.811646119,0.692460171,0.058176958
+51,2.5 Explain why instructional design is complex because optimal instructional choices change depending on content,30,755,-0.059880062,0.485034456,0.062993516
+52,"20.1 Define Instructional goals, KCs, learning processes",11,309,-0.164772663,0.458899782,0.267077058
+53,20.2 Explain the interrelationships between KCs and the ?est? corresponding learning process,3,133,0.689010029,0.665746667,0.0
+54,20.4 Use KLI to choose instructional principles that match the desired KCs and learning processes,21,618,0.520090295,0.62716888,0.075079199
+55,"3.1 Explain backward design and the interrelationships between goals, assessment, and instruction",15,610,-0.16888796,0.457878083,0.054007713
+56,3.2 Map elements of Bloom? taxonomy to examples,11,454,0.584398842,0.642078951,0.091239245
+57,3.3 Categorize knowledge components (KCs) along (four) dimensions,24,715,1.202435475,0.768957758,0.033142328
+58,"3.4 Explain differences between KLI? Knowledge Components, Learning Events, Instructional Events, Assessment Events",33,1036,1.07572909,0.745684903,0.028227638
+59,3.5 Identify key hypotheses of the KLI framework,26,631,0.486071072,0.619180442,0.023863497
+60,"4.1 Evaluate and improve goals using KLI, Bloom? taxonomy, and ABCD",68,1660,0.43530439,0.607139594,0.028097066
+61,4.2 Compare the purpose of formative and summative assessments,1,43,1.21022611,0.770338954,0.636149131
+62,4.3 Recognize the value and limitations of self-assessment,20,459,1.053416636,0.741430447,0.110208017
+63,5.1 Explain why ?f-then? production rules are a good way to express the output (model & insights) of a Cognitive Task Analysis,70,1283,0.231097604,0.557518641,0.033273137
+64,5.2 Explain and exemplify how Cognitive Task Analysis can be used to identify learning goals,69,1445,-0.057787113,0.485557241,0.027941674
+65,6.1 Evaluate and modify assessment questions based on KLI and Bloom? taxonomy,6,408,0.512697045,0.625438512,0.186514454
+66,7.1 Explain the importance of focus setting in Contextual Inquiry and preparation in Clark? structured interview approach to CTA,8,393,-0.105951012,0.473536998,0.121728117
+67,7.2 Compare and contrast the interview process of CTA via structured interviews with Contextual Inquiry,18,694,0.117144601,0.529252705,0.059104682
+68,7.3 Use structured interviews (Cognitive Task Analysis) and contextual inquiry to identify course goals,15,532,0.891401618,0.709179333,0.054758716
+69,"8.1 Distinguish between four kinds of CTA (theoretical vs. empirical, descriptive vs. prescriptive)",36,985,0.572154402,0.639260143,0.037764603
+70,8.2 Use think aloud as a CTA technique,69,1333,0.215187727,0.553590296,0.043164014
+71,8.5 Apply theoretical CTA to a task domain,28,1329,-0.135226749,0.466244735,0.028458048
+72,8.6 Compare and contrast think aloud and theoretical CTA with other CTA methods,20,750,0.343035503,0.584927694,0.04017259
+73,9.1 Perform & explain the steps in a Difficulty Factors Assessment (DFA),25,973,-0.206977662,0.448439523,0.040918015
+74,9.5 Compare and contrast Difficulty Factors with prior CTA techniques,37,1047,0.552916662,0.634812014,0.040843459

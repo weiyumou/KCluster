@@ -2,12 +2,13 @@ import argparse
 import glob
 import os
 import re
+import time
 from collections import defaultdict
 
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
-from processing.elearning import create_datashop_kc
+from processing.elearning import create_datashop_kc, load_datashop_temp
 from processing.util import KC_PAT
 
 
@@ -30,8 +31,9 @@ def merge_student_step_with_kc(ss_path: str, kc: str | pd.DataFrame,
 
     # Identify all KC models
     if isinstance(kc, str):
-        kc = pd.read_csv(kc, sep="\t", na_values=" ").dropna(axis="columns", how="all")
+        kc = load_datashop_temp(kc)
     assert isinstance(kc, pd.DataFrame), "Incorrect type for 'kc'"
+
     kc["Problem Hierarchy"] = kc["Problem Hierarchy"].str.replace("(", "").str.replace(")", "")
     kc_cols = kc.set_index(key_cols).filter(regex=KC_PAT)
     kc_names = [re.match(KC_PAT, col).group("name") for col in kc_cols.columns]
@@ -39,7 +41,7 @@ def merge_student_step_with_kc(ss_path: str, kc: str | pd.DataFrame,
         for col in kc_cols:
             mask = kc_cols[col].isna()
             kc_cols[col] = [f"KC-{lbl}" for lbl in LabelEncoder().fit_transform(kc_cols[col])]
-            kc_cols.loc[mask, col] = None
+            kc_cols.loc[mask, col] = None  # Keep the NaN values as they were
 
     # Load student-step data
     ss = pd.read_csv(ss_path, sep="\t", dtype={"Anon Student Id": str}, usecols=minimal_cols)
@@ -82,24 +84,30 @@ def merge_student_step_with_kc(ss_path: str, kc: str | pd.DataFrame,
 
 
 def main(args):
+    output_dir = os.path.join(args.kc_dir, time.asctime()).replace(' ', '_').replace(':', '-')
+    os.makedirs(output_dir, exist_ok=False)
+
     # Add KCs to the template
     kc_temp = args.kc_temp
-    for fname in glob.iglob("*.csv", root_dir=args.kc_dir):
+    for fname in glob.iglob("*-kc.csv", root_dir=args.kc_dir):
         new_kc_name = re.match(r".+?(?=-kc)", os.path.splitext(fname)[0]).group(0)
         print(f"*** Adding KC '{new_kc_name}' to the template ***")
         kc = os.path.join(args.kc_dir, fname)
-        kc_temp = create_datashop_kc(kc, kc_temp, args.step_kc, new_kc_name, args.year)
+        kc_temp = create_datashop_kc(kc, kc_temp, args.step_kc, new_kc_name,
+                                     match_other_kc=True, drop_other_kc=False)
 
     # Save the template
-    kc_path = os.path.join(args.kc_dir, "all-kc.txt")
+    kc_path = os.path.join(output_dir, "all-kc.txt")
     kc_temp.to_csv(kc_path, sep="\t", index=False)
 
     # Merge KCs into student step (for cross-validation) if a path is present
     if ss_path := getattr(args, "ss_path", None):
         multiplier = getattr(args, "multiplier", 1)
+        minimal = getattr(args, "minimal", False)
         print("*** Merging KCs with student steps ***")
-        ss = merge_student_step_with_kc(ss_path, kc_temp, minimal=True, multiplier=multiplier)
-        ss.to_csv(f"{os.path.splitext(kc_path)[0]}-merged.txt", sep="\t", index=False)
+        ss = merge_student_step_with_kc(ss_path, kc_temp, minimal=minimal, multiplier=multiplier)
+        fname = f"ss-merged-minimal={minimal}-multiplier={multiplier}.txt"
+        ss.to_csv(os.path.join(output_dir, fname), sep="\t", index=False)
 
 
 if __name__ == "__main__":
@@ -107,9 +115,9 @@ if __name__ == "__main__":
     parser.add_argument("--kc_dir", required=True, type=str, help="Path to a directory containing non-DataShop KCs")
     parser.add_argument("--kc_temp", required=True, type=str, help="Path to a DataShop KC template file")
     parser.add_argument("--step_kc", required=True, type=str, help="Path to a DataShop step-KC file")
-    parser.add_argument("--year", required=True, type=str,
-                        choices=("2022", "2023"), help="The year of the E-learning dataset to use")
     parser.add_argument("--ss_path", default=argparse.SUPPRESS, type=str, help="Path to a DataShop student-step file")
+    parser.add_argument("--minimal", default=argparse.SUPPRESS, action="store_true",
+                        help="Whether to minimize the merged student-step file")
     parser.add_argument("--multiplier", default=argparse.SUPPRESS, type=int,
                         help="Number of times to duplicate each KC model for cross-validation")
 

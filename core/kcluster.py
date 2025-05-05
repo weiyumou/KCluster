@@ -2,15 +2,14 @@ import glob
 import itertools
 import json
 import os
-from functools import cached_property
 from typing import Callable
 
 import numpy as np
 import pandas as pd
-import torch
 from sklearn.cluster import affinity_propagation
 from sklearn.metrics import pairwise_distances
 
+from core.pmi import PointwiseMutualInfo
 from core.question import Question
 
 
@@ -24,72 +23,25 @@ class Embedding:
         return -pairwise_distances(self.embeds, metric=metric)
 
 
-class PointwiseMutualInfo:
-    def __init__(self, pmi_dir: str, num_questions: int, normalize: bool = True):
-        self._vec, self._mat = self.load_probs(pmi_dir, num_questions)
-        self._normalize = normalize
-
-    @cached_property
-    def marginals(self) -> torch.Tensor:
-        # normalize the marginals
-        return torch.log_softmax(self._vec, dim=-1) if self._normalize else self._vec
-
-    @cached_property
-    def conditionals(self) -> torch.Tensor:
-        # use PMI to re-calculate conditionals
-        return self.pmi_mat + self.marginals.unsqueeze(-1)
-
-    @cached_property
-    def pmi_mat(self) -> torch.Tensor:
-        mat = torch.log_softmax(self._mat, dim=0) if self._normalize else self._mat
-        mat = mat - self.marginals.unsqueeze(-1)
-        mat = (mat + mat.T) / 2  # make symmetric
-        return mat
-
-    @staticmethod
-    def load_probs(pmi_dir: str, num_questions: int) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        Load conditional and marginal log-probabilities from a result folder
-        :param pmi_dir: A path to saved log-probability data produced by 'run_pmi.py'
-        :param num_questions: The number of questions
-        :return: A Tuple consisting of
-         - a `num_qs` vector of marginal log-probabilities
-         - a `num_qs x num_qs` conditional-log-probability matrix
-        """
-        # Prepare an empty matrix of the appropriate size to fill in
-        mtx = torch.full((num_questions ** 2 + num_questions,), torch.inf)
-
-        # Load data from all available files
-        rank = 0
-        while os.path.exists(fname := os.path.join(pmi_dir, f"batch_indices_{rank}.pt")):
-            batch_inds = torch.load(fname)[0]
-            predictions = torch.load(os.path.join(pmi_dir, f"predictions_{rank}.pt"))
-            for inds, preds in zip(batch_inds, predictions, strict=True):
-                mtx[inds] = preds
-            rank += 1
-        assert torch.isinf(mtx).sum() == 0, "Number of questions doesn't match the save value"
-
-        mtx = mtx.reshape(-1, num_questions)
-        marginals = mtx[0]  # first row is the marginals
-        conds = mtx[1:]  # second row and below is the conditionals
-        return marginals, conds
-
-
 class KCluster:
-    def __init__(self, sim_dir: str, metric: str = "pmi", embed_type: str = "question", normalize_pmi: bool = True):
+    def __init__(self, sim_dir: str, metric: str = "pmi", embed_type: str = "question", **pmi_kwargs):
         assert metric in ("cosine", "euclidean", "pmi"), f"Unknown similarity type: {metric}"
         assert embed_type in ("question", "concept"), f"Unknown embedding type: {embed_type}"
 
         # Load questions
         self.questions = self.load_questions(sim_dir)
+        num_questions = len(self.questions)
 
         # Determine the similarity matrix
         if metric == "pmi":
-            pmi = PointwiseMutualInfo(sim_dir, len(self.questions), normalize_pmi)
+            [fname] = glob.glob(f"args*.json", root_dir=sim_dir)
+            with open(os.path.join(sim_dir, fname), "r") as f:
+                cond_on_dim = json.load(f).get("cond_on_dim", 0)
+            pmi = PointwiseMutualInfo(sim_dir, num_questions, num_questions, cond_on_dim, **pmi_kwargs)
             self.sim_mtx = pmi.pmi_mat.cpu().numpy()
         else:
             [fname] = glob.glob(f"*-{embed_type}-embeds.npy", root_dir=sim_dir)
-            embed = Embedding(os.path.join(sim_dir, fname), len(self.questions))
+            embed = Embedding(os.path.join(sim_dir, fname), num_questions)
             self.sim_mtx = embed.sim_mtx(metric)
 
     @staticmethod
