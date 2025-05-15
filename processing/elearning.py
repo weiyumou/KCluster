@@ -207,23 +207,6 @@ def write_elearning23_mcqs(root_dir: str, out_dir: str, temp_path: str):
     print(f"Wrote {len(elearning23)} questions to {out_path}")
 
 
-def get_step_name(kc_temp: str | pd.DataFrame, year: str, filter_by_kc: bool = False) -> pd.Series:
-    if isinstance(kc_temp, str):
-        kc_temp = pd.read_csv(kc_temp, sep="\t", na_values=" ").dropna(axis="columns", how="all")
-    assert isinstance(kc_temp, pd.DataFrame), "Incorrect type for 'kc_temp'"
-
-    match year:
-        case "2022":
-            step_name = kc_temp["Step Name"].apply(lambda x: x.split(" ")[0])
-        case "2023":
-            step_name = kc_temp["Step Name"].apply(lambda x: re.search(r"(?<=part ).+", x).group(0).split()[0])
-        case _:
-            raise ValueError(f"Unknown year {year}")
-
-    kc_mask = kc_temp.filter(regex=KC_PAT).isna().any(axis=1)
-    return step_name[~kc_mask] if filter_by_kc else step_name
-
-
 def adjust_datashop_kc(data_path: str, kc_path: str, step_kc_path: str, save_to_file: bool = False,
                        old_to_new_kc: dict = None, new_kc_suffix: str = "new") -> pd.DataFrame:
     """
