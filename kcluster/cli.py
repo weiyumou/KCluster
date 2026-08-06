@@ -21,6 +21,10 @@ COMMANDS = [
      "Compute pairwise question congruity (PMI) between questions"),
     ("build-kc", "kcluster.commands.build_kc",
      "Build KC models from extracted concepts and PMI values"),
+    ("build-datashop-kc", "kcluster.commands.build_datashop_kc",
+     "Insert KC models into a DataShop KC template / student-step file"),
+    ("refine-datashop-kc", "kcluster.commands.refine_datashop_kc",
+     "Refine a DataShop KC model by splitting poorly-fitting KCs"),
 ]
 
 _MODULES = {name: module for name, module, _ in COMMANDS}

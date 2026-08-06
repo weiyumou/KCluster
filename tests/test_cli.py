@@ -6,7 +6,7 @@ from kcluster.cli import main
 def test_help_lists_all_commands(capsys):
     main(["--help"])
     out = capsys.readouterr().out
-    for command in ("concept", "pmi", "build-kc"):
+    for command in ("concept", "pmi", "build-kc", "build-datashop-kc", "refine-datashop-kc"):
         assert command in out
 
 
