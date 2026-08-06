@@ -62,3 +62,6 @@ Repository = "https://github.com/weiyumou/KCluster"
 
 [tool.setuptools.packages.find]
 include = ["kcluster*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
