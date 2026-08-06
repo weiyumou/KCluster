@@ -1,9 +1,13 @@
-"""Local (in-process) execution substrate: a HuggingFace causal-LM wrapper."""
+"""Local (in-process) execution substrate: a HuggingFace causal-LM wrapper and
+the Lightning batch scorer that shards large scoring jobs across GPUs."""
 
 import itertools
+import os
 
+import lightning as L
 import torch
 import torch.nn.functional as F
+from lightning.pytorch.callbacks import BasePredictionWriter
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -119,3 +123,41 @@ class LargeLangModel:
         chunks = torch.vsplit(last_states[mask], indices)[:-1]  # (Nc, H) * N
         embeddings = torch.stack([torch.mean(c, dim=0) for c in chunks], dim=0)  # (N, H)
         return embeddings
+
+
+def collate_pair(batch: list[tuple[str, str]], tokenizer,
+                 pad_to_multiple_of: int = None, ignore_idx: int = -100):
+    contexts, texts = list(zip(*batch))
+
+    inputs = tokenizer(text=contexts, text_pair=texts,
+                       return_tensors="pt", return_token_type_ids=True,
+                       padding=True, pad_to_multiple_of=pad_to_multiple_of)
+    mask = torch.logical_not(inputs.pop("token_type_ids"))
+    labels = torch.masked_fill(inputs["input_ids"], mask, ignore_idx)
+
+    return inputs, labels
+
+
+class PMI(L.LightningModule):
+    def __init__(self, llm_path: str, **model_args):
+        super().__init__()
+        self.model = LargeLangModel.load_model(llm_path, device_map=self.device, **model_args)
+
+    def forward(self, batch):
+        inputs, labels = batch
+        logits = self.model(**inputs).logits.transpose(-1, -2)  # (N, V, S)
+        loss = F.cross_entropy(logits[..., :-1], labels[:, 1:], reduction="none")  # (N, S)
+        return -torch.sum(loss, dim=-1)  # (N,)
+
+
+class CustomWriter(BasePredictionWriter):
+    def __init__(self, output_dir, write_interval):
+        super().__init__(write_interval)
+        self.output_dir = output_dir
+
+    def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
+        # this will create N (num processes) files in output_dir, each containing the predictions of its respective rank
+        torch.save(predictions, os.path.join(self.output_dir, f"predictions_{trainer.global_rank}.pt"))
+
+        # save `batch_indices` to get the information about the data index from prediction data
+        torch.save(batch_indices, os.path.join(self.output_dir, f"batch_indices_{trainer.global_rank}.pt"))
