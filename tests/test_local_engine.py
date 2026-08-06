@@ -9,7 +9,13 @@ import pytest
 
 pytest.importorskip("torch")
 
-from kcluster.engine.local import LargeLangModel, batched  # noqa: E402
+from kcluster.engine.local import LargeLangModel, LogProbScorer, batched  # noqa: E402
+
+
+def test_log_prob_scorer_is_a_lightning_module():
+    import lightning as L
+
+    assert issubclass(LogProbScorer, L.LightningModule)
 
 
 def test_batched_splits_with_remainder():

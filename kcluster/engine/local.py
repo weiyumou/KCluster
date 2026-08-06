@@ -138,7 +138,7 @@ def collate_pair(batch: list[tuple[str, str]], tokenizer,
     return inputs, labels
 
 
-class PMI(L.LightningModule):
+class LogProbScorer(L.LightningModule):
     def __init__(self, llm_path: str, **model_args):
         super().__init__()
         self.model = LargeLangModel.load_model(llm_path, device_map=self.device, **model_args)
