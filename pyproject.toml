@@ -49,6 +49,8 @@ vertex = [
 ]
 gemini = ["google-genai>=1.0"]
 datashop = ["beautifulsoup4>=4.12"]
+
+[dependency-groups]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 
 [project.scripts]
