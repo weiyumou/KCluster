@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kcluster"
+version = "0.2.0.dev0"
+description = "LLM-based knowledge component discovery and question generation for education"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Yumou Wei", email = "yumouw@andrew.cmu.edu" }]
+keywords = [
+    "knowledge components",
+    "educational data mining",
+    "learning analytics",
+    "question generation",
+    "large language models",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.0",
+    "scikit-learn>=1.4",
+    "scipy>=1.11",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+local = [
+    "torch>=2.4",
+    "lightning>=2.4",
+    "transformers>=4.45",
+    "accelerate>=1.0",
+    "sentence-transformers>=3.0",
+]
+vertex = [
+    "google-cloud-aiplatform[prediction]>=1.96,<2",
+    "google-cloud-storage>=2.14",
+]
+gemini = ["google-genai>=1.0"]
+datashop = ["beautifulsoup4>=4.12"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+kcluster = "kcluster.cli:main"
+
+[project.urls]
+Repository = "https://github.com/weiyumou/KCluster"
+"KCluster paper (EDM 2025)" = "https://arxiv.org/abs/2505.06469"
+
+[tool.setuptools.packages.find]
+include = ["kcluster*"]
