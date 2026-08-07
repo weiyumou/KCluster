@@ -31,6 +31,8 @@ COMMANDS = [
      "Retrieve PMI similarity matrices for completed Vertex batch jobs"),
     ("vertex-build-kc", "kcluster.commands.vertex_build_kc",
      "Build KC models from completed Vertex batch jobs"),
+    ("classify", "kcluster.commands.classify",
+     "Align questions with learning objectives via rectangular PMI"),
 ]
 
 _MODULES = {name: module for name, module, _ in COMMANDS}
