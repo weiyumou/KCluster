@@ -1,8 +1,10 @@
 from collections import UserDict
 
+from kcluster.core import prompts
+
 
 class Question(UserDict):
-    SPACE = chr(32)
+    SPACE = prompts.SPACE
 
     @property
     def flat_dict(self) -> dict:
@@ -25,7 +27,8 @@ class Question(UserDict):
     @property
     def body(self) -> str:
         if self.q_type == "Multiple Choice":  # body = stem + choices
-            choices = [f"{item['label']}){self.SPACE}{item['text']}" for item in self["question"]["choices"]]
+            choices = [prompts.CHOICE_LINE.format(label=item["label"], text=item["text"])
+                       for item in self["question"]["choices"]]
             return "\n".join([self.stem] + choices)
         return self.stem  # body = stem
 
@@ -35,11 +38,11 @@ class Question(UserDict):
 
     @property
     def trailer(self) -> str:
-        return "Answer:"
+        return prompts.ANSWER_TRAILER
 
     def header(self, q_num: int = 1) -> str:
-        hdr = f"Exercise{self.SPACE}{q_num}:"
-        return f"{hdr}\n{self.q_type}:" if self.q_type else hdr
+        hdr = prompts.EXERCISE_HEADER.format(q_num=q_num)
+        return f"{hdr}\n{prompts.QUESTION_TYPE_LINE.format(q_type=self.q_type)}" if self.q_type else hdr
 
     def prompt(self, q_num: int = 1) -> str:
         return f"{self.header(q_num)}\n{self.body}\n{self.trailer}"

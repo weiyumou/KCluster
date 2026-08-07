@@ -18,6 +18,7 @@ from collections import defaultdict
 import torch
 from tqdm import tqdm
 
+from kcluster.core import prompts as prompt_registry
 from kcluster.core.question import Question
 from kcluster.engine.local import LargeLangModel, batched
 
@@ -61,7 +62,7 @@ def generate_mcq(llm: LargeLangModel, seed_prompts: list[str],
             prompts[i] += f"{SPACE}{gen_chc}"
 
     # Step 3: generate the answer
-    prompts = [f"{p}\n\nSolution:\nThe correct answer is" for p in prompts]
+    prompts = [f"{p}{prompt_registry.QGEN_SOLUTION_PREFIX}" for p in prompts]
     ans_tokens = [f"{SPACE}{chr(ord('a') + i)}" for i in range(num_choices)]
     answers = []
     for i, ans in enumerate(itertools.chain.from_iterable(llm.next_tokens(prompts, ans_tokens))):
@@ -70,7 +71,7 @@ def generate_mcq(llm: LargeLangModel, seed_prompts: list[str],
         answers.append(ans.strip())
 
     # Step 4: generate explanation
-    prompts = [f"{p}\n\nExplanation:\n" for p in prompts]
+    prompts = [f"{p}{prompt_registry.QGEN_EXPLANATION_PREFIX}" for p in prompts]
     explanations = llm.complete_prompts(prompts, stop_strings=["\n\n"], tokenizer=llm.tokenizer,
                                         begin_suppress_tokens=begin_suppress_tokens, **configs["explanation"])
     explanations = [re.match(r".+?(?=\n\n)", exp + "\n\n", re.DOTALL).group(0).strip() for exp in explanations]
@@ -97,13 +98,9 @@ def generate_mcq(llm: LargeLangModel, seed_prompts: list[str],
 def create_seed_prompts(standards: list[str], std_type: str, header: str) -> list[str]:
     match std_type:
         case "actions":
-            return [
-                f"The exercises below are designed to test whether a student can {std}.\n\n{header}"
-                for std in standards]
+            return [prompt_registry.QGEN_SEED_ACTIONS.format(std=std, header=header) for std in standards]
         case "facts":
-            return [
-                f'The exercises below are designed to test whether a student understands the following facts:\n"{std}."\n\n{header}'
-                for std in standards]
+            return [prompt_registry.QGEN_SEED_FACTS.format(std=std, header=header) for std in standards]
         case _:
             raise ValueError(f"Invalid std_type: '{std_type}'")
 
@@ -126,7 +123,7 @@ def generate_mcq_from_std(llm: LargeLangModel,
     if not configs:
         warnings.warn("Given no custom config, default generation config is used")
 
-    header = f"Multiple Choice (best out of {num_choices} options):\n1."
+    header = prompt_registry.QGEN_MCQ_HEADER.format(num_choices=num_choices)
 
     all_questions, all_prompts = [], []
     for std_batch in tqdm(batched(standards, stds_per_batch), desc="Standards", leave=False):

@@ -14,6 +14,7 @@ import time
 
 import pandas as pd
 
+from kcluster.core.prompts import JUDGE_PREFILL_Q1, JUDGE_PREFILL_Q2, JUDGE_Q1_PAIRED, JUDGE_Q2_LOGPROB
 from kcluster.core.question import Question
 from kcluster.engine.gemini import GeminiEngine, parse_logprob_choices, save_json_responses
 from kcluster.io.jsonl import load_questions
@@ -37,20 +38,15 @@ def prepare_q1_content(q: Question) -> list[dict]:
     next_choice = chr(ord(ans_choices[-1]) + 1)  # next letter after the last choice
 
     q_text = q.body + f"\n{next_choice}) None of the above"
-    user = {"role": "user", "parts": [{"text": f"Answer the following two questions:\n\nQ1. {q_text}"}]}
-    model = {"role": "model", "parts": [{"text": "The answer to Q1 is **"}]}
+    user = {"role": "user", "parts": [{"text": JUDGE_Q1_PAIRED.format(question=q_text)}]}
+    model = {"role": "model", "parts": [{"text": JUDGE_PREFILL_Q1}]}
     return [user, model]
 
 
 def prepare_q2_content(q: Question, q1_content: list[dict], q1_answer: str) -> list[dict]:
     lo = q.get("false_lo", q["lo"])
-    q_text = (
-        f"Does the above question help teachers test whether a student can {lo}?\n"
-        "a) Yes\n"
-        "b) No"
-    )
-    q2_user = {"role": "user", "parts": [{"text": f"Q2. {q_text}"}]}
-    q2_model = {"role": "model", "parts": [{"text": "The answer to Q2 is **"}]}
+    q2_user = {"role": "user", "parts": [{"text": f"Q2. {JUDGE_Q2_LOGPROB.format(lo=lo)}"}]}
+    q2_model = {"role": "model", "parts": [{"text": JUDGE_PREFILL_Q2}]}
     q1_user, q1_model = q1_content
     q1_model["parts"][0]["text"] += q["answerKey"] + "**."
     return [q1_user, q1_model, q2_user, q2_model]

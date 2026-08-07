@@ -13,6 +13,7 @@ import time
 
 import pandas as pd
 
+from kcluster.core.prompts import JUDGE_Q1_SINGLE, JUDGE_Q2_TEXT
 from kcluster.core.question import Question
 from kcluster.engine.gemini import GeminiEngine, parse_text_choices, save_json_responses
 from kcluster.io.jsonl import load_questions
@@ -41,14 +42,14 @@ def prepare_q1_content(q: Question) -> list[dict]:
     next_choice = chr(ord(ans_choices[-1]) + 1)  # next letter after the last choice
 
     q_text = q.body + f"\n{next_choice}) None of the above"
-    q1_user = {"role": "user", "parts": [{"text": f"Answer the following question:\n\n{q_text}"}]}
+    q1_user = {"role": "user", "parts": [{"text": JUDGE_Q1_SINGLE.format(question=q_text)}]}
     return [q1_user]
 
 
 def prepare_q2_content(q: Question) -> list[dict]:
     lo = q.get("false_lo", q["lo"])
     q2_user = {"role": "user",
-               "parts": [{"text": f"Does the following question test whether a student can **{lo}**?\n\n{q.body}"}]
+               "parts": [{"text": JUDGE_Q2_TEXT.format(lo=lo, question=q.body)}]
                }
     return [q2_user]
 

@@ -21,6 +21,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from kcluster.core import prompts
 from kcluster.core.pmi import PointwiseMutualInfo
 from kcluster.core.question import Question
 from kcluster.io.jsonl import dump_questions, load_questions
@@ -42,18 +43,18 @@ class QuestionLO:
         n = len(self.questions)
         if index < n:
             q = self.questions[index]
-            return f"{q.q_type}:\n", str(q)
+            return prompts.LO_ALIGNMENT_MARGINAL_CONTEXT.format(q_type=q.q_type), str(q)
 
         lo_idx, q_idx = (index - n) // n, (index - n) % n
         lo, q = self.los[lo_idx], self.questions[q_idx]
         header = None
         match self.lo_type:
             case "actions":
-                header = f"The exercise below is designed to test whether a student can {lo}."
+                header = prompts.LO_ACTIONS_HEADER.format(lo=lo)
             case "facts":
-                header = f"The exercise below is designed to test whether a student knows:\n{lo}."
+                header = prompts.LO_FACTS_HEADER.format(lo=lo)
 
-        return f"{header}\n\n{q.q_type}:\n", str(q)
+        return f"{header}\n\n" + prompts.LO_ALIGNMENT_MARGINAL_CONTEXT.format(q_type=q.q_type), str(q)
 
     def __len__(self):
         return len(self.questions) * len(self.los) + len(self.questions)

@@ -8,6 +8,7 @@ with the row as the conditioning variable, matching the orientation of the
 PointwiseMutualInfo matrices reassembled from the scores.
 """
 
+from kcluster.core.prompts import congruity_marginal_context, congruity_pair_context
 from kcluster.core.question import Question
 
 
@@ -21,10 +22,10 @@ class PairQuestion:
         n = len(self.questions)
         if index < n:
             q = self.questions[index]
-            return f"{q.header(2)}\n", str(q)
+            return congruity_marginal_context(q), str(q)
         row, col = (index - n) // n, (index - n) % n
         q1, q2 = self.questions[row], self.questions[col]
-        return f"{q1.header(1)}\n{str(q1)}\n\n{q2.header(2)}\n", str(q2)
+        return congruity_pair_context(q1, q2), str(q2)
 
     def __len__(self):
         # Conditional-prob matrix + marginal-prob vector

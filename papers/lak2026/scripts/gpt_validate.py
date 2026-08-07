@@ -14,6 +14,7 @@ import os
 
 import pandas as pd
 
+from kcluster.core.prompts import GPT_JUDGE_SYSTEM_PROMPT
 from kcluster.core.question import Question
 from kcluster.io.jsonl import dump_questions, load_questions
 
@@ -21,11 +22,7 @@ PROMPT_SEP = "\n\n\n\n\n/br/"
 
 
 def prepare_batch_requests(questions: list[Question], model: str = "gpt-4o-mini"):
-    sys_prompt = (
-        "You are an expert at answering multiple choice questions. "
-        "If none of the options a-d are correct, choose e for 'None of the above'. "
-        "Provide your answer (letter a-e) and explanation in the JSON format specified."
-    )
+    sys_prompt = GPT_JUDGE_SYSTEM_PROMPT
     json_schema = {
         "name": "mcq_response",
         "strict": True,

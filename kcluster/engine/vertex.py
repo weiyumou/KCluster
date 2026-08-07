@@ -26,6 +26,7 @@ import numpy as np
 from google.cloud import aiplatform, storage
 from google.cloud.aiplatform_v1 import JobState
 
+from kcluster.core.prompts import concept_prompt
 from kcluster.core.question import Question
 from kcluster.tasks.congruity import PairQuestion
 
@@ -98,7 +99,6 @@ def init(config: VertexConfig) -> None:
 
 
 def prepare_concept_jobs(questions: list[Question], verbal: bool = False, configs: dict | None = None) -> dict:
-    SPACE = Question.SPACE
     PURPOSE = "complete_prompts"
 
     # Prepare concept-specific parameters, which can be overridden by configs
@@ -108,22 +108,13 @@ def prepare_concept_jobs(questions: list[Question], verbal: bool = False, config
                   "max_new_tokens": 20, "num_beams": 5, "length_penalty": -0.1, **configs}
     }
 
-    # Determine whether the generated concept should begin with a verb
-    if verbal:
-        trailer = "whether the student can"  # +verbal phrase
-    else:
-        trailer = "whether the student understands the concept of"  # +noun phrase
-
-    # Prepare the content of each instance
+    # Prepare the content of each instance (the same prompt the local
+    # concept task builds)
     instances = []
     for idx, q in enumerate(questions):
-        q_type = q.q_type.lower().replace(SPACE, "-")
-        prompt = (
-            f"{q.header(1)}\n{str(q)}\n\n"
-            f"Remark:\nThe above exercise is a {q_type} question that tests {trailer}"
-        )
         instances.append(
-            {"id": f"concept-{idx}", "text": prompt, "purpose": PURPOSE, "config": parameters[PURPOSE]}
+            {"id": f"concept-{idx}", "text": concept_prompt(q, verbal=verbal),
+             "purpose": PURPOSE, "config": parameters[PURPOSE]}
         )
 
     return {"instances": instances, "parameters": parameters}
