@@ -6,7 +6,6 @@ question files — the inline ``json.loads`` loops and, especially, the
 ``eval()``-based readers found in the legacy repos must not be reintroduced.
 """
 
-import ast
 import json
 from collections.abc import Callable, Iterable
 
@@ -30,11 +29,7 @@ def validate_question(q: Question) -> None:
 
 
 def load_questions(path: str, validate: bool = True) -> list[Question]:
-    """Read a JSONL question file (one JSON object per line).
-
-    For legacy Python-repr-format files (single-quoted dicts), use
-    ``load_legacy_repr_questions`` once to convert.
-    """
+    """Read a JSONL question file (one JSON object per line)."""
     return _load(path, json.loads, "JSON", validate)
 
 
@@ -44,20 +39,6 @@ def dump_questions(questions: Iterable[Question], path: str) -> None:
         for q in questions:
             f.write(json.dumps(q.data))
             f.write("\n")
-
-
-def load_legacy_repr_questions(path: str, validate: bool = True) -> list[Question]:
-    """Read a legacy Python-repr-format question file (single-quoted dicts).
-
-    Some early datasets (e.g. the question-generation repo's data/podsie files
-    and the pre-migration ScienceQA .bak files) were written with
-    ``repr(dict)`` and read back with ``eval()``. This is the safe replacement
-    for those readers — ``ast.literal_eval`` evaluates literals only, never
-    code. Convert such a file once with::
-
-        dump_questions(load_legacy_repr_questions(src), dst)
-    """
-    return _load(path, ast.literal_eval, "Python-literal", validate)
 
 
 def _load(path: str, parse: Callable, fmt: str, validate: bool) -> list[Question]:

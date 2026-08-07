@@ -3,12 +3,7 @@ import json
 import pytest
 
 from kcluster.core.question import Question
-from kcluster.io.jsonl import (
-    dump_questions,
-    load_legacy_repr_questions,
-    load_questions,
-    validate_question,
-)
+from kcluster.io.jsonl import dump_questions, load_questions, validate_question
 
 
 def _mcq_dict(qid: str = "q-1") -> dict:
@@ -81,17 +76,10 @@ def test_non_object_line_is_rejected(tmp_path):
         load_questions(str(path))
 
 
-def test_legacy_repr_file_loads_without_eval(tmp_path):
+def test_repr_format_lines_are_rejected(tmp_path):
+    # The retired legacy repr format (single-quoted Python dicts) must not
+    # silently load as JSON.
     path = tmp_path / "legacy.jsonl"
-    path.write_text(repr(_mcq_dict()) + "\n")  # single-quoted Python repr
-    loaded = load_legacy_repr_questions(str(path))
-    assert loaded[0].data == _mcq_dict()
-
-
-def test_legacy_reader_never_executes_code(tmp_path):
-    # The eval()-based legacy readers would have executed this line;
-    # ast.literal_eval must reject it instead.
-    path = tmp_path / "malicious.jsonl"
-    path.write_text("{'id': __import__('os').getcwd()}\n")
-    with pytest.raises(ValueError, match="not a valid Python-literal line"):
-        load_legacy_repr_questions(str(path))
+    path.write_text(repr(_mcq_dict()) + "\n")
+    with pytest.raises(ValueError, match="not a valid JSON line"):
+        load_questions(str(path))
