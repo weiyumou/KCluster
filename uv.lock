@@ -1345,6 +1345,7 @@ local = [
 vertex = [
     { name = "google-cloud-aiplatform", extra = ["prediction"] },
     { name = "google-cloud-storage" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
 
 [package.dev-dependencies]
@@ -1372,6 +1373,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.4" },
     { name = "scipy", specifier = ">=1.11" },
     { name = "sentence-transformers", marker = "extra == 'local'", specifier = ">=3.0" },
+    { name = "tomli", marker = "python_full_version < '3.11' and extra == 'vertex'", specifier = ">=2.0" },
     { name = "torch", marker = "extra == 'local'", specifier = ">=2.4" },
     { name = "tqdm", specifier = ">=4.66" },
     { name = "transformers", marker = "extra == 'local'", specifier = ">=4.45" },

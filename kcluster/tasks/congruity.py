@@ -8,12 +8,12 @@ with the row as the conditioning variable, matching the orientation of the
 PointwiseMutualInfo matrices reassembled from the scores.
 """
 
-from torch.utils.data import Dataset
-
 from kcluster.core.question import Question
 
 
-class PairQuestion(Dataset):
+class PairQuestion:
+    # A torch-free map-style dataset: DataLoader only needs
+    # __getitem__/__len__, and the Vertex engine indexes it directly.
     def __init__(self, questions: list[Question]):
         self.questions = questions
 
