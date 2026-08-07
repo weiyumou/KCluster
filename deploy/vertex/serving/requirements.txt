@@ -1,0 +1,10 @@
+# Installed inside the serving container (torch comes from the base image).
+# The predictor imports kcluster.engine.local; until kcluster is on PyPI,
+# build the image with a locally built wheel:
+#   uv build && python deploy/vertex/build_image.py --kcluster_package dist/kcluster-<version>-py3-none-any.whl ...
+# After the PyPI release, drop the wheel flag and uncomment:
+# kcluster[local]
+transformers
+accelerate
+bitsandbytes
+lightning

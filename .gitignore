@@ -12,6 +12,9 @@ raw_data/
 # Local GCP configuration (identifiers, not credentials — still never committed)
 vertex.toml
 
+# Wheels copied into the container build context by deploy/vertex/build_image.py
+deploy/vertex/serving/*.whl
+
 # TeX & LaTeX Build Artifacts
 *.log
 *.aux
