@@ -10,7 +10,8 @@ from transformers.utils import logging
 from kcluster.engine.local import LargeLangModel
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import default_output_dir, prepare_output_dir
-from kcluster.tasks.concept import build_res_df, extract_concepts, extract_question_embeds
+from kcluster.tasks.cluster import build_res_df
+from kcluster.tasks.concept import extract_concepts, extract_question_embeds
 
 
 def main(args):

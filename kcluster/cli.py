@@ -25,6 +25,12 @@ COMMANDS = [
      "Insert KC models into a DataShop KC template / student-step file"),
     ("refine-datashop-kc", "kcluster.commands.refine_datashop_kc",
      "Refine a DataShop KC model by splitting poorly-fitting KCs"),
+    ("vertex-launch", "kcluster.commands.vertex_launch",
+     "Launch Vertex AI batch jobs for concept extraction + congruity scoring"),
+    ("vertex-retrieve", "kcluster.commands.vertex_retrieve",
+     "Retrieve PMI similarity matrices for completed Vertex batch jobs"),
+    ("vertex-build-kc", "kcluster.commands.vertex_build_kc",
+     "Build KC models from completed Vertex batch jobs"),
 ]
 
 _MODULES = {name: module for name, module, _ in COMMANDS}

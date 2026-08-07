@@ -16,7 +16,7 @@ torch = pytest.importorskip("torch")
 from kcluster.commands.refine_datashop_kc import main  # noqa: E402
 from kcluster.core.question import Question  # noqa: E402
 from kcluster.io.jsonl import dump_questions  # noqa: E402
-from kcluster.tasks.concept import build_res_df  # noqa: E402
+from kcluster.tasks.cluster import build_res_df  # noqa: E402
 
 CONCEPTS = ["alpha", "alpha", "beta", "beta", "gamma", "gamma"]
 GROUPS = [0, 0, 1, 1, 2, 2]

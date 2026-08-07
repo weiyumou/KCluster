@@ -67,6 +67,22 @@ def run_ap(questions: list[Question], sim_mtx: np.ndarray,
     return pd.DataFrame.from_records(res_dicts)
 
 
+def build_res_df(questions: list[Question], concepts: list[str]) -> pd.DataFrame:
+    """Pair questions with their concept labels as a KC-model DataFrame.
+
+    Lives here (not in tasks.concept) so torch-free consumers — the Vertex
+    build-kc command in particular — can import it without the local engine.
+    """
+    q_dicts = []
+    for q, c in zip(questions, concepts):
+        q_dict = q.flat_dict
+        q_dict.pop("images", None)
+        q_dict["KC"] = c
+        q_dicts.append(q_dict)
+
+    return pd.DataFrame.from_records(q_dicts)
+
+
 def create_kc(concept_df: pd.DataFrame, questions: list[Question], sim_mtx: np.ndarray,
               **kwargs) -> pd.DataFrame | None:
     """Cluster questions and label each cluster with its exemplar's concept.

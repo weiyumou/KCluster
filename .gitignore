@@ -9,6 +9,9 @@ prior-idea-*
 docs/
 raw_data/
 
+# Local GCP configuration (identifiers, not credentials — still never committed)
+vertex.toml
+
 # TeX & LaTeX Build Artifacts
 *.log
 *.aux

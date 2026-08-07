@@ -18,7 +18,7 @@ torch = pytest.importorskip("torch")
 from kcluster.commands import build_kc  # noqa: E402
 from kcluster.core.question import Question  # noqa: E402
 from kcluster.io.jsonl import dump_questions  # noqa: E402
-from kcluster.tasks.concept import build_res_df  # noqa: E402
+from kcluster.tasks.cluster import build_res_df  # noqa: E402
 
 GROUPS = ["alpha"] * 3 + ["beta"] * 3
 

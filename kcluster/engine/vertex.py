@@ -92,6 +92,11 @@ class VertexConfig:
         return cls(**values)
 
 
+def init(config: VertexConfig) -> None:
+    """Point the aiplatform SDK at the configured project and location."""
+    aiplatform.init(project=config.project, location=config.location)
+
+
 def prepare_concept_jobs(questions: list[Question], verbal: bool = False, configs: dict | None = None) -> dict:
     SPACE = Question.SPACE
     PURPOSE = "complete_prompts"
@@ -234,7 +239,7 @@ def launch_batch_job(questions: list[Question], config: VertexConfig,
                      job_id: str | None = None, job_name: str | None = None, batch_size: int = 16,
                      starting_replica_count: int | None = None, max_replica_count: int | None = None,
                      completion_time_in_mins: int | None = None, secs_per_batch: int | None = None, **kwargs):
-    aiplatform.init(project=config.project, location=config.location)
+    init(config)
 
     # Prepare the inputs
     job_id = job_id or uuid.uuid4().hex
