@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the KCluster paper (see preferred-citation)."
+type: software
+title: "KCluster"
+authors:
+  - family-names: Wei
+    given-names: Yumou
+    affiliation: Carnegie Mellon University
+license: MIT
+repository-code: "https://github.com/weiyumou/KCluster"
+preferred-citation:
+  type: conference-paper
+  title: "KCluster: An LLM-based Clustering Approach to Knowledge Component Discovery"
+  authors:
+    - family-names: Wei
+      given-names: Yumou
+    - family-names: Carvalho
+      given-names: Paulo
+    - family-names: Stamper
+      given-names: John
+  collection-title: "Proceedings of the 18th International Conference on Educational Data Mining (EDM 2025)"
+  year: 2025
+  url: "https://arxiv.org/abs/2505.06469"
+  identifiers:
+    - type: other
+      value: "arXiv:2505.06469"
+      description: "arXiv preprint"
