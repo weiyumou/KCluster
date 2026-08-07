@@ -28,11 +28,39 @@ applies to it fully.
    `scripts/gemini_gen_mcq.py` (a structured-output generation baseline).
 6. **LO alignment** — `kcluster classify` (CLI).
 
+## Analysis and figures
+
+`analysis.ipynb` reproduces the inter-rater analysis (pairwise/average
+Cohen's kappa, Fleiss' kappa, annotation matrix, human-majority confusion
+matrices, ROC-AUC, and overall accuracies) for Q1 (answer agreement) and Q2
+(LO-alignment judgments) across the human experts, Phi-2, and Gemini. It is
+committed **scrubbed**: all outputs are stripped (they contain
+participant-level responses), and every input path is a parameter in the
+first code cell pointing at your copy of the private study archive.
+Analysis-only dependencies (`seaborn`, `statsmodels`) come with the repo's
+`papers` dependency group (installed by `uv sync`).
+
+Figures are run outputs and are never committed (`figures/` is git-ignored);
+running the notebook regenerates the kappa/confusion-matrix PDFs. The
+answer-confidence figure (`ans_conf.pdf`) comes from the ablation output of
+`scripts/ablate.py`.
+
 ## Data access
 
 The study's question banks (Podsie courses), standards files, the Qualtrics
 raw export, and the partner-school MCQ deliverables are not distributed in
-this repository. Contact the authors regarding access.
+this repository. Contact the authors regarding access. Archived question
+files in the legacy Python-repr format need a one-time conversion before
+`load_questions` will read them:
+
+```python
+import ast
+from kcluster.core.question import Question
+from kcluster.io.jsonl import dump_questions
+
+with open(src) as f:
+    dump_questions((Question(ast.literal_eval(line)) for line in f if line.strip()), dst)
+```
 
 ## Notes
 
@@ -40,4 +68,3 @@ this repository. Contact the authors regarding access.
   one-off variants of the judge scripts remain in the private legacy
   repository; the scripts here are their general forms on the released
   library.
-- Analysis notebook and figures are added separately after an output scrub.

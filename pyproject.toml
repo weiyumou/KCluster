@@ -52,9 +52,11 @@ gemini = ["google-genai>=1.0"]
 datashop = ["beautifulsoup4>=4.12"]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "ruff>=0.5", {include-group = "datasets"}]
+dev = ["pytest>=8.0", "ruff>=0.5", {include-group = "datasets"}, {include-group = "papers"}]
 # Driver-only dependencies for the datasets/ workspaces; never shipped in the wheel
 datasets = ["requests>=2.31", "pillow>=10"]
+# Analysis-notebook dependencies for the papers/ workspaces; never shipped in the wheel
+papers = ["seaborn>=0.13", "statsmodels>=0.14"]
 
 [project.scripts]
 kcluster = "kcluster.cli:main"
