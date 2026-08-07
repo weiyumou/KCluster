@@ -115,11 +115,11 @@ def extract_questions_by_type(tx_df: pd.DataFrame, question_type: str, rng=None)
 
 if __name__ == "__main__":
     import argparse
-    import warnings
-    from collections import defaultdict, Counter
     import json
     import logging
     import os
+    import warnings
+    from collections import Counter, defaultdict
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 

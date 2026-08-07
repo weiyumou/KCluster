@@ -13,7 +13,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from google.cloud import aiplatform
 from google.cloud.aiplatform.prediction import LocalModel
-
 from run_local import LOCAL_MODEL_SPECS
 
 

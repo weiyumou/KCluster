@@ -80,7 +80,7 @@ def extract_answer(responses: list[dict], choices: dict[str, str], allow_unused_
             raise ValueError(f"Unknown choice ID: {choice_id}")
 
         if rsp["score"] > 0:
-            assert ans_id is None, f"Multiple correct answers found"
+            assert ans_id is None, "Multiple correct answers found"
             ans_id = choice_id
 
         # Collect feedback
@@ -97,7 +97,7 @@ def extract_answer(responses: list[dict], choices: dict[str, str], allow_unused_
         feedback[choice_id] = replace_unicode_chars("\n".join(texts)).strip()
 
     assert set(feedback.keys()).issubset(set(choices.keys()) | {"default"})
-    assert ans_id is not None, f"No correct answer found"
+    assert ans_id is not None, "No correct answer found"
 
     all_choices = []
     ans_option = None

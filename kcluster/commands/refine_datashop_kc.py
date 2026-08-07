@@ -64,7 +64,9 @@ def main(args):
 
         # Refinement using 'concept'
         concept_kc = concept_df[concept_mask]
-        predicate = (lambda q: any(t in step_name for t in q["ds-step-name"]))
+
+        def predicate(q, step_name=step_name):  # bind the loop variable
+            return any(t in step_name for t in q["ds-step-name"])
 
         # Refinement using 'question-cosine'
         print("*** Refining KCs based on question, metric='cosine' ***")

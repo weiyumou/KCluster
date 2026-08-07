@@ -1,9 +1,13 @@
 import glob
 import os
 
-from kcluster.io.datashop import KC_PAT
-from kcluster.io.datashop import create_datashop_kc, save_datashop_temp
-from kcluster.io.datashop import create_default_kc, create_kc_from_questions
+from kcluster.io.datashop import (
+    KC_PAT,
+    create_datashop_kc,
+    create_default_kc,
+    create_kc_from_questions,
+    save_datashop_temp,
+)
 
 if __name__ == "__main__":
     import argparse

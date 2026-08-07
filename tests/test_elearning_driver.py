@@ -12,8 +12,9 @@ import pytest
 
 pytest.importorskip("bs4")
 
-from kcluster.io.jsonl import load_questions  # noqa: E402
 from test_oli_html import _question_div, _write_html  # noqa: E402
+
+from kcluster.io.jsonl import load_questions  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

@@ -1,17 +1,23 @@
 import textwrap
 from shlex import quote
-from typing import Optional, Type, List, Dict
+from typing import Dict, List, Optional, Type
 
 from google.cloud.aiplatform import helpers
 from google.cloud.aiplatform.docker_utils import local_util
-from google.cloud.aiplatform.docker_utils.build import _get_relative_path_to_workdir, _prepare_exposed_ports, \
-    _prepare_entrypoint, _prepare_dependency_entries, _prepare_environment_variables, _copy_source_directory
+from google.cloud.aiplatform.docker_utils.build import (
+    _copy_source_directory,
+    _get_relative_path_to_workdir,
+    _prepare_dependency_entries,
+    _prepare_entrypoint,
+    _prepare_environment_variables,
+    _prepare_exposed_ports,
+)
 from google.cloud.aiplatform.docker_utils.errors import DockerError
 from google.cloud.aiplatform.docker_utils.utils import (
     Image,
     Package,
 )
-from google.cloud.aiplatform.prediction import LocalModel, Predictor, Handler, PredictionHandler
+from google.cloud.aiplatform.prediction import Handler, LocalModel, PredictionHandler, Predictor
 from google.cloud.aiplatform.utils import prediction_utils
 from google.cloud.aiplatform_v1 import ModelContainerSpec
 

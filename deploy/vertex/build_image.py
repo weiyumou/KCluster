@@ -16,9 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # for custom.py
 SERVING_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "serving")
 sys.path.insert(0, SERVING_DIR)  # import predictor/handler as in the container
 
-from google.cloud import aiplatform
-
 from custom import MyLocalModel
+from google.cloud import aiplatform
 from handler import Phi2PredictionHandler
 from predictor import Phi2Predictor
 

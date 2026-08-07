@@ -160,8 +160,8 @@ def create_keywords_kc(kc_temp: str | pd.DataFrame, trans_df: str | pd.DataFrame
 
 
 def main(args):
-    import warnings
     import logging
+    import warnings
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     warnings.filterwarnings("ignore", category=DeprecationWarning)

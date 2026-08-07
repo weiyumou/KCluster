@@ -2,16 +2,14 @@ import logging
 import traceback
 
 try:
-    from fastapi import HTTPException
-    from fastapi import Request
-    from fastapi import Response
+    from fastapi import HTTPException, Request, Response
 except ImportError:
     raise ImportError(
         "FastAPI is not installed and is required to build model servers. "
         'Please install the SDK using `pip install "google-cloud-aiplatform[prediction]>=1.16.0"`.'
     )
 
-from google.cloud.aiplatform.prediction import PredictionHandler, handler_utils, DefaultSerializer
+from google.cloud.aiplatform.prediction import DefaultSerializer, PredictionHandler, handler_utils
 
 
 class Phi2PredictionHandler(PredictionHandler):

@@ -4,12 +4,16 @@ import os
 import random
 
 import pandas as pd
+from processing import (
+    download_n_save_image,
+    extract_activity_part_ids,
+    extract_answer,
+    extract_learning_objectives,
+    merge_duplicate_mcqs,
+    replace_unicode_chars,
+)
 
 from kcluster.io.datashop import load_datashop_temp
-
-from processing import extract_activity_part_ids, extract_learning_objectives
-from processing import extract_answer, merge_duplicate_mcqs
-from processing import replace_unicode_chars, download_n_save_image
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -78,7 +82,7 @@ def extract_choices(data: dict, part_id: str, rng=None) -> tuple[list[dict], str
         chc_text = "; ".join(chc_texts).strip("; ")
         choices[chc["id"]] = replace_unicode_chars(chc_text).strip()
 
-    assert len(choices) >= 2, f"Not enough choices found"
+    assert len(choices) >= 2, "Not enough choices found"
 
     # Extract correct answer and feedback
     [part] = data["content"]["authoring"]["parts"]
@@ -145,7 +149,7 @@ def extract_mcqs(step_df: pd.DataFrame, raw_data_dir: str, seed: int = 42) -> li
 
 
 def main(args):
-    args.output_path = getattr(args, "output_path", os.path.join("elearning24", "data", f"elearning24-mcq.jsonl"))
+    args.output_path = getattr(args, "output_path", os.path.join("elearning24", "data", "elearning24-mcq.jsonl"))
     os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
 
     step_df = load_datashop_temp(args.step_path)

@@ -4,12 +4,15 @@ import os
 import random
 
 import pandas as pd
+from processing import (
+    extract_activity_part_ids,
+    extract_answer,
+    extract_learning_objectives,
+    merge_duplicate_mcqs,
+    replace_unicode_chars,
+)
 
 from kcluster.io.datashop import load_datashop_temp
-
-from processing import extract_activity_part_ids, extract_learning_objectives
-from processing import extract_answer, merge_duplicate_mcqs
-from processing import replace_unicode_chars
 
 SPACE = chr(32)
 BLANK = "____"

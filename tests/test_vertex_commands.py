@@ -12,12 +12,11 @@ import pytest
 pytest.importorskip("google.cloud.aiplatform")
 
 from google.cloud.aiplatform_v1 import JobState  # noqa: E402
+from test_vertex_engine import FakeStorageClient  # noqa: E402
 
 from kcluster.core.question import Question  # noqa: E402
 from kcluster.engine import vertex  # noqa: E402
-from kcluster.engine.vertex import VertexConfig  # noqa: E402
 from kcluster.io.jsonl import dump_questions  # noqa: E402
-from test_vertex_engine import FakeStorageClient  # noqa: E402
 
 GROUPS = ["alpha"] * 3 + ["beta"] * 3
 CONCEPTS = GROUPS
