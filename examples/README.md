@@ -38,10 +38,17 @@ Writes `classified-top3.csv` (top-3 predicted LOs per question) and
 ## Generate-then-validate (LAK 2026): standards → new MCQs
 
     kcluster qgen-generate --llm_path phi-2 --std_dir examples/data/standards \
-        --qs_per_std 8
+        --config_path examples/data/qgen-config.toml --qs_per_std 8
     kcluster qgen-validate --llm_path phi-2 --root_dir <qgen-run-dir>
 
 `qgen-generate` grows one MCQ per seed incrementally (stem → choices →
 answer → explanation) for each standard; `qgen-validate` keeps only
 complete questions whose answer clears the permutation-averaged confidence
 threshold (`--prob_thd`, default 0.9), sorted by perplexity.
+
+`--config_path` supplies per-step generation settings (TOML or JSON, one
+table per step);
+[`qgen-config.toml`](data/qgen-config.toml) holds the LAK 2026 study's.
+It is effectively required: asking for more than one question per standard
+needs sampling on the stem step, which the transformers defaults (greedy)
+cannot do.

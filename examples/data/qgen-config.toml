@@ -1,0 +1,23 @@
+# Per-step generation config for `kcluster qgen-generate --config_path`.
+# Each table names a step of the incremental loop and its keys are passed
+# through to transformers' `generate`. These are the settings used for the
+# LAK 2026 study.
+#
+# Sampling on the stem is required whenever --qs_per_std > 1: the loop asks
+# for several stems per seed prompt (num_return_sequences), which greedy
+# decoding cannot produce.
+
+[stem]
+do_sample = true
+temperature = 1.0
+top_p = 0.95
+
+[choice]
+do_sample = true
+temperature = 1.0
+top_p = 1.0
+num_beams = 2
+
+[explanation]
+do_sample = false
+max_new_tokens = 200
