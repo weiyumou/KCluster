@@ -113,8 +113,9 @@ If you use KCluster in your research, please cite
   title     = {{KCluster}: An {LLM}-based Clustering Approach to Knowledge Component Discovery},
   author    = {Wei, Yumou and Carvalho, Paulo and Stamper, John},
   booktitle = {Proceedings of the 18th International Conference on Educational Data Mining (EDM)},
+  pages     = {228--240},
   year      = {2025},
-  url       = {https://arxiv.org/abs/2505.06469}
+  doi       = {10.5281/zenodo.15870197}
 }
 ```
 
