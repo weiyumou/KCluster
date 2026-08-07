@@ -7,6 +7,7 @@ data/
 prior-idea-*
 !examples/data/
 docs/
+raw_data/
 
 # TeX & LaTeX Build Artifacts
 *.log
