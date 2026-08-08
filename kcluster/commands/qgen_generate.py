@@ -40,7 +40,7 @@ def main(args):
     logging.set_verbosity(logging.ERROR)  # Suppress warnings from transformers
 
     # Create a folder to store results
-    output_dir = getattr(args, "output_dir", None) or default_output_dir("qgen")
+    output_dir = getattr(args, "output_dir", None) or default_output_dir("qgen", getattr(args, "run_dir", None))
     args.output_dir = prepare_output_dir(output_dir)
     print(f"*** Writing results to {args.output_dir} ***")
 
@@ -95,6 +95,8 @@ def add_arguments(parser):
     parser.add_argument("--guidance_scale", default=1.0, type=float, help="Guidance scale for CFG")
     parser.add_argument("--stds_per_batch", default=argparse.SUPPRESS, type=int, help="Number of standards in a batch")
     parser.add_argument("--output_dir", default=argparse.SUPPRESS, type=str, help="Path to the output directory")
+    parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
+                        help="Shared run folder; each step writes to <run_dir>/<step> (env: KCLUSTER_RUN_DIR)")
 
 
 if __name__ == "__main__":

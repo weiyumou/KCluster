@@ -10,13 +10,21 @@ import pandas as pd
 from kcluster.core.pmi import PointwiseMutualInfo
 from kcluster.io.datashop import KC_PAT, get_step_to_kc, merge_student_step_with_kc
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import default_output_dir, prepare_output_dir
+from kcluster.paths import default_output_dir, prepare_output_dir, step_dir
 from kcluster.tasks.cluster import create_kc, sim_from_embeddings
 
 
 def main(args):
-    output_dir = prepare_output_dir(default_output_dir("kc-refine"), exist_ok=False)
+    run = getattr(args, "run_dir", None)
+    output_dir = prepare_output_dir(default_output_dir("kc-refine", run), exist_ok=False)
     print(f"*** Writing results to {output_dir} ***")
+
+    # Inside a run folder the earlier steps' outputs are found automatically
+    for name in ("concept", "pmi"):
+        if not getattr(args, f"{name}_dir", None):
+            if not (found := step_dir(name, run)):
+                raise SystemExit(f"--{name}_dir is required unless --run_dir (or KCLUSTER_RUN_DIR) is set")
+            setattr(args, f"{name}_dir", found)
 
     # Identify the KC model to refine and load the KC values
     kcm = os.path.split(args.kc_val_path)[1].split("_")[0]  # Extract the KC model from the file name
@@ -103,9 +111,12 @@ def main(args):
 def add_arguments(parser):
     parser.add_argument("--kc_path", required=True, type=str, help="Path to a DataShop KC template file")
     parser.add_argument("--kc_val_path", required=True, type=str, help="Path to a CSV file containing KC values")
-    parser.add_argument("--concept_dir", required=True, type=str, help="Path to a directory containing concepts")
-    parser.add_argument("--pmi_dir", required=True, type=str,
-                        help="Path to a directory containing PMI values")
+    parser.add_argument("--concept_dir", default=argparse.SUPPRESS, type=str,
+                        help="Path to a directory containing concepts (default: <run_dir>/concept)")
+    parser.add_argument("--pmi_dir", default=argparse.SUPPRESS, type=str,
+                        help="Path to a directory containing PMI values (default: <run_dir>/pmi)")
+    parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
+                        help="Shared run folder; each step writes to <run_dir>/<step> (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--ss_path", default=argparse.SUPPRESS, type=str, help="Path to a DataShop student-step file")
     parser.add_argument("--minimal", default=argparse.SUPPRESS, action="store_true",
                         help="Whether to minimize the merged student-step file")

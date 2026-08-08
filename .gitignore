@@ -8,6 +8,8 @@ prior-idea-*
 !examples/data/
 docs/
 raw_data/
+results/
+sbatch/
 
 # Local GCP configuration (identifiers, not credentials — still never committed)
 vertex.toml

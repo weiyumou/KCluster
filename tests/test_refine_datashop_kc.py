@@ -86,7 +86,9 @@ def test_refine_datashop_kc_end_to_end(tmp_path, monkeypatch):
     main(argparse.Namespace(kc_path=str(kc_path), kc_val_path=str(kc_val_path),
                             concept_dir=str(concept_dir), pmi_dir=str(pmi_dir)))
 
-    [run_dir] = list((tmp_path / "results" / "kc-refine").iterdir())
+    # Run-major layout: <results>/<run>/<step>
+    [run] = list((tmp_path / "results").iterdir())
+    run_dir = run / "kc-refine"
     refined = pd.read_csv(run_dir / "refined-kc.txt", sep="\t")
     for prefix in ("cpt", "qcos", "pmi"):
         col = f"KC ({prefix}-big-kc)"

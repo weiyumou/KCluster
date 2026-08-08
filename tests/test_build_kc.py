@@ -95,3 +95,38 @@ def test_build_kc_end_to_end(pipeline_dirs):
     # The args breadcrumb records the recovered data path for downstream steps
     breadcrumb = json.loads((out_dir / "args-kc-questions.json").read_text())
     assert breadcrumb["data_path"].endswith("questions.jsonl")
+
+
+def test_build_kc_finds_its_inputs_inside_a_run_dir(pipeline_dirs, tmp_path, monkeypatch):
+    """The pairing win: steps that ran at different times share one run folder,
+    so build-kc needs neither --concept_dir nor --pmi_dir."""
+    concept_dir, pmi_dir, _ = pipeline_dirs
+
+    run = tmp_path / "run-1"
+    (run / "concept").mkdir(parents=True)
+    (run / "pmi").mkdir()
+    for src, dst in ((concept_dir, run / "concept"), (pmi_dir, run / "pmi")):
+        for f in src.iterdir():
+            (dst / f.name).write_bytes(f.read_bytes())
+
+    build_kc.main(argparse.Namespace(run_dir=str(run)))
+
+    # Output landed alongside its inputs, and both models were built
+    assert (run / "kc" / "concept-kc.csv").exists()
+    assert pd.read_csv(run / "kc" / "pmi-kc.csv")["KC"].tolist() == GROUPS
+
+    # The env var works the same way, without touching call sites
+    run2 = tmp_path / "run-2"
+    (run2 / "concept").mkdir(parents=True)
+    for f in (run / "concept").iterdir():
+        (run2 / "concept" / f.name).write_bytes(f.read_bytes())
+    monkeypatch.setenv("KCLUSTER_RUN_DIR", str(run2))
+    build_kc.main(argparse.Namespace())
+    assert (run2 / "kc" / "concept-kc.csv").exists()          # ran
+    assert not (run2 / "kc" / "pmi-kc.csv").exists()          # no pmi/ in this run
+
+
+def test_build_kc_requires_a_concept_dir_without_a_run_dir(monkeypatch):
+    monkeypatch.delenv("KCLUSTER_RUN_DIR", raising=False)
+    with pytest.raises(SystemExit, match="--concept_dir is required"):
+        build_kc.main(argparse.Namespace())

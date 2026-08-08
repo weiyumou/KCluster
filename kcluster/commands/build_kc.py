@@ -8,14 +8,22 @@ import pandas as pd
 
 from kcluster.core.pmi import PointwiseMutualInfo
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import default_output_dir, prepare_output_dir
+from kcluster.paths import default_output_dir, prepare_output_dir, step_dir
 from kcluster.tasks.cluster import create_kc, sim_from_embeddings
 
 
 def main(args):
-    output_dir = getattr(args, "output_dir", None) or default_output_dir("kc")
+    run = getattr(args, "run_dir", None)
+    output_dir = getattr(args, "output_dir", None) or default_output_dir("kc", run)
     args.output_dir = prepare_output_dir(output_dir)
     print(f"*** Writing results to {args.output_dir} ***")
+
+    # Inside a run folder the previous steps' outputs are found automatically
+    args.concept_dir = getattr(args, "concept_dir", None) or step_dir("concept", run)
+    if not args.concept_dir:
+        raise SystemExit("--concept_dir is required unless --run_dir (or KCLUSTER_RUN_DIR) is set")
+    if not getattr(args, "pmi_dir", None) and (pmi := step_dir("pmi", run)) and os.path.isdir(pmi):
+        args.pmi_dir = pmi
 
     # Check all concepts are correctly filled
     [fname] = glob.glob("*-concept.csv", root_dir=args.concept_dir)
@@ -69,10 +77,13 @@ def main(args):
 
 
 def add_arguments(parser):
-    parser.add_argument("--concept_dir", required=True, type=str, help="Path to a directory containing concepts")
+    parser.add_argument("--concept_dir", default=argparse.SUPPRESS, type=str,
+                        help="Path to a directory containing concepts (default: <run_dir>/concept)")
     parser.add_argument("--pmi_dir", default=argparse.SUPPRESS, type=str,
                         help="Path to a directory containing PMI values")
     parser.add_argument("--output_dir", default=argparse.SUPPRESS, type=str, help="The output directory")
+    parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
+                        help="Shared run folder; each step writes to <run_dir>/<step> (env: KCLUSTER_RUN_DIR)")
 
 
 if __name__ == "__main__":

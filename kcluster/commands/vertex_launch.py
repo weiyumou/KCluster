@@ -24,7 +24,7 @@ def main(args):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     config = VertexConfig.load(getattr(args, "config", None))
 
-    output_dir = getattr(args, "output_dir", None) or default_output_dir("vertex-launch")
+    output_dir = getattr(args, "output_dir", None) or default_output_dir("vertex-launch", getattr(args, "run_dir", None))
     args.output_dir = prepare_output_dir(output_dir)
 
     launched_jobs = []
@@ -52,6 +52,8 @@ def add_arguments(parser):
     parser.add_argument("--secs_per_batch", default=0.1, type=float, help="Estimated seconds per batch for the job")
     parser.add_argument("--batch_size", default=16, type=int, help="Batch size for the job")
     parser.add_argument("--output_dir", default=argparse.SUPPRESS, type=str, help="Directory to save the job log")
+    parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
+                        help="Shared run folder; each step writes to <run_dir>/<step> (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--config", default=argparse.SUPPRESS, type=str,
                         help="Path to a vertex TOML config (default: KCLUSTER_VERTEX_* environment)")
 

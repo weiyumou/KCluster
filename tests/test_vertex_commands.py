@@ -171,7 +171,8 @@ def test_vertex_launch(gcs, config_path, tmp_path, monkeypatch):
                             secs_per_batch=0.1, batch_size=16, config=config_path))
 
     # The job log records the launched job with a data-derived, timestamped id
-    [run_dir] = list((tmp_path / "results" / "vertex-launch").iterdir())
+    [run] = list((tmp_path / "results").iterdir())  # run-major: <results>/<run>/<step>
+    run_dir = run / "vertex-launch"
     [logged] = [json.loads(line) for line in (run_dir / "launched_jobs.jsonl").read_text().splitlines()]
     assert re.fullmatch(r"course-a_\d{8}-\d{6}", logged["job_id"])
     assert logged["resource_name"] == "jobs/1"

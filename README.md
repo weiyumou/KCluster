@@ -48,10 +48,14 @@ checkout:
 
 ```bash
 export DATA_PATH=examples/data/sample-mcq.jsonl
+export KCLUSTER_RUN_DIR=results/my-run     # one folder for every step of this run
 kcluster concept  --llm_path phi-2 --data_path $DATA_PATH   # concept labels + embeddings
 kcluster pmi      --llm_path phi-2 --data_path $DATA_PATH   # question congruity
-kcluster build-kc --concept_dir <concept-run> --pmi_dir <pmi-run>
+kcluster build-kc                                           # finds concept/ and pmi/ itself
 ```
+
+Results are run-major — `<run>/{concept,pmi,kc}` — so steps that run as
+separate jobs stay together and downstream commands locate their own inputs.
 
 `build-kc` writes labeled KC models (`pmi-kc.csv`, `concept-kc.csv`, an
 embedding baseline) discovered by affinity propagation over the congruity

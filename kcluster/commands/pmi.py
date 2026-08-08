@@ -18,7 +18,7 @@ def main(args):
     logging.set_verbosity(logging.ERROR)  # Suppress warnings from transformers
 
     # Create a folder to store results
-    output_dir = getattr(args, "output_dir", None) or default_output_dir("pmi")
+    output_dir = getattr(args, "output_dir", None) or default_output_dir("pmi", getattr(args, "run_dir", None))
     args.output_dir = prepare_output_dir(output_dir)
     print(f"*** Writing results to {args.output_dir} ***")
 
@@ -49,6 +49,8 @@ def add_arguments(parser):
     parser.add_argument("--data_path", required=True, type=str, help="Path to a jsonl file of questions")
     parser.add_argument("--batch_size", type=int, default=16, help="Number of questions to process in a batch")
     parser.add_argument("--output_dir", type=str, default=argparse.SUPPRESS, help="Path to the output directory")
+    parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
+                        help="Shared run folder; each step writes to <run_dir>/<step> (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--num_workers", type=int, default=0, help="Number of workers for DataLoader")
     parser.add_argument("--pad_to_multiple_of", type=int, default=None, help="Pad to multiple of")
 
