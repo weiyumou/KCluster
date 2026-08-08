@@ -7,7 +7,7 @@ data/
 prior-idea-*
 !examples/data/
 docs/
-raw_data/
+raw_data
 results/
 sbatch/
 

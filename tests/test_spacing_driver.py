@@ -1,4 +1,4 @@
-"""End-to-end test of the spacing dataset driver (datasets/spacing/processing.py)."""
+"""End-to-end test of the spacing dataset driver (datasets/spacing-exp2/processing.py)."""
 
 import importlib.util
 import random
@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(scope="module")
 def driver():
-    path = REPO_ROOT / "datasets" / "spacing" / "processing.py"
+    path = REPO_ROOT / "datasets" / "spacing-exp2" / "processing.py"
     spec = importlib.util.spec_from_file_location("spacing_processing", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

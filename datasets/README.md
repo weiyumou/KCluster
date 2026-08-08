@@ -14,3 +14,6 @@ Conventions:
   `<name>/data/` — both are git-ignored. **Never commit data** (student data,
   DataShop exports, course-derived question banks, images, run outputs); the
   pre-commit guard enforces this.
+- No export is stored in this repository, not even ignored: every driver takes
+  its input paths as arguments, so keep the data outside the working tree and
+  pass the path (or symlink `<name>/raw_data` at it).

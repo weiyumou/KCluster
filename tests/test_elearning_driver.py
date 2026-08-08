@@ -1,4 +1,4 @@
-"""End-to-end tests of the elearning dataset drivers (datasets/elearning/).
+"""End-to-end tests of the elearning dataset drivers (datasets/elearning22/).
 
 The drivers live outside the package on purpose (workspace scripts, not
 wheel code), so they are loaded from the repo path.
@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(scope="module")
 def driver():
-    path = REPO_ROOT / "datasets" / "elearning" / "build.py"
+    path = REPO_ROOT / "datasets" / "elearning22" / "build.py"
     spec = importlib.util.spec_from_file_location("elearning_build", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

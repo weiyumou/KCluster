@@ -95,7 +95,7 @@ datasets live in `kcluster/io/loaders/` (e.g. ScienceQA, OLI HTML).
 | `kcluster/` | the installable package: `core` (Question, PMI, prompts), `engine` (local / Vertex / Gemini), `tasks`, `io`, `output`, CLI commands | yes |
 | `examples/` | synthetic sample data + walkthrough | no |
 | `papers/`   | paper-specific reproduction scripts (`lak2026/`) | no |
-| `datasets/` | per-dataset ETL workspaces (spacing, webwork, elearning, …) | no |
+| `datasets/` | per-dataset ETL workspaces (spacing-exp2, webwork, elearning22, …) | no |
 | `deploy/`   | the Vertex serving container and deployment scripts | no |
 
 ## Data policy
