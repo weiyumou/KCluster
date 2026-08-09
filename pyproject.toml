@@ -54,7 +54,7 @@ datashop = ["beautifulsoup4>=4.12"]
 [dependency-groups]
 dev = ["pytest>=8.0", "ruff>=0.5", {include-group = "datasets"}, {include-group = "papers"}]
 # Driver-only dependencies for the datasets/ workspaces; never shipped in the wheel
-datasets = ["requests>=2.31", "pillow>=10"]
+datasets = ["requests>=2.31", "pillow>=10", "beautifulsoup4>=4.12"]
 # Analysis-notebook dependencies for the papers/ workspaces; never shipped in the wheel
 papers = ["seaborn>=0.13", "statsmodels>=0.14"]
 
