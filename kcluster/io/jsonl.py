@@ -19,13 +19,13 @@ def validate_question(q: Question) -> None:
             raise ValueError(f"question is missing required field {field!r}")
     if not isinstance(q["question"], dict) or not q["question"].get("stem"):
         raise ValueError(f"question {q['id']!r} needs a non-empty 'question.stem'")
-    if q.q_type == "Multiple Choice":
-        choices = q["question"].get("choices")
-        if not choices:
-            raise ValueError(f"multiple-choice question {q['id']!r} has no choices")
-        for choice in choices:
-            if not isinstance(choice, dict) or "label" not in choice or "text" not in choice:
-                raise ValueError(f"question {q['id']!r} has a malformed choice: {choice!r}")
+    # Any type in the "Multiple Choice ..." family (select-1, select-all) must
+    # ship choices; whatever the type, the choices present must be well formed.
+    if not q.choices and q.q_type.startswith("Multiple Choice"):
+        raise ValueError(f"multiple-choice question {q['id']!r} has no choices")
+    for choice in q.choices:
+        if not isinstance(choice, dict) or "label" not in choice or "text" not in choice:
+            raise ValueError(f"question {q['id']!r} has a malformed choice: {choice!r}")
 
 
 def load_questions(path: str, validate: bool = True) -> list[Question]:

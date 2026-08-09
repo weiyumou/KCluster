@@ -84,6 +84,23 @@ def test_non_mcq_body_is_stem_only():
     assert str(q) == "Name a flexible material.\nAnswer: rubber"
 
 
+def test_choices_render_for_any_choice_bearing_type(mcq):
+    # Rendering keys on the presence of choices, not on the exact type string,
+    # so select-all types render their choices too.
+    mcq["type"] = "Multiple Choice (select all)"
+    mcq["answerKey"] = "a, c"
+    assert mcq.prompt() == (
+        "Exercise 1:\n"
+        "Multiple Choice (select all):\n"
+        "Which is the most flexible?\n"
+        "a) paper\n"
+        "b) ceramic tea cup\n"
+        "c) clay tile\n"
+        "Answer:"
+    )
+    assert str(mcq).endswith("Answer: a, c")
+
+
 def test_flat_dict_flattens_question_and_joins_string_lists(mcq):
     flat = mcq.flat_dict
     assert flat["question"] == str(mcq)

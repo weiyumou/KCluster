@@ -55,6 +55,20 @@ def test_mcq_without_choices_is_rejected():
         validate_question(Question(bad))
 
 
+def test_select_all_without_choices_is_rejected():
+    bad = _mcq_dict()
+    bad["type"] = "Multiple Choice (select all)"
+    bad["question"].pop("choices")
+    with pytest.raises(ValueError, match="no choices"):
+        validate_question(Question(bad))
+
+
+def test_choiceless_type_without_choices_is_accepted():
+    q = {"id": "q-1", "type": "Fill-in-the-blank(s)",
+         "question": {"stem": "28 is 7 times what number? ____"}, "answerKey": "4"}
+    validate_question(Question(q))
+
+
 def test_malformed_choice_is_rejected():
     bad = _mcq_dict()
     bad["question"]["choices"].append({"label": "c"})

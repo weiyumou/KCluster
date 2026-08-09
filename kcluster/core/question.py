@@ -25,10 +25,17 @@ class Question(UserDict):
         return self["question"]["stem"]
 
     @property
+    def choices(self) -> list[dict]:
+        return self["question"].get("choices") or []
+
+    @property
     def body(self) -> str:
-        if self.q_type == "Multiple Choice":  # body = stem + choices
+        # Rendering follows the data, not the type string: any question that
+        # carries choices shows them, so choice-bearing types beyond plain
+        # "Multiple Choice" (e.g. select-all) cannot silently lose them.
+        if self.choices:  # body = stem + choices
             choices = [prompts.CHOICE_LINE.format(label=item["label"], text=item["text"])
-                       for item in self["question"]["choices"]]
+                       for item in self.choices]
             return "\n".join([self.stem] + choices)
         return self.stem  # body = stem
 
