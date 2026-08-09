@@ -1,7 +1,7 @@
 # KCluster
 
 [![CI](https://github.com/weiyumou/KCluster/actions/workflows/ci.yml/badge.svg)](https://github.com/weiyumou/KCluster/actions/workflows/ci.yml)
-[![arXiv](https://img.shields.io/badge/arXiv-2505.06469-b31b1b.svg)](https://arxiv.org/abs/2505.06469)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.15870197-blue.svg)](https://doi.org/10.5281/zenodo.15870197)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 LLM-based knowledge component discovery and question generation for education.
@@ -9,7 +9,7 @@ LLM-based knowledge component discovery and question generation for education.
 - **KCluster** (EDM 2025) discovers knowledge component (KC) models by
   clustering questions with *question congruity*, an LLM-induced similarity
   metric: how much more likely one question becomes when another appears
-  before it. [arXiv:2505.06469](https://arxiv.org/abs/2505.06469)
+  before it. [doi:10.5281/zenodo.15870197](https://doi.org/10.5281/zenodo.15870197)
 - **Generate-Then-Validate** (LAK 2026) generates multiple-choice questions
   from learning objectives, using a small language model as both an
   expansive generator and a selective validator.

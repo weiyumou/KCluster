@@ -63,7 +63,7 @@ kcluster = "kcluster.cli:main"
 
 [project.urls]
 Repository = "https://github.com/weiyumou/KCluster"
-"KCluster paper (EDM 2025)" = "https://arxiv.org/abs/2505.06469"
+"KCluster paper (EDM 2025)" = "https://doi.org/10.5281/zenodo.15870197"
 
 [tool.setuptools.packages.find]
 include = ["kcluster*"]

@@ -24,7 +24,3 @@ preferred-citation:
   end: 240
   doi: "10.5281/zenodo.15870197"
   url: "https://doi.org/10.5281/zenodo.15870197"
-  identifiers:
-    - type: other
-      value: "arXiv:2505.06469"
-      description: "arXiv preprint"
