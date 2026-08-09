@@ -20,6 +20,7 @@ import math
 import os
 import time
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -300,11 +301,41 @@ def job_rate(job, num_instances: int | None) -> str:
     return summary
 
 
-def wait_for_job_completion(launched_jobs: list[dict], config: VertexConfig, poll_interval_seconds: int = 60):
+def instances_done(job) -> int:
+    """How many instances a running job has predicted so far, per Vertex.
+
+    ``completion_stats.successful_count`` advances while the job runs, which is
+    the only progress signal available without reading Cloud Logging: the GCS
+    output is written in one go at the end, so an empty output prefix says
+    nothing. A job that has not started dispatching leaves ``completion_stats``
+    unset entirely, which reads as 0 here.
+    """
+    stats = getattr(job._gca_resource, "completion_stats", None)
+    return int(getattr(stats, "successful_count", 0) or 0) if stats else 0
+
+
+# A replica can spend ~15 min being provisioned and a couple more loading the
+# model before the first instance is dispatched, all of it inside the RUNNING
+# state. The default leaves generous room past that: a job that has been
+# RUNNING for half an hour with a zero counter is not slow, it is stuck (the
+# observed failure mode is a healthy replica that is never sent any work, e.g.
+# when the region cannot place the rest of the fleet).
+DEFAULT_STALL_AFTER_SECONDS = 30 * 60
+
+
+def wait_for_job_completion(launched_jobs: list[dict], config: VertexConfig, poll_interval_seconds: int = 60,
+                            stall_after_seconds: int = DEFAULT_STALL_AFTER_SECONDS):
     """
     Waits for a list of Vertex AI Batch Prediction Jobs to complete.
+
+    Warns about jobs whose predicted-instance count has not moved for
+    ``stall_after_seconds``. Warns rather than cancels: a stalled job is the
+    caller's money to spend, and a genuinely slow job must not be killed by a
+    heuristic. Pass 0 to disable the check.
     """
     completed_jobs = set()
+    progress = {}  # job name -> (instances done, monotonic time it last moved)
+    stalled_warned = set()
     while len(completed_jobs) < len(launched_jobs):
         logger.info(
             f"Waiting for {len(launched_jobs) - len(completed_jobs)} jobs to finish. "
@@ -338,7 +369,31 @@ def wait_for_job_completion(launched_jobs: list[dict], config: VertexConfig, pol
                 case JobState.JOB_STATE_CANCELLED:
                     logger.warning(f"Job '{job_display_name}' was cancelled.")
                 case _:
-                    logger.info(f"Job '{job_display_name}' is still running. Current state: {state}")
+                    done = instances_done(job)
+                    total = item.get("num_instances")
+                    pct = f" ({done / total:.1%})" if total else ""
+                    logger.info(f"Job '{job_display_name}' is still running ({state}); "
+                                f"{done:,} instances done{pct}")
+
+                    # Progress is per job and measured from the last time the
+                    # counter actually moved, so a job that dispatches and then
+                    # dies mid-run is caught as well as one that never starts.
+                    seen, since = progress.get(job.name, (-1, time.monotonic()))
+                    if done > seen:
+                        progress[job.name] = (done, time.monotonic())
+                        stalled_warned.discard(job.name)
+                    elif stall_after_seconds:
+                        stalled_for = time.monotonic() - since
+                        progress.setdefault(job.name, (done, since))
+                        if stalled_for > stall_after_seconds and job.name not in stalled_warned:
+                            stalled_warned.add(job.name)
+                            logger.warning(
+                                f"*** STALLED: '{job_display_name}' has been running with "
+                                f"{done:,} instances done for {stalled_for / 60:.0f} min. A healthy job "
+                                f"starts dispatching within ~20 min of launch. Check the container log for "
+                                f"'POST /predict'; if there is none, the region likely could not place the "
+                                f"fleet — cancel this job and relaunch with fewer concurrent jobs or "
+                                f"replicas. Job: {job.resource_name}")
                     continue
             # Add the job to completed jobs if it has reached a terminal state
             completed_jobs.add(job.name)
@@ -346,13 +401,21 @@ def wait_for_job_completion(launched_jobs: list[dict], config: VertexConfig, pol
     logger.info("All batch prediction jobs have completed.")
 
 
-def resolve_input_files(data_path: str) -> list[str]:
-    """Resolve an input path to a sorted list of question files.
+def resolve_input_files(data_path: str | Sequence[str]) -> list[str]:
+    """Resolve one or more input paths to a sorted, de-duplicated list of files.
 
-    Accepts either a directory (all its ``*.jsonl`` files) or a single file.
+    Each path is either a directory (all its ``*.jsonl`` files) or a single
+    file. Several may be given to select a subset of a workspace by name --
+    they must be launched from ONE call, because the caller launches every
+    resolved file before it starts waiting; separate calls would run serially.
     """
-    if os.path.isdir(data_path):
-        return sorted(glob.iglob(os.path.join(data_path, "*.jsonl")))
-    if os.path.isfile(data_path):
-        return [data_path]
-    raise FileNotFoundError(f"No such file or directory: {data_path}")
+    paths = [data_path] if isinstance(data_path, str) else list(data_path)
+    files = []
+    for path in paths:
+        if os.path.isdir(path):
+            files.extend(glob.iglob(os.path.join(path, "*.jsonl")))
+        elif os.path.isfile(path):
+            files.append(path)
+        else:
+            raise FileNotFoundError(f"No such file or directory: {path}")
+    return sorted(set(files))

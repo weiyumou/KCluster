@@ -90,3 +90,93 @@ def test_rate_without_an_instance_count_still_reports_duration():
 def test_rate_is_empty_when_it_cannot_be_computed(job):
     # An unreportable rate must not crash the wait loop or print a fake number.
     assert job_rate(job, 1000) == ""
+
+
+# --- stall detection -------------------------------------------------------
+class _Stats:
+    def __init__(self, successful_count):
+        self.successful_count = successful_count
+
+
+class _Resource:
+    def __init__(self, stats):
+        self.completion_stats = stats
+
+
+class _RunningJob:
+    """A job stuck in RUNNING whose progress counter the test drives."""
+    def __init__(self, counts):
+        self.name = "job-1"
+        self.display_name = "stuck-course"
+        self.resource_name = "projects/p/locations/l/batchPredictionJobs/1"
+        self._counts = list(counts)
+        self.state = 3  # JOB_STATE_RUNNING
+        self._gca_resource = _Resource(_Stats(self._counts[0]))
+
+    def advance(self):
+        if len(self._counts) > 1:
+            self._counts.pop(0)
+        self._gca_resource.completion_stats = _Stats(self._counts[0])
+
+
+def test_instances_done_reads_the_live_counter():
+    from kcluster.engine.vertex import instances_done
+    assert instances_done(_RunningJob([16816])) == 16816
+
+
+def test_instances_done_is_zero_when_the_job_never_dispatched():
+    # A job that has not started dispatching leaves completion_stats unset;
+    # that is precisely the state the stall check has to notice.
+    from kcluster.engine.vertex import instances_done
+
+    class _NoStats:
+        _gca_resource = _Resource(None)
+    assert instances_done(_NoStats()) == 0
+
+
+def _run_wait(monkeypatch, job, clock, stall_after, polls):
+    """Drive wait_for_job_completion for a fixed number of polls."""
+    import kcluster.engine.vertex as vx
+
+    warnings = []
+    monkeypatch.setattr(vx.logger, "warning", lambda m: warnings.append(m))
+    monkeypatch.setattr(vx.logger, "info", lambda m: None)
+    monkeypatch.setattr(vx.time, "monotonic", lambda: clock[0])
+
+    def fake_sleep(_):
+        clock[0] += 600          # ten minutes of wall clock per poll
+        job.advance()
+        if clock[0] > 600 * polls:
+            raise StopIteration  # the job never reaches a terminal state, so stop the loop here
+    monkeypatch.setattr(vx.time, "sleep", fake_sleep)
+    try:
+        vx.wait_for_job_completion([{"job_obj": job, "job_id": "j", "num_questions": 1, "num_instances": 100_000}],
+                                   config=None, stall_after_seconds=stall_after)
+    except StopIteration:
+        pass
+    return warnings
+
+
+def test_a_job_that_never_dispatches_is_reported_stalled(monkeypatch):
+    job = _RunningJob([0])            # counter never moves
+    warnings = _run_wait(monkeypatch, job, [0.0], stall_after=1800, polls=6)
+    assert any("STALLED" in w for w in warnings), "a zero counter for an hour was not flagged"
+    assert sum("STALLED" in w for w in warnings) == 1, "the warning should fire once, not every poll"
+
+
+def test_a_progressing_job_is_never_flagged(monkeypatch):
+    job = _RunningJob([0, 5_000, 12_000, 20_000, 31_000, 44_000, 60_000])
+    warnings = _run_wait(monkeypatch, job, [0.0], stall_after=1800, polls=6)
+    assert not any("STALLED" in w for w in warnings)
+
+
+def test_a_job_that_dies_mid_run_is_flagged(monkeypatch):
+    # Dispatches, then the counter freezes — a replica lost after starting.
+    job = _RunningJob([1_000, 9_000, 9_000, 9_000, 9_000, 9_000, 9_000])
+    warnings = _run_wait(monkeypatch, job, [0.0], stall_after=1800, polls=6)
+    assert any("STALLED" in w for w in warnings)
+
+
+def test_the_check_can_be_disabled(monkeypatch):
+    job = _RunningJob([0])
+    assert not _run_wait(monkeypatch, job, [0.0], stall_after=0, polls=6)

@@ -11,6 +11,7 @@ import logging
 import os
 
 from kcluster.engine.vertex import (
+    DEFAULT_STALL_AFTER_SECONDS,
     VertexConfig,
     download_pmi,
     launch_batch_job,
@@ -79,15 +80,21 @@ def main(args):
     if not launched_jobs:
         logging.info("Nothing to launch — every input already has collected results.")
         return
-    wait_for_job_completion(launched_jobs, config)
+    wait_for_job_completion(launched_jobs, config,
+                            stall_after_seconds=getattr(args, "stall_after", DEFAULT_STALL_AFTER_SECONDS))
 
 
 def add_arguments(parser):
-    parser.add_argument("--data_path", required=True, type=str,
-                        help="A directory of *.jsonl question files, or a single .jsonl file")
+    parser.add_argument("--data_path", required=True, type=str, nargs="+",
+                        help="One or more paths, each a directory of *.jsonl question files or a single "
+                             ".jsonl file. Give several to launch a chosen subset concurrently — they must "
+                             "share one invocation, since waiting starts only after all are launched")
     parser.add_argument("--completion_time", default=60.0, type=float, help="Expected completion time in minutes")
     parser.add_argument("--secs_per_batch", default=0.1, type=float, help="Estimated seconds per batch for the job")
     parser.add_argument("--batch_size", default=16, type=int, help="Batch size for the job")
+    parser.add_argument("--stall_after", type=int, default=DEFAULT_STALL_AFTER_SECONDS,
+                        help="Warn when a running job's predicted-instance count has not moved for this "
+                             "many seconds (0 disables). A healthy job starts dispatching within ~20 min")
     parser.add_argument("--skip_completed", action="store_true",
                         help="Skip inputs whose job in this output directory's launched_jobs.jsonl "
                              "already has collected results, so a partial run can be resumed "
