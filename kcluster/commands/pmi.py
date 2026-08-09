@@ -8,6 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 from transformers.utils import logging
 
+from kcluster.core import prompts
 from kcluster.engine.local import CustomWriter, LargeLangModel, LogProbScorer, collate_pair
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import default_output_dir, prepare_output_dir
@@ -30,7 +31,9 @@ def main(args):
 
     # Compute PMI
     questions = load_questions(args.data_path)
-    ds = PairQuestion(questions)
+    ds = PairQuestion(questions, render=args.render)
+    if args.render != "v1":
+        print(f"*** Congruity renderer: {args.render} (NOT the published grid) ***")
     dl = DataLoader(ds, batch_size=args.batch_size, pin_memory=True, shuffle=False, num_workers=args.num_workers,
                     collate_fn=partial(collate_pair, tokenizer=tokenizer, pad_to_multiple_of=args.pad_to_multiple_of))
 
@@ -51,6 +54,8 @@ def add_arguments(parser):
     parser.add_argument("--output_dir", type=str, default=argparse.SUPPRESS, help="Path to the output directory")
     parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
                         help="Shared run folder; each step writes to <run_dir>/<step> (env: KCLUSTER_RUN_DIR)")
+    parser.add_argument("--render", type=str, default="v1", choices=sorted(prompts.CONGRUITY_RENDERERS),
+                        help="Congruity prompt variant; 'v1' is the published EDM 2025 grid")
     parser.add_argument("--num_workers", type=int, default=0, help="Number of workers for DataLoader")
     parser.add_argument("--pad_to_multiple_of", type=int, default=None, help="Pad to multiple of")
 

@@ -25,13 +25,70 @@ ANSWER_TRAILER = "Answer:"
 # --- Question congruity (EDM 2025 Tables 3 and 4; decision D2: the
 # marginal scores under the "Exercise 2:" header) ---
 
+# Rendering variants for the format-leakage probe. The scored question's own
+# type line sits in both the marginal and the conditional context, so it
+# cancels out of the PMI difference; the CONTEXT question's type line and
+# rendering do not, and a format the two questions share makes the scored
+# question's own scaffolding cheaper. That is congruity the pair earns by
+# looking alike rather than by testing the same thing. Each variant removes one
+# channel so the size of the effect can be measured:
+#
+#   v1         the published EDM 2025 grid — the default everywhere
+#   no_type    drops the "<type>:" line (the explicit channel)
+#   no_answer  ... and the "Answer: <key>" trailer, whose predictability under
+#              a same-format context varies sharply by format
+#
+# These are measurement instruments, not a new default: adopting one is a
+# PROMPT_VERSION bump and a scientific decision.
 
-def congruity_marginal_context(question) -> str:
-    return f"{question.header(2)}\n"
+
+def _header_v1(question, q_num: int) -> str:
+    return question.header(q_num)
 
 
-def congruity_pair_context(context_question, scored_question) -> str:
-    return f"{context_question.header(1)}\n{context_question}\n\n{scored_question.header(2)}\n"
+def _header_bare(question, q_num: int) -> str:
+    return EXERCISE_HEADER.format(q_num=q_num)
+
+
+def _text_v1(question) -> str:
+    return str(question)  # body + "Answer: <key>"
+
+
+def _text_no_answer(question) -> str:
+    return question.body  # stem (+ choices), no answer trailer
+
+
+# name -> (how to render a header, how to render a question's text). The text
+# renderer applies to the context question and the scored question alike:
+# stripping the answer from only one of them would leave the cue in place.
+CONGRUITY_RENDERERS = {
+    "v1": (_header_v1, _text_v1),
+    "no_type": (_header_bare, _text_v1),
+    "no_answer": (_header_bare, _text_no_answer),
+}
+
+
+def _renderer(render: str):
+    if render not in CONGRUITY_RENDERERS:
+        raise ValueError(f"unknown congruity renderer {render!r}; "
+                         f"expected one of {sorted(CONGRUITY_RENDERERS)}")
+    return CONGRUITY_RENDERERS[render]
+
+
+def congruity_marginal_context(question, render: str = "v1") -> str:
+    header, _ = _renderer(render)
+    return f"{header(question, 2)}\n"
+
+
+def congruity_pair_context(context_question, scored_question, render: str = "v1") -> str:
+    header, text = _renderer(render)
+    return f"{header(context_question, 1)}\n{text(context_question)}\n\n{header(scored_question, 2)}\n"
+
+
+def congruity_scored_text(question, render: str = "v1") -> str:
+    """The text whose log-probability is scored under those contexts."""
+    _, text = _renderer(render)
+    return text(question)
 
 
 # --- Concept extraction (EDM 2025 Table 1) ---
