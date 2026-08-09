@@ -13,7 +13,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from kcluster.core.pmi import PointwiseMutualInfo
+from kcluster.core.pmi import PointwiseMutualInfo, residualize
 from kcluster.engine.vertex import VertexConfig, download_concepts, download_pmi
 from kcluster.io.jsonl import load_questions
 from kcluster.tasks.cluster import build_res_df, create_kc
@@ -62,6 +62,16 @@ def main(args):
             kcluster_df.to_csv(os.path.join(output_dir, f"{data_name}_kcluster-{norm_tag}-kc.csv"), index=False)
             print(f"*** KCluster finished with {kcluster_df['KC'].nunique()} KCs ***")
 
+        # ... and the same clustering with the question-format nuisance removed
+        # (D9). Written alongside rather than replacing it, as in build-kc.
+        if getattr(args, "residualize", False):
+            adjusted = residualize(sim_mtx, [q.q_type for q in questions])
+            resid_df = create_kc(concept_df, questions, adjusted)
+            if isinstance(resid_df, pd.DataFrame):
+                resid_df.to_csv(os.path.join(output_dir, f"{data_name}_kcluster-{norm_tag}-resid-kc.csv"),
+                                index=False)
+                print(f"*** KCluster (residualized) finished with {resid_df['KC'].nunique()} KCs ***")
+
         print(f"*** Created {concept_df['KC'].nunique()} Concept KCs ***\n\n")
         concept_df.to_csv(os.path.join(output_dir, f"{data_name}_concept-kc.csv"), index=False)
 
@@ -70,6 +80,9 @@ def add_arguments(parser):
     parser.add_argument("--work_dir", required=True, type=str,
                         help="Path to the working directory containing launched_jobs.jsonl")
     parser.add_argument("--normalize", action="store_true", help="Whether to normalize the PMI")
+    parser.add_argument("--residualize", action="store_true",
+                        help="Also build a KC model from congruity residualized by question type, "
+                             "which stops a mixed-format bank from clustering by format")
     parser.add_argument("--config", default=argparse.SUPPRESS, type=str,
                         help="Path to a vertex TOML config (default: KCLUSTER_VERTEX_* environment)")
 

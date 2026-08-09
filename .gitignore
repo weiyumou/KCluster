@@ -2,14 +2,15 @@
 # Research Workspace Ignores & Symlinks
 # ==========================================
 references
-data/
 prior-idea-*
 !examples/data/
 docs/
+data
 raw_data
 results/
 sbatch/
 datasets/**/*.ipynb
+datasets/**/jobs/
 
 # Local GCP configuration (identifiers, not credentials — still never committed)
 vertex.toml

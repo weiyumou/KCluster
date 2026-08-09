@@ -17,3 +17,11 @@ Conventions:
 - No export is stored in this repository, not even ignored: every driver takes
   its input paths as arguments, so keep the data outside the working tree and
   pass the path (or symlink `<name>/raw_data` at it).
+- Scripts that *ran* KCluster on a workspace go in `<name>/jobs/`, git-ignored
+  alongside `data/` and `raw_data/`. A driver is reproducible and belongs in
+  the repo; a job is one execution on one backend, carrying cluster paths and
+  GCP identifiers that are local by nature — the same reason `vertex.toml` is
+  ignored. Name them `<backend>-<purpose>.sh`, e.g. `jobs/vertex-kcluster.sh`.
+  The workspace README records *what* was run and what it produced; the job
+  script records *how*, and should stay runnable from a bare clone once the
+  data symlinks and config are back in place.

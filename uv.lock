@@ -1583,10 +1583,12 @@ vertex = [
 
 [package.dev-dependencies]
 datasets = [
+    { name = "beautifulsoup4" },
     { name = "pillow" },
     { name = "requests" },
 ]
 dev = [
+    { name = "beautifulsoup4" },
     { name = "pillow" },
     { name = "pytest" },
     { name = "requests" },
@@ -1621,10 +1623,12 @@ provides-extras = ["local", "vertex", "gemini", "datashop"]
 
 [package.metadata.requires-dev]
 datasets = [
+    { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "pillow", specifier = ">=10" },
     { name = "requests", specifier = ">=2.31" },
 ]
 dev = [
+    { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "pillow", specifier = ">=10" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "requests", specifier = ">=2.31" },

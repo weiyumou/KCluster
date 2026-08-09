@@ -281,6 +281,25 @@ def launch_batch_job(questions: list[Question], config: VertexConfig,
     return job, job_id
 
 
+def job_rate(job, num_instances: int | None) -> str:
+    """A throughput summary for a finished job, for sizing the next one.
+
+    Prefers Vertex's own start/end timestamps over wall clock: a job can queue
+    for a long time before a replica starts, and queueing is not throughput.
+    Returns an empty string when the resource carries no usable times.
+    """
+    start, end = getattr(job, "start_time", None), getattr(job, "end_time", None)
+    if not (start and end):
+        return ""
+    seconds = (end - start).total_seconds()
+    if seconds <= 0:
+        return ""
+    summary = f"ran {seconds / 60:.1f} min"
+    if num_instances:
+        summary += f" for {num_instances:,} instances = {num_instances / seconds:,.0f} instances/s"
+    return summary
+
+
 def wait_for_job_completion(launched_jobs: list[dict], config: VertexConfig, poll_interval_seconds: int = 60):
     """
     Waits for a list of Vertex AI Batch Prediction Jobs to complete.
@@ -303,7 +322,10 @@ def wait_for_job_completion(launched_jobs: list[dict], config: VertexConfig, pol
                 case JobState.JOB_STATE_PARTIALLY_SUCCEEDED:
                     logger.warning(f"Job '{job_display_name}' partially succeeded. Some results may be missing.")
                 case JobState.JOB_STATE_SUCCEEDED:
-                    logger.info(f"Job '{job_display_name}' succeeded.")
+                    # The rate is what sizes the next launch, so report it here
+                    # rather than leaving it to be dug out of the console.
+                    rate = job_rate(job, item.get("num_instances"))
+                    logger.info(f"Job '{job_display_name}' succeeded{': ' + rate if rate else ''}.")
                     try:
                         results = collect_predictions(item["job_id"], item["num_questions"], config)
                         logger.info(
