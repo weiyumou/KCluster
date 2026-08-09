@@ -6,7 +6,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from kcluster.core.pmi import PointwiseMutualInfo
+from kcluster.core.pmi import PointwiseMutualInfo, residualize
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import default_output_dir, prepare_output_dir, step_dir
 from kcluster.tasks.cluster import create_kc, sim_from_embeddings
@@ -70,6 +70,18 @@ def main(args):
             kc.to_csv(os.path.join(args.output_dir, "pmi-kc.csv"), index=False)
             print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
 
+        # An additional KC model with the question-format nuisance divided out.
+        # Written alongside the plain one rather than replacing it: whether the
+        # correction helps is an empirical question per dataset, and on a
+        # single-format bank it is a no-op the comparison should show.
+        if getattr(args, "residualize", False):
+            print("*** Building KCs for KCluster-PMI, residualized by question type ***")
+            adjusted = residualize(pmi.pmi_mat, [q.q_type for q in questions])
+            kc = create_kc(concept_df, questions, adjusted)
+            if isinstance(kc, pd.DataFrame):
+                kc.to_csv(os.path.join(args.output_dir, "pmi-resid-kc.csv"), index=False)
+                print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
+
     # Save arguments
     fname = os.path.splitext(os.path.basename(args.data_path))[0]
     with open(os.path.join(args.output_dir, f"args-kc-{fname}.json"), "w") as f:
@@ -81,6 +93,9 @@ def add_arguments(parser):
                         help="Path to a directory containing concepts (default: <run_dir>/concept)")
     parser.add_argument("--pmi_dir", default=argparse.SUPPRESS, type=str,
                         help="Path to a directory containing PMI values")
+    parser.add_argument("--residualize", action="store_true",
+                        help="Also build a KC model from congruity residualized by question type, "
+                             "which stops a mixed-format bank from clustering by format")
     parser.add_argument("--output_dir", default=argparse.SUPPRESS, type=str, help="The output directory")
     parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
                         help="Shared run folder; each step writes to <run_dir>/<step> (env: KCLUSTER_RUN_DIR)")
