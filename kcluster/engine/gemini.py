@@ -27,7 +27,10 @@ from tqdm.asyncio import tqdm as tqdm_async
 class GeminiEngine:
     def __init__(self, model: str, api_key: str | None = None,
                  vertexai: bool = False, project: str | None = None, location: str = "us-central1"):
-        self.client = genai.Client(vertexai=vertexai, project=project, location=location, api_key=api_key)
+        # project/location are Vertex-only: passing them on the Developer API
+        # path raises "Gemini API does not support project/location."
+        target = {"project": project, "location": location} if vertexai else {"api_key": api_key}
+        self.client = genai.Client(vertexai=vertexai, **target)
         self.model = model
         self._next_delay = 0.0
 
