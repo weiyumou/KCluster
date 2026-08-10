@@ -12,7 +12,8 @@ import pytest
 
 pytest.importorskip("google.cloud.aiplatform")
 
-from kcluster.commands import vertex_launch  # noqa: E402
+import kcluster.engine.vertex as vertex  # noqa: E402
+from kcluster.commands import vertex_build_kc, vertex_launch  # noqa: E402
 from kcluster.engine.vertex import job_rate  # noqa: E402
 
 
@@ -29,7 +30,7 @@ def _jobs_file(tmp_path, entries):
 def stub_results(monkeypatch):
     """Pretend a given set of job ids have collected pmi.npy in GCS."""
     def _stub(with_results):
-        monkeypatch.setattr(vertex_launch, "download_pmi",
+        monkeypatch.setattr(vertex, "download_pmi",
                             lambda job_id, config: object() if job_id in with_results else None)
     return _stub
 
@@ -58,6 +59,23 @@ def test_blank_lines_in_the_job_log_are_tolerated(tmp_path, stub_results):
     path.write_text(json.dumps({"job_id": "bio_1", "data_path": "data/Bio.jsonl"}) + "\n\n")
     stub_results({"bio_1"})
     assert vertex_launch.collected_inputs(str(path), config=None) == {"data/Bio.jsonl": "bio_1"}
+
+
+# --- which entries a build should use --------------------------------------
+def test_the_build_uses_the_attempt_that_has_results(tmp_path, stub_results):
+    # The 12-job fan-out that failed, then the relaunches that worked: building
+    # every entry would stop dead on the first failed one.
+    jobs = _jobs_file(tmp_path, [("bio_1", "data/Bio.jsonl"), ("chem_1", "data/Chem.jsonl"),
+                                 ("bio_2", "data/Bio.jsonl")])
+    stub_results({"bio_2", "chem_1"})
+    built = vertex_build_kc.buildable_jobs(jobs, config=None)
+    assert [i["job_id"] for i in built] == ["chem_1", "bio_2"], "one build per input, the winning attempt"
+
+
+def test_an_input_with_no_results_at_all_is_dropped(tmp_path, stub_results):
+    jobs = _jobs_file(tmp_path, [("bio_1", "data/Bio.jsonl"), ("chem_1", "data/Chem.jsonl")])
+    stub_results({"bio_1"})
+    assert [i["job_id"] for i in vertex_build_kc.buildable_jobs(jobs, config=None)] == ["bio_1"]
 
 
 # --- throughput reporting --------------------------------------------------

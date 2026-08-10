@@ -13,35 +13,13 @@ import os
 from kcluster.engine.vertex import (
     DEFAULT_STALL_AFTER_SECONDS,
     VertexConfig,
-    download_pmi,
+    collected_inputs,
     launch_batch_job,
     resolve_input_files,
     wait_for_job_completion,
 )
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import default_output_dir, prepare_output_dir, timestamp
-
-
-def collected_inputs(jobs_path: str, config: VertexConfig) -> dict[str, str]:
-    """Map each input file in a job log to the job that already has results.
-
-    Keyed on the *result*, not on the launch: a job that was started but failed,
-    was cancelled, or is still running does not count, so a resumed launch
-    reruns it. Later entries win, so relaunching a course supersedes its
-    earlier attempt.
-    """
-    if not os.path.exists(jobs_path):
-        return {}
-    collected = {}
-    with open(jobs_path) as f:
-        for line in f:
-            if not line.strip():
-                continue
-            item = json.loads(line)
-            if download_pmi(item["job_id"], config) is not None:
-                collected[item["data_path"]] = item["job_id"]
-    logging.info(f"{len(collected)} input file(s) already have collected results in {jobs_path}")
-    return collected
 
 
 def main(args):

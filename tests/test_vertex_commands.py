@@ -104,7 +104,10 @@ def test_vertex_build_kc_requires_collected_results(gcs, config_path, tmp_path):
     (work_dir / "launched_jobs.jsonl").write_text(
         json.dumps({"job_id": "missing", "data_path": str(data_path), "resource_name": "jobs/1"}) + "\n")
 
-    with pytest.raises(AssertionError, match="vertex-retrieve"):
+    # Uncollected entries are skipped rather than asserted on (a relaunched
+    # course leaves dead ones behind), but a log with nothing to build at all
+    # must still fail loudly instead of writing an empty kc/ directory.
+    with pytest.raises(SystemExit, match="vertex-retrieve"):
         main(argparse.Namespace(work_dir=str(work_dir), normalize=False, config=config_path))
 
 

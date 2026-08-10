@@ -14,18 +14,35 @@ import numpy as np
 import pandas as pd
 
 from kcluster.core.pmi import PointwiseMutualInfo, residualize
-from kcluster.engine.vertex import VertexConfig, download_concepts, download_pmi
+from kcluster.engine.vertex import VertexConfig, collected_inputs, download_concepts, download_pmi
 from kcluster.io.jsonl import load_questions
 from kcluster.tasks.cluster import build_res_df, create_kc
+
+
+def buildable_jobs(jobs_path: str, config: VertexConfig) -> list[dict]:
+    """The job log entries worth building, one per input file.
+
+    A course that was relaunched after a failure appears in the log more than
+    once, and only the winning attempt has a pmi.npy. Building every entry would
+    stop on the first dead one, so keep just the attempt that has results.
+    """
+    with open(jobs_path) as f:
+        entries = [json.loads(line) for line in f if line.strip()]
+    collected = collected_inputs(jobs_path, config)
+    for item in entries:
+        if collected.get(item["data_path"]) != item["job_id"]:
+            logging.info(f"Skipping '{item['job_id']}': superseded or never produced results")
+    return [item for item in entries if collected.get(item["data_path"]) == item["job_id"]]
 
 
 def main(args):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     config = VertexConfig.load(getattr(args, "config", None))
 
-    # Open the job log in the working directory
-    with open(os.path.join(args.work_dir, "launched_jobs.jsonl"), "r") as f:
-        launched_jobs = [json.loads(line) for line in f]
+    jobs_path = os.path.join(args.work_dir, "launched_jobs.jsonl")
+    launched_jobs = buildable_jobs(jobs_path, config)
+    if not launched_jobs:
+        raise SystemExit(f"No collected results in {jobs_path} — run vertex-retrieve or relaunch first")
 
     for item in launched_jobs:
         job_id, data_path = item["job_id"], item["data_path"]
@@ -66,6 +83,10 @@ def main(args):
         # (D9). Written alongside rather than replacing it, as in build-kc.
         if getattr(args, "residualize", False):
             adjusted = residualize(sim_mtx, [q.q_type for q in questions])
+            # Saved beside the raw matrix, not just clustered: the corrected
+            # congruity is what a pairwise analysis of these questions should
+            # read, and recovering it otherwise means redoing the strata by hand.
+            np.save(os.path.join(output_dir, f"{data_name}_pmi-{norm_tag}-resid.npy"), adjusted)
             resid_df = create_kc(concept_df, questions, adjusted)
             if isinstance(resid_df, pd.DataFrame):
                 resid_df.to_csv(os.path.join(output_dir, f"{data_name}_kcluster-{norm_tag}-resid-kc.csv"),
