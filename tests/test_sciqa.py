@@ -51,8 +51,8 @@ def test_evaluate_kc_scores_csvs_against_the_skill_column(tmp_path):
             "skill": ["s1", "s1", "s2", "s2"],
             "KC": ["k1", "k1", "k2", "k2"],
         }
-    ).to_csv(tmp_path / "pmi-kc.csv", index=False)
+    ).to_csv(tmp_path / "sciqa_kcluster-unnorm-kc.csv", index=False)
 
     res = evaluate_kc(str(tmp_path), random_kc=True, num_runs=3)
-    assert res.loc["pmi (2 KCs)"].eq(1.0).all()
-    assert "pmi-rand (2 KCs)" in res.index
+    assert res.loc["kcluster-unnorm (2 KCs)"].eq(1.0).all()
+    assert "kcluster-unnorm-rand (2 KCs)" in res.index

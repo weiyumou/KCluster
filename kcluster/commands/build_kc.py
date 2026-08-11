@@ -8,66 +8,52 @@ import pandas as pd
 
 from kcluster.core.pmi import PointwiseMutualInfo, residualize
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import default_output_dir, prepare_output_dir, step_dir
-from kcluster.tasks.cluster import create_kc, sim_from_embeddings
+from kcluster.paths import kc_dir, pmi_dir, pmi_raw_dir, prepare_output_dir, run_dir
+from kcluster.tasks.cluster import create_kc
 
 
 def main(args):
-    run = getattr(args, "run_dir", None)
-    output_dir = getattr(args, "output_dir", None) or default_output_dir("kc", run)
-    args.output_dir = prepare_output_dir(output_dir)
-    print(f"*** Writing results to {args.output_dir} ***")
+    # The result dir is both input and output (D10): the concept step already
+    # wrote kc/<ds>_concept-kc.csv and mat/pmi/raw/ holds the score shards.
+    result_dir = getattr(args, "result_dir", None) or run_dir(getattr(args, "run_dir", None))
+    if not result_dir:
+        raise SystemExit("--result_dir is required unless --run_dir (or KCLUSTER_RUN_DIR) is set")
+    args.result_dir = result_dir = os.path.abspath(result_dir)
+    print(f"*** Writing results to {result_dir} ***")
 
-    # Inside a run folder the previous steps' outputs are found automatically
-    args.concept_dir = getattr(args, "concept_dir", None) or step_dir("concept", run)
-    if not args.concept_dir:
-        raise SystemExit("--concept_dir is required unless --run_dir (or KCLUSTER_RUN_DIR) is set")
-    if not getattr(args, "pmi_dir", None) and (pmi := step_dir("pmi", run)) and os.path.isdir(pmi):
-        args.pmi_dir = pmi
-
-    # Check all concepts are correctly filled
-    [fname] = glob.glob("*-concept.csv", root_dir=args.concept_dir)
-    concept_df = pd.read_csv(os.path.join(args.concept_dir, fname))
+    # Check the Concept KC written by the concept step is correctly filled
+    out_dir = prepare_output_dir(kc_dir(result_dir))
+    match = glob.glob("*_concept-kc.csv", root_dir=out_dir)
+    if len(match) != 1:
+        raise SystemExit(f"Expected exactly one *_concept-kc.csv in {out_dir}, found {len(match)} — "
+                         "run the concept step into this result dir first")
+    [fname] = match
+    ds = fname.removesuffix("_concept-kc.csv")
+    concept_df = pd.read_csv(os.path.join(out_dir, fname))
     assert concept_df["KC"].str.strip().all(), "Some concepts are invalid"
 
-    # Concept is already a KC model; copy it to the output directory
-    concept_df.to_csv(os.path.join(args.output_dir, "concept-kc.csv"), index=False)
-
     # Recover the questions behind the concepts
-    [fname] = glob.glob("args*.json", root_dir=args.concept_dir)
-    with open(os.path.join(args.concept_dir, fname), "r") as f:
+    [fname] = glob.glob("args-concept-*.json", root_dir=result_dir)
+    with open(os.path.join(result_dir, fname), "r") as f:
         args.data_path = json.load(f)["data_path"]
     questions = load_questions(args.data_path)
 
-    # Determine which types of embeddings are available
-    embed_types = []
-    if glob.glob("*-concept-embeds.npy", root_dir=args.concept_dir):
-        embed_types.append("concept")
-    if glob.glob("*-question-embeds.npy", root_dir=args.concept_dir):
-        embed_types.append("question")
-
-    # Create KC for baselines
-    for embed_type in embed_types:
-        for metric in ("cosine",):
-            [fname] = glob.glob(f"*-{embed_type}-embeds.npy", root_dir=args.concept_dir)
-            embeds = np.load(os.path.join(args.concept_dir, fname))
-            assert embeds.shape[0] == len(questions), \
-                f"Expected {len(questions)} questions, got {embeds.shape[0]} embeddings"
-            print(f"*** Building KCs based on {embed_type}, metric='{metric}' ***")
-            kc = create_kc(concept_df, questions, sim_from_embeddings(embeds, metric=metric))
-            if isinstance(kc, pd.DataFrame):
-                kc.to_csv(os.path.join(args.output_dir, f"{embed_type}-{metric}-kc.csv"), index=False)
-                print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
-
-    # Create KC for KCluster-PMI
-    if pmi_dir := getattr(args, "pmi_dir", None):
+    # Create KC for KCluster-PMI from the raw score shards
+    raw_dir = getattr(args, "pmi_dir", None) or pmi_raw_dir(result_dir)
+    if os.path.isdir(raw_dir) and glob.glob("predictions_*.pt", root_dir=raw_dir):
         num_questions = len(questions)
-        pmi = PointwiseMutualInfo.from_shards(pmi_dir, num_questions, num_questions,
+        pmi = PointwiseMutualInfo.from_shards(raw_dir, num_questions, num_questions,
                                               normalize=False, symmetric=True)
+        # The assembled congruity matrix is what a pairwise analysis of these
+        # questions should read, so it is saved beside the models rather than
+        # left recoverable only by re-reading the shards (parity with vertex).
+        mat_dir = prepare_output_dir(pmi_dir(result_dir))
+        np.save(os.path.join(mat_dir, f"{ds}_pmi-unnorm.npy"), pmi.pmi_mat)
+
         print("*** Building KCs for KCluster-PMI ***")
         kc = create_kc(concept_df, questions, pmi.pmi_mat)
         if isinstance(kc, pd.DataFrame):
-            kc.to_csv(os.path.join(args.output_dir, "pmi-kc.csv"), index=False)
+            kc.to_csv(os.path.join(out_dir, f"{ds}_kcluster-unnorm-kc.csv"), index=False)
             print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
 
         # An additional KC model with the question-format nuisance divided out.
@@ -77,28 +63,27 @@ def main(args):
         if getattr(args, "residualize", False):
             print("*** Building KCs for KCluster-PMI, residualized by question type ***")
             adjusted = residualize(pmi.pmi_mat, [q.q_type for q in questions])
+            np.save(os.path.join(mat_dir, f"{ds}_pmi-unnorm-resid.npy"), adjusted)
             kc = create_kc(concept_df, questions, adjusted)
             if isinstance(kc, pd.DataFrame):
-                kc.to_csv(os.path.join(args.output_dir, "pmi-resid-kc.csv"), index=False)
+                kc.to_csv(os.path.join(out_dir, f"{ds}_kcluster-unnorm-resid-kc.csv"), index=False)
                 print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
 
     # Save arguments
-    fname = os.path.splitext(os.path.basename(args.data_path))[0]
-    with open(os.path.join(args.output_dir, f"args-kc-{fname}.json"), "w") as f:
+    with open(os.path.join(result_dir, f"args-kc-{ds}.json"), "w") as f:
         json.dump(vars(args), f, indent=2)
 
 
 def add_arguments(parser):
-    parser.add_argument("--concept_dir", default=argparse.SUPPRESS, type=str,
-                        help="Path to a directory containing concepts (default: <run_dir>/concept)")
+    parser.add_argument("--result_dir", default=argparse.SUPPRESS, type=str,
+                        help="The result directory holding the concept step's output (default: --run_dir)")
     parser.add_argument("--pmi_dir", default=argparse.SUPPRESS, type=str,
-                        help="Path to a directory containing PMI values")
+                        help="Directory of raw score shards (default: <result_dir>/mat/pmi/raw)")
     parser.add_argument("--residualize", action="store_true",
                         help="Also build a KC model from congruity residualized by question type, "
                              "which stops a mixed-format bank from clustering by format")
-    parser.add_argument("--output_dir", default=argparse.SUPPRESS, type=str, help="The output directory")
     parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
-                        help="Shared run folder; each step writes to <run_dir>/<step> (env: KCLUSTER_RUN_DIR)")
+                        help="Result folder shared by every step of this run (env: KCLUSTER_RUN_DIR)")
 
 
 if __name__ == "__main__":

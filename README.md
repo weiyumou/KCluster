@@ -49,19 +49,24 @@ checkout:
 ```bash
 export DATA_PATH=examples/data/sample-mcq.jsonl
 export KCLUSTER_RUN_DIR=results/my-run     # one folder for every step of this run
-kcluster concept  --llm_path phi-2 --data_path $DATA_PATH   # concept labels + embeddings
+kcluster concept  --llm_path phi-2 --data_path $DATA_PATH   # concept labels
 kcluster pmi      --llm_path phi-2 --data_path $DATA_PATH   # question congruity
-kcluster build-kc                                           # finds concept/ and pmi/ itself
+kcluster build-kc                                           # clusters congruity into KCs
+kcluster embed    --llm_path phi-2                          # embedding baselines (optional)
 ```
 
-Results are run-major — `<run>/{concept,pmi,kc}` — so steps that run as
-separate jobs stay together and downstream commands locate their own inputs.
+Every step targets one result folder per dataset, organized by artifact
+kind — `kc/` for the final KC models, `mat/` for embeddings and congruity
+matrices — so steps that run as separate jobs stay together, downstream
+commands locate their own inputs, and local and Vertex runs come out
+identically shaped.
 
-`build-kc` writes labeled KC models (`pmi-kc.csv`, `concept-kc.csv`, an
-embedding baseline) discovered by affinity propagation over the congruity
-matrix. `build-datashop-kc` and `refine-datashop-kc` then insert and refine
-KC models in [DataShop](https://pslcdatashop.web.cmu.edu/) format for AFM
-evaluation.
+`build-kc` writes the KCluster model (`<ds>_kcluster-unnorm-kc.csv`)
+discovered by affinity propagation over the congruity matrix, alongside the
+concept model the concept step produced; `embed` adds cosine baselines from
+question and concept embeddings. `build-datashop-kc` and
+`refine-datashop-kc` then insert and refine KC models in
+[DataShop](https://pslcdatashop.web.cmu.edu/) format for AFM evaluation.
 
 **No GPU?** The scoring steps run as Vertex AI batch jobs in your own GCP
 project: deploy the model once ([`deploy/vertex/`](deploy/vertex/README.md)),

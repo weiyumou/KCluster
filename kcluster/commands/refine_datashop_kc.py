@@ -10,21 +10,18 @@ import pandas as pd
 from kcluster.core.pmi import PointwiseMutualInfo
 from kcluster.io.datashop import KC_PAT, get_step_to_kc, merge_student_step_with_kc
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import default_output_dir, prepare_output_dir, step_dir
+from kcluster.paths import embed_dir, kc_dir, pmi_raw_dir, prepare_output_dir, run_dir
 from kcluster.tasks.cluster import create_kc, sim_from_embeddings
 
 
 def main(args):
-    run = getattr(args, "run_dir", None)
-    output_dir = prepare_output_dir(default_output_dir("kc-refine", run), exist_ok=False)
+    # The result dir (D10 layout) holds the concept KC, embeddings, and shards
+    result_dir = getattr(args, "result_dir", None) or run_dir(getattr(args, "run_dir", None))
+    if not result_dir:
+        raise SystemExit("--result_dir is required unless --run_dir (or KCLUSTER_RUN_DIR) is set")
+    result_dir = os.path.abspath(result_dir)
+    output_dir = prepare_output_dir(os.path.join(result_dir, "kc-refine"), exist_ok=False)
     print(f"*** Writing results to {output_dir} ***")
-
-    # Inside a run folder the earlier steps' outputs are found automatically
-    for name in ("concept", "pmi"):
-        if not getattr(args, f"{name}_dir", None):
-            if not (found := step_dir(name, run)):
-                raise SystemExit(f"--{name}_dir is required unless --run_dir (or KCLUSTER_RUN_DIR) is set")
-            setattr(args, f"{name}_dir", found)
 
     # Identify the KC model to refine and load the KC values
     kcm = os.path.split(args.kc_val_path)[1].split("_")[0]  # Extract the KC model from the file name
@@ -36,24 +33,25 @@ def main(args):
                      usecols=(lambda col: col == f"KC ({kcm})" or not re.match(KC_PAT, col)))
     assert f"KC ({kcm})" in kc, "The KC model to refine is not found in the template file"
 
-    # Load concepts
-    [fname] = glob.glob("*-concept.csv", root_dir=args.concept_dir)
-    concept_df = pd.read_csv(os.path.join(args.concept_dir, fname))
+    # Load concepts (the concept step writes them straight into kc/)
+    [fname] = glob.glob("*_concept-kc.csv", root_dir=kc_dir(result_dir))
+    concept_df = pd.read_csv(os.path.join(kc_dir(result_dir), fname))
     assert concept_df["KC"].str.strip().all(), "Some concepts are invalid"
 
     # Recover the questions behind the concepts
-    [fname] = glob.glob("args*.json", root_dir=args.concept_dir)
-    with open(os.path.join(args.concept_dir, fname), "r") as f:
+    [fname] = glob.glob("args-concept-*.json", root_dir=result_dir)
+    with open(os.path.join(result_dir, fname), "r") as f:
         questions = load_questions(json.load(f)["data_path"])
 
     # Build the two similarity matrices once
-    [fname] = glob.glob("*-question-embeds.npy", root_dir=args.concept_dir)
-    embeds = np.load(os.path.join(args.concept_dir, fname))
+    [fname] = glob.glob("*_llm-embed.npy", root_dir=embed_dir(result_dir))
+    embeds = np.load(os.path.join(embed_dir(result_dir), fname))
     assert embeds.shape[0] == len(questions), \
         f"Expected {len(questions)} questions, got {embeds.shape[0]} embeddings"
     q_cos_sim = sim_from_embeddings(embeds, metric="cosine")
 
-    pmi = PointwiseMutualInfo.from_shards(args.pmi_dir, len(questions), len(questions),
+    raw_dir = getattr(args, "pmi_dir", None) or pmi_raw_dir(result_dir)
+    pmi = PointwiseMutualInfo.from_shards(raw_dir, len(questions), len(questions),
                                           normalize=True, symmetric=True)
     pmi_sim = pmi.pmi_mat
 
@@ -111,12 +109,13 @@ def main(args):
 def add_arguments(parser):
     parser.add_argument("--kc_path", required=True, type=str, help="Path to a DataShop KC template file")
     parser.add_argument("--kc_val_path", required=True, type=str, help="Path to a CSV file containing KC values")
-    parser.add_argument("--concept_dir", default=argparse.SUPPRESS, type=str,
-                        help="Path to a directory containing concepts (default: <run_dir>/concept)")
+    parser.add_argument("--result_dir", default=argparse.SUPPRESS, type=str,
+                        help="The result directory holding the concept KC, embeddings, and score shards "
+                             "(default: --run_dir)")
     parser.add_argument("--pmi_dir", default=argparse.SUPPRESS, type=str,
-                        help="Path to a directory containing PMI values (default: <run_dir>/pmi)")
+                        help="Directory of raw score shards (default: <result_dir>/mat/pmi/raw)")
     parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
-                        help="Shared run folder; each step writes to <run_dir>/<step> (env: KCLUSTER_RUN_DIR)")
+                        help="Result folder shared by every step of this run (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--ss_path", default=argparse.SUPPRESS, type=str, help="Path to a DataShop student-step file")
     parser.add_argument("--minimal", default=argparse.SUPPRESS, action="store_true",
                         help="Whether to minimize the merged student-step file")

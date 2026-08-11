@@ -16,6 +16,7 @@ import pandas as pd
 from kcluster.core.pmi import PointwiseMutualInfo, residualize
 from kcluster.engine.vertex import VertexConfig, collected_inputs, download_concepts, download_pmi
 from kcluster.io.jsonl import load_questions
+from kcluster.paths import kc_dir, pmi_dir, prepare_output_dir
 from kcluster.tasks.cluster import build_res_df, create_kc
 
 
@@ -48,9 +49,10 @@ def main(args):
         job_id, data_path = item["job_id"], item["data_path"]
         data_name = os.path.splitext(os.path.basename(data_path))[0].replace(" ", "-")
 
-        # Make a new directory for the output files
-        output_dir = os.path.join(args.work_dir, "kc", data_name)
-        os.makedirs(output_dir, exist_ok=True)
+        # Each course gets a full result dir under the work dir (D10)
+        result_dir = os.path.join(args.work_dir, data_name)
+        output_dir = prepare_output_dir(kc_dir(result_dir))
+        mat_dir = prepare_output_dir(pmi_dir(result_dir))
 
         # Load questions
         questions = load_questions(data_path)
@@ -66,7 +68,7 @@ def main(args):
 
         # Save the retrieved PMI similarity matrix used for clustering
         norm_tag = "norm" if args.normalize else "unnorm"
-        np.save(os.path.join(output_dir, f"{data_name}_pmi-{norm_tag}.npy"), sim_mtx)
+        np.save(os.path.join(mat_dir, f"{data_name}_pmi-{norm_tag}.npy"), sim_mtx)
 
         # Create the Concept KC from the collected concepts
         concepts = download_concepts(job_id, config)
@@ -86,7 +88,7 @@ def main(args):
             # Saved beside the raw matrix, not just clustered: the corrected
             # congruity is what a pairwise analysis of these questions should
             # read, and recovering it otherwise means redoing the strata by hand.
-            np.save(os.path.join(output_dir, f"{data_name}_pmi-{norm_tag}-resid.npy"), adjusted)
+            np.save(os.path.join(mat_dir, f"{data_name}_pmi-{norm_tag}-resid.npy"), adjusted)
             resid_df = create_kc(concept_df, questions, adjusted)
             if isinstance(resid_df, pd.DataFrame):
                 resid_df.to_csv(os.path.join(output_dir, f"{data_name}_kcluster-{norm_tag}-resid-kc.csv"),
@@ -95,6 +97,12 @@ def main(args):
 
         print(f"*** Created {concept_df['KC'].nunique()} Concept KCs ***\n\n")
         concept_df.to_csv(os.path.join(output_dir, f"{data_name}_concept-kc.csv"), index=False)
+
+        # Provenance breadcrumb at the course's result root, mirroring the
+        # local pipeline; the embed command recovers data_path from here
+        breadcrumb = dict(vars(args), job_id=job_id, data_path=data_path)
+        with open(os.path.join(result_dir, f"args-kc-{data_name}.json"), "w") as f:
+            json.dump(breadcrumb, f, indent=2)
 
 
 def add_arguments(parser):

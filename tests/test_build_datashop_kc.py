@@ -37,11 +37,12 @@ def test_build_datashop_kc_end_to_end(tmp_path):
         ),
         tmp_path / "unique-step.txt",
     )
-    # A KCluster result to fold in (s1 and s2 come from one merged question)
+    # A KCluster result to fold in (s1 and s2 come from one merged question);
+    # the D10 dataset prefix must not leak into the DataShop model name
     kc_dir = tmp_path / "kc"
     kc_dir.mkdir()
     pd.DataFrame({"ds-step-name": ["s1~s2", "s3", "s4"], "KC": ["alpha", "beta", "gamma"]}).to_csv(
-        kc_dir / "pmi-kc.csv", index=False
+        kc_dir / "questions_kcluster-unnorm-kc.csv", index=False
     )
     ss_path = _write_tsv(
         pd.DataFrame(
@@ -64,10 +65,10 @@ def test_build_datashop_kc_end_to_end(tmp_path):
     all_kc = pd.read_csv(out_dir / "all-kc.txt", sep="\t")
     # s1/s2 map through the tilde-joined step list; s3 is masked by the
     # unique-step model; s4 is masked because the expert model skips it.
-    assert all_kc["KC (pmi)"].tolist()[:2] == ["alpha", "alpha"]
-    assert all_kc["KC (pmi)"].isna().tolist() == [False, False, True, True]
+    assert all_kc["KC (kcluster-unnorm)"].tolist()[:2] == ["alpha", "alpha"]
+    assert all_kc["KC (kcluster-unnorm)"].isna().tolist() == [False, False, True, True]
     assert "KC (expert)" in all_kc.columns  # drop_other_kc=False keeps it
 
     merged = pd.read_csv(out_dir / "ss-merged-minimal=False-multiplier=2.txt", sep="\t")
-    assert merged["Opportunity (pmi)"].tolist()[:2] == [1, 2]  # alpha practiced twice
-    assert "KC (pmi-1)" in merged.columns  # the CV replica
+    assert merged["Opportunity (kcluster-unnorm)"].tolist()[:2] == [1, 2]  # alpha practiced twice
+    assert "KC (kcluster-unnorm-1)" in merged.columns  # the CV replica

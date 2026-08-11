@@ -35,4 +35,4 @@ def test_subcommand_help_via_lazy_dispatch(capsys):
     with pytest.raises(SystemExit) as excinfo:
         main(["build-kc", "--help"])
     assert excinfo.value.code == 0
-    assert "--concept_dir" in capsys.readouterr().out
+    assert "--result_dir" in capsys.readouterr().out

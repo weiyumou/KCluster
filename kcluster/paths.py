@@ -7,12 +7,23 @@ via the ``KCLUSTER_RESULTS_DIR`` environment variable (default ``results``),
 and every command resolves its output directory to an absolute path so the
 caller can see exactly where files are written regardless of the CWD.
 
-Layout is **run-major**: one folder per run, with a subfolder per step —
-``<results>/<run>/{concept,pmi,kc,...}``. The steps of a pipeline run at
-different times (often as separate cluster jobs), so pass the same
-``--run_dir`` (or set ``KCLUSTER_RUN_DIR``) to keep them together; downstream
-steps then find their inputs automatically instead of being handed a
-timestamp that has to be paired up by hand.
+Layout for the KC pipeline is **artifact-major** (D10): one folder per
+dataset (the *result dir*), organized by what the files are rather than by
+which step produced them —
+
+    <result_dir>/
+      args-<step>-<ds>.json     provenance, one per step
+      kc/                       final KC models, dataset-prefixed
+      mat/embed/                question-embedding matrices
+      mat/pmi/                  assembled congruity matrices
+      mat/pmi/raw/              raw score shards (local engine only)
+
+The steps of a pipeline still run at different times (often as separate
+cluster jobs), so pass the same ``--run_dir`` (or set ``KCLUSTER_RUN_DIR``)
+to make every step target one result dir; downstream steps then find their
+inputs automatically. For a Vertex batch the work dir holds one such result
+dir per course. Steps outside the KC pipeline (classify, qgen, kc-refine)
+keep the older per-step folders via ``default_output_dir``.
 """
 
 import os
@@ -46,7 +57,7 @@ def run_dir(explicit: str | None = None) -> str | None:
 
 
 def default_output_dir(step: str, explicit_run_dir: str | None = None) -> str:
-    """Default output directory for a pipeline ``step`` (e.g. ``concept``).
+    """Default output directory for a non-KC pipeline ``step`` (e.g. ``classify``).
 
     Inside a run folder this is ``<run>/<step>``; otherwise a fresh run folder
     is minted for this invocation alone (``<results>/<timestamp>/<step>``).
@@ -54,6 +65,35 @@ def default_output_dir(step: str, explicit_run_dir: str | None = None) -> str:
     if run := run_dir(explicit_run_dir):
         return os.path.join(run, step)
     return os.path.join(results_root(), timestamp(), step)
+
+
+def default_result_dir(explicit_run_dir: str | None = None) -> str:
+    """The per-dataset result folder: the run folder, or a fresh timestamped one.
+
+    Commands that only *write* (concept, pmi, vertex-launch) may mint a fresh
+    folder; commands that read a result dir should require one instead.
+    """
+    return run_dir(explicit_run_dir) or os.path.join(results_root(), timestamp())
+
+
+def kc_dir(result_dir: str) -> str:
+    """Final KC models (``<ds>_<model>-kc.csv``)."""
+    return os.path.join(result_dir, "kc")
+
+
+def embed_dir(result_dir: str) -> str:
+    """Question-embedding matrices (``<ds>_{sbert,llm}-embed.npy``)."""
+    return os.path.join(result_dir, "mat", "embed")
+
+
+def pmi_dir(result_dir: str) -> str:
+    """Assembled congruity matrices (``<ds>_pmi-<tag>.npy``)."""
+    return os.path.join(result_dir, "mat", "pmi")
+
+
+def pmi_raw_dir(result_dir: str) -> str:
+    """Raw score shards from the local engine (``predictions_*.pt``)."""
+    return os.path.join(result_dir, "mat", "pmi", "raw")
 
 
 def step_dir(step: str, explicit_run_dir: str | None = None) -> str | None:

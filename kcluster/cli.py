@@ -16,11 +16,13 @@ from kcluster import __version__
 # ``add_arguments(parser)`` and ``main(args)``.
 COMMANDS = [
     ("concept", "kcluster.commands.concept",
-     "Extract concept labels and question embeddings from a jsonl of questions"),
+     "Extract concept labels from a jsonl of questions"),
     ("pmi", "kcluster.commands.pmi",
      "Compute pairwise question congruity (PMI) between questions"),
     ("build-kc", "kcluster.commands.build_kc",
      "Build KC models from extracted concepts and PMI values"),
+    ("embed", "kcluster.commands.embed",
+     "Add embedding-based cosine KC models to an existing result dir"),
     ("build-datashop-kc", "kcluster.commands.build_datashop_kc",
      "Insert KC models into a DataShop KC template / student-step file"),
     ("refine-datashop-kc", "kcluster.commands.refine_datashop_kc",

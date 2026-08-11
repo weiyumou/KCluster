@@ -1,9 +1,8 @@
 """Offline end-to-end test of the build-kc command.
 
-Synthetic score shards and a concept CSV go in; real affinity propagation
-runs; correctly labeled concept/cosine/pmi KC models come out. No model
-weights are involved — this pins the whole local pipeline downstream of the
-GPU steps.
+Synthetic score shards and a Concept KC go in; real affinity propagation
+runs; a correctly labeled KCluster model comes out. No model weights are
+involved — this pins the whole local pipeline downstream of the GPU steps.
 """
 
 import argparse
@@ -38,27 +37,19 @@ def _questions() -> list[Question]:
 
 
 @pytest.fixture
-def pipeline_dirs(tmp_path):
+def result_dir(tmp_path):
+    """A result dir as the concept and pmi steps leave it (D10 layout)."""
     questions = _questions()
+    rd = tmp_path / "run"
 
     # The questions file plus the args-*.json breadcrumb the concept step writes
     data_path = tmp_path / "questions.jsonl"
     dump_questions(questions, str(data_path))
-    concept_dir = tmp_path / "concept"
-    concept_dir.mkdir()
-    (concept_dir / "args-concept-questions.json").write_text(
-        json.dumps({"data_path": str(data_path)})
-    )
+    (rd / "kc").mkdir(parents=True)
+    (rd / "args-concept-questions.json").write_text(json.dumps({"data_path": str(data_path)}))
 
-    # The concept CSV (concepts follow the two groups)
-    build_res_df(questions, GROUPS).to_csv(concept_dir / "questions-concept.csv", index=False)
-
-    # Question embeddings: two directions, cosine-separable
-    embeds = np.array(
-        [[1.0, 0.01], [1.0, 0.02], [1.0, 0.03],
-         [0.01, 1.0], [0.02, 1.0], [0.03, 1.0]]
-    )
-    np.save(concept_dir / "questions-question-embeds.npy", embeds)
+    # The Concept KC (concepts follow the two groups), written straight into kc/
+    build_res_df(questions, GROUPS).to_csv(rd / "kc" / "questions_concept-kc.csv", index=False)
 
     # Score shards: within-group conditionals 5 nats above the marginal,
     # across-group 5 below — the layout CustomWriter would produce.
@@ -66,67 +57,74 @@ def pipeline_dirs(tmp_path):
     same = np.array([[g1 == g2 for g2 in GROUPS] for g1 in GROUPS])
     conds = np.where(same, -45.0, -55.0)
     flat = np.concatenate([marginals, conds.ravel()])
-    pmi_dir = tmp_path / "pmi"
-    pmi_dir.mkdir()
+    raw_dir = rd / "mat" / "pmi" / "raw"
+    raw_dir.mkdir(parents=True)
     indices = torch.arange(len(flat))
-    torch.save([[indices]], pmi_dir / "batch_indices_0.pt")
-    torch.save([torch.tensor(flat, dtype=torch.float32)], pmi_dir / "predictions_0.pt")
+    torch.save([[indices]], raw_dir / "batch_indices_0.pt")
+    torch.save([torch.tensor(flat, dtype=torch.float32)], raw_dir / "predictions_0.pt")
 
-    out_dir = tmp_path / "out"
-    return concept_dir, pmi_dir, out_dir
+    return rd
 
 
-def test_build_kc_end_to_end(pipeline_dirs):
-    concept_dir, pmi_dir, out_dir = pipeline_dirs
-    args = argparse.Namespace(concept_dir=str(concept_dir), pmi_dir=str(pmi_dir),
-                              output_dir=str(out_dir))
-    build_kc.main(args)
+def test_build_kc_end_to_end(result_dir):
+    build_kc.main(argparse.Namespace(result_dir=str(result_dir)))
 
-    # The concept model is copied through unchanged
-    concept_kc = pd.read_csv(out_dir / "concept-kc.csv")
-    assert concept_kc["KC"].tolist() == GROUPS
+    # The clustered model recovers the two groups and carries exemplar concepts
+    kc = pd.read_csv(result_dir / "kc" / "questions_kcluster-unnorm-kc.csv")
+    assert kc["KC"].tolist() == GROUPS
+    assert kc["KC-raw"].str.fullmatch(r"KC-\d+").all()
 
-    # Both clustered models recover the two groups and carry exemplar concepts
-    for fname in ("question-cosine-kc.csv", "pmi-kc.csv"):
-        kc = pd.read_csv(out_dir / fname)
-        assert kc["KC"].tolist() == GROUPS, fname
-        assert kc["KC-raw"].str.fullmatch(r"KC-\d+").all(), fname
+    # The assembled congruity matrix is saved for pairwise analyses
+    mat = np.load(result_dir / "mat" / "pmi" / "questions_pmi-unnorm.npy")
+    assert mat.shape == (6, 6)
+    assert np.allclose(mat, mat.T)
 
     # The args breadcrumb records the recovered data path for downstream steps
-    breadcrumb = json.loads((out_dir / "args-kc-questions.json").read_text())
+    breadcrumb = json.loads((result_dir / "args-kc-questions.json").read_text())
     assert breadcrumb["data_path"].endswith("questions.jsonl")
 
 
-def test_build_kc_finds_its_inputs_inside_a_run_dir(pipeline_dirs, tmp_path, monkeypatch):
-    """The pairing win: steps that ran at different times share one run folder,
-    so build-kc needs neither --concept_dir nor --pmi_dir."""
-    concept_dir, pmi_dir, _ = pipeline_dirs
-
-    run = tmp_path / "run-1"
-    (run / "concept").mkdir(parents=True)
-    (run / "pmi").mkdir()
-    for src, dst in ((concept_dir, run / "concept"), (pmi_dir, run / "pmi")):
-        for f in src.iterdir():
-            (dst / f.name).write_bytes(f.read_bytes())
-
-    build_kc.main(argparse.Namespace(run_dir=str(run)))
-
-    # Output landed alongside its inputs, and both models were built
-    assert (run / "kc" / "concept-kc.csv").exists()
-    assert pd.read_csv(run / "kc" / "pmi-kc.csv")["KC"].tolist() == GROUPS
-
-    # The env var works the same way, without touching call sites
-    run2 = tmp_path / "run-2"
-    (run2 / "concept").mkdir(parents=True)
-    for f in (run / "concept").iterdir():
-        (run2 / "concept" / f.name).write_bytes(f.read_bytes())
-    monkeypatch.setenv("KCLUSTER_RUN_DIR", str(run2))
+def test_build_kc_finds_its_inputs_inside_a_run_dir(result_dir, monkeypatch):
+    """The pairing win: steps that ran at different times share one result
+    folder, so build-kc needs no directory arguments at all."""
+    monkeypatch.setenv("KCLUSTER_RUN_DIR", str(result_dir))
     build_kc.main(argparse.Namespace())
-    assert (run2 / "kc" / "concept-kc.csv").exists()          # ran
-    assert not (run2 / "kc" / "pmi-kc.csv").exists()          # no pmi/ in this run
+    assert (result_dir / "kc" / "questions_kcluster-unnorm-kc.csv").exists()
 
 
-def test_build_kc_requires_a_concept_dir_without_a_run_dir(monkeypatch):
+def test_build_kc_residualize_adds_a_second_model_and_matrix(tmp_path, result_dir):
+    """--residualize writes the format-corrected model *beside* the plain one
+    (D9), plus the corrected matrix, rather than replacing either."""
+    # The fixture's bank is single-format, where residualizing is a global
+    # rescale and therefore a no-op; plant two formats so the strata differ.
+    data_path = json.loads((result_dir / "args-concept-questions.json").read_text())["data_path"]
+    questions = _questions()
+    for i, q in enumerate(questions):
+        q["type"] = "Fill-in-the-blank(s)" if i < 3 else "Multiple Choice (select 1)"
+    dump_questions(questions, data_path)
+
+    build_kc.main(argparse.Namespace(result_dir=str(result_dir), residualize=True))
+
+    kc_dir, mat_dir = result_dir / "kc", result_dir / "mat" / "pmi"
+    assert (kc_dir / "questions_kcluster-unnorm-kc.csv").exists()
+    assert (kc_dir / "questions_kcluster-unnorm-resid-kc.csv").exists()
+    plain = np.load(mat_dir / "questions_pmi-unnorm.npy")
+    resid = np.load(mat_dir / "questions_pmi-unnorm-resid.npy")
+    assert resid.shape == plain.shape
+    assert not np.allclose(plain, resid)   # the correction actually did something
+
+
+def test_build_kc_without_shards_builds_no_kcluster_model(result_dir):
+    """A result dir the pmi step has not reached yet: the Concept KC is
+    validated and the breadcrumb written, but no KCluster model appears."""
+    for f in (result_dir / "mat" / "pmi" / "raw").iterdir():
+        f.unlink()
+    build_kc.main(argparse.Namespace(result_dir=str(result_dir)))
+    assert not (result_dir / "kc" / "questions_kcluster-unnorm-kc.csv").exists()
+    assert (result_dir / "args-kc-questions.json").exists()
+
+
+def test_build_kc_requires_a_result_dir_without_a_run_dir(monkeypatch):
     monkeypatch.delenv("KCLUSTER_RUN_DIR", raising=False)
-    with pytest.raises(SystemExit, match="--concept_dir is required"):
+    with pytest.raises(SystemExit, match="--result_dir is required"):
         build_kc.main(argparse.Namespace())

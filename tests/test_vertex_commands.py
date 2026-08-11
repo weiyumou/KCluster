@@ -81,17 +81,23 @@ def test_vertex_build_kc(gcs, config_path, tmp_path):
 
     main(argparse.Namespace(work_dir=str(work_dir), normalize=False, config=config_path))
 
-    out_dir = work_dir / "kc" / "my-questions"
-    assert np.load(out_dir / "my-questions_pmi-unnorm.npy").shape == (6, 6)
+    # One full result dir per course under the work dir (D10 layout)
+    course_dir = work_dir / "my-questions"
+    assert np.load(course_dir / "mat" / "pmi" / "my-questions_pmi-unnorm.npy").shape == (6, 6)
 
     import pandas as pd
-    concept_kc = pd.read_csv(out_dir / "my-questions_concept-kc.csv")
+    concept_kc = pd.read_csv(course_dir / "kc" / "my-questions_concept-kc.csv")
     assert concept_kc["KC"].tolist() == CONCEPTS
 
-    kcluster_kc = pd.read_csv(out_dir / "my-questions_kcluster-unnorm-kc.csv")
+    kcluster_kc = pd.read_csv(course_dir / "kc" / "my-questions_kcluster-unnorm-kc.csv")
     # Clusters follow the planted blocks; labels come from exemplar concepts
     assert kcluster_kc["KC"].tolist() == CONCEPTS
     assert kcluster_kc["KC-raw"].str.match(r"KC-\d+").all()
+
+    # The provenance breadcrumb ties the course back to its job and data file
+    breadcrumb = json.loads((course_dir / "args-kc-my-questions.json").read_text())
+    assert breadcrumb["job_id"] == "job1"
+    assert breadcrumb["data_path"].endswith("my questions.jsonl")
 
 
 def test_vertex_build_kc_requires_collected_results(gcs, config_path, tmp_path):
@@ -174,9 +180,8 @@ def test_vertex_launch(gcs, config_path, tmp_path, monkeypatch):
                             secs_per_batch=0.1, batch_size=16, config=config_path))
 
     # The job log records the launched job with a data-derived, timestamped id
-    [run] = list((tmp_path / "results").iterdir())  # run-major: <results>/<run>/<step>
-    run_dir = run / "vertex-launch"
-    [logged] = [json.loads(line) for line in (run_dir / "launched_jobs.jsonl").read_text().splitlines()]
+    [run] = list((tmp_path / "results").iterdir())  # the work dir; job log at its root (D10)
+    [logged] = [json.loads(line) for line in (run / "launched_jobs.jsonl").read_text().splitlines()]
     assert re.fullmatch(r"course-a_\d{8}-\d{6}", logged["job_id"])
     assert logged["resource_name"] == "jobs/1"
 

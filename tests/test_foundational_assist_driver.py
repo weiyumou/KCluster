@@ -40,6 +40,11 @@ def screen():
 
 @pytest.fixture(scope="module")
 def processing():
+    # The driver parses the export's HTML, so it needs a driver-only dependency
+    # (the `datasets` group). A venv installed for *running* the pipeline —
+    # `uv sync --extra local` on a cluster — does not have it, and these tests
+    # must skip there rather than error, as the sibling driver tests do.
+    pytest.importorskip("bs4")
     return _load("processing")
 
 

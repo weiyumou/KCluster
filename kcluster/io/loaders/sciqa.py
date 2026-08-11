@@ -61,7 +61,10 @@ def evaluate_kc(kc_dir: str, true_kc: str = "skill", random_kc: bool = False, **
     metrics = dict()
     for fname in glob.iglob("*.csv", root_dir=kc_dir):
         kc = pd.read_csv(os.path.join(kc_dir, fname))
-        kc_name = re.match(r".+?(?=-kc)", os.path.splitext(fname)[0]).group(0)
+        # Drop the dataset prefix (D10 filenames are <ds>_<model>-kc.csv) so
+        # metrics rows keep the short model name, e.g. "kcluster-unnorm"
+        stem = os.path.splitext(fname)[0].split("_", 1)[-1]
+        kc_name = re.match(r".+?(?=-kc)", stem).group(0)
         true_kcs, pred_kcs = kc[true_kc].to_list(), kc["KC"].to_list()
         metrics[f"{kc_name} ({kc['KC'].nunique()} KCs)"] = compute_clustering_metrics(true_kcs, pred_kcs)
 

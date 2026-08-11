@@ -69,7 +69,10 @@ def main(args):
     # Add KCs to the template
     kc_temp = args.kc_temp
     for fname in glob.iglob("*-kc.csv", root_dir=args.kc_dir):
-        new_kc_name = re.match(r".+?(?=-kc)", os.path.splitext(fname)[0]).group(0)
+        # Drop the dataset prefix (D10 filenames are <ds>_<model>-kc.csv) so
+        # the DataShop model keeps its short name, e.g. "kcluster-unnorm"
+        stem = os.path.splitext(fname)[0].split("_", 1)[-1]
+        new_kc_name = re.match(r".+?(?=-kc)", stem).group(0)
         print(f"*** Adding KC '{new_kc_name}' to the template ***")
         kc = os.path.join(args.kc_dir, fname)
         kc_temp = insert_kc_model(kc, kc_temp, args.step_kc, new_kc_name,

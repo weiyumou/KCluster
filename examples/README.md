@@ -15,19 +15,24 @@ All commands need a local Phi-2 checkout and a GPU
 ## KCluster (EDM 2025): questions → KC models
 
     export DATA_PATH=examples/data/sample-mcq.jsonl
-    export KCLUSTER_RUN_DIR=results/my-run   # one folder for every step
+    export KCLUSTER_RUN_DIR=results/my-run   # one result folder for every step
     kcluster concept --llm_path phi-2 --data_path $DATA_PATH
     kcluster pmi     --llm_path phi-2 --data_path $DATA_PATH
-    kcluster build-kc                        # finds concept/ and pmi/ itself
+    kcluster build-kc                        # reads and fills the same folder
+    kcluster embed   --llm_path phi-2        # optional embedding baselines
 
-Results are run-major: each step writes to `$KCLUSTER_RUN_DIR/<step>`, so the
-concept and congruity steps — usually separate, long-running jobs — stay
-paired, and `build-kc` needs no directory arguments. `--run_dir` does the
-same per command, and `--output_dir`/`--concept_dir`/`--pmi_dir` still
-override individual paths; without a run folder each command mints its own
-under `$KCLUSTER_RESULTS_DIR` (default `results/`). `build-kc` writes
-`concept-kc.csv`, `question-cosine-kc.csv`, and `pmi-kc.csv`; with three
-planted topics, the PMI KC model should recover roughly three clusters.
+All steps share one result folder per dataset, organized by artifact kind:
+KC models land in `kc/` (`<ds>_concept-kc.csv` from the concept step,
+`<ds>_kcluster-unnorm-kc.csv` from `build-kc`, `<ds>_llm-cosine-kc.csv`
+from `embed`; add `--sent_path <sentence-transformer>` to `embed` for the
+`sbert-cosine` and `concept-cosine` models too), matrices in `mat/`
+(embeddings under `mat/embed/`, the assembled congruity matrix and its raw
+score shards under `mat/pmi/`). The concept and congruity steps — usually
+separate, long-running jobs — stay paired this way, and `build-kc`/`embed`
+need no directory arguments. `--run_dir` does the same per command; without
+a run folder the writing steps mint a fresh timestamped folder under
+`$KCLUSTER_RESULTS_DIR` (default `results/`). With three planted topics,
+the KCluster model should recover roughly three clusters.
 
 No GPU? The same two scoring steps run as Vertex AI batch jobs in your own
 GCP project: see `deploy/vertex/README.md`, then `kcluster vertex-launch
