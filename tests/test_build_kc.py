@@ -92,26 +92,41 @@ def test_build_kc_finds_its_inputs_inside_a_run_dir(result_dir, monkeypatch):
     assert (result_dir / "kc" / "questions_kcluster-unnorm-kc.csv").exists()
 
 
-def test_build_kc_residualize_adds_a_second_model_and_matrix(tmp_path, result_dir):
-    """--residualize writes the format-corrected model *beside* the plain one
-    (D9), plus the corrected matrix, rather than replacing either."""
-    # The fixture's bank is single-format, where residualizing is a global
-    # rescale and therefore a no-op; plant two formats so the strata differ.
+def test_build_kc_residualize_full_adds_both_corrected_models(tmp_path, result_dir):
+    """--residualize_full implies --residualize: both format-corrected models
+    (D9/D11) and matrices appear *beside* the plain ones, so downstream
+    consumers can compare all three."""
+    # The fixture's bank is single-format, where residualizing is a constant
+    # shift and therefore a no-op; plant two formats so the strata differ.
     data_path = json.loads((result_dir / "args-concept-questions.json").read_text())["data_path"]
     questions = _questions()
     for i, q in enumerate(questions):
         q["type"] = "Fill-in-the-blank(s)" if i < 3 else "Multiple Choice (select 1)"
     dump_questions(questions, data_path)
 
-    build_kc.main(argparse.Namespace(result_dir=str(result_dir), residualize=True))
+    # Re-write the shards with per-item effects on top of the block structure:
+    # a bank this small puts every stratum below min_pairs, where both variants
+    # subtract the same pooled mean — the item term is what tells them apart.
+    marginals = np.full(6, -50.0)
+    same = np.array([[g1 == g2 for g2 in GROUPS] for g1 in GROUPS])
+    item = np.linspace(0.0, 2.0, 6)
+    conds = np.where(same, -45.0, -55.0) + item[:, None] + item[None, :]
+    flat = np.concatenate([marginals, conds.ravel()])
+    torch.save([torch.tensor(flat, dtype=torch.float32)],
+               result_dir / "mat" / "pmi" / "raw" / "predictions_0.pt")
+
+    build_kc.main(argparse.Namespace(result_dir=str(result_dir), residualize_full=True))
 
     kc_dir, mat_dir = result_dir / "kc", result_dir / "mat" / "pmi"
     assert (kc_dir / "questions_kcluster-unnorm-kc.csv").exists()
     assert (kc_dir / "questions_kcluster-unnorm-resid-kc.csv").exists()
+    assert (kc_dir / "questions_kcluster-unnorm-residfull-kc.csv").exists()
     plain = np.load(mat_dir / "questions_pmi-unnorm.npy")
     resid = np.load(mat_dir / "questions_pmi-unnorm-resid.npy")
-    assert resid.shape == plain.shape
-    assert not np.allclose(plain, resid)   # the correction actually did something
+    full = np.load(mat_dir / "questions_pmi-unnorm-residfull.npy")
+    assert resid.shape == full.shape == plain.shape
+    assert not np.allclose(plain, resid)   # each correction actually did something
+    assert not np.allclose(resid, full)    # ... and the two variants differ
 
 
 def test_build_kc_without_shards_builds_no_kcluster_model(result_dir):

@@ -24,8 +24,44 @@ import numpy as np
 from scipy.special import log_softmax, logsumexp
 
 
-def residualize(sim_mtx: np.ndarray, groups: Sequence, min_pairs: int = 30,
-                verbose: bool = True) -> np.ndarray:
+def _row_effects_fit(mtx: np.ndarray) -> np.ndarray:
+    """Fitted values of the off-diagonal least-squares fit ``mu + a[i] + a[j]``.
+
+    Closed form for a symmetric matrix: with ``rm`` the off-diagonal row means,
+    the normal equations under the identification ``sum(a) == 0`` give
+    ``mu = rm.mean()`` and ``a = (n - 1) * (rm - mu) / (n - 2)``. The fitted
+    value is formed for every cell, diagonal included (``mu + 2 a[i]``).
+    """
+    n = len(mtx)
+    rm = (mtx.sum(axis=1) - np.diagonal(mtx)) / (n - 1)
+    mu = rm.mean()
+    a = (n - 1) * (rm - mu) / (n - 2)
+    return mu + a[:, None] + a[None, :]
+
+
+def double_center(sim_mtx: np.ndarray) -> np.ndarray:
+    """Remove per-item additive effects: the residual of ``mu + a[i] + a[j]``.
+
+    The centering step of classical MDS, fit on the off-diagonal cells only and
+    subtracted everywhere (the diagonal gets its fitted value ``mu + 2 a[i]``,
+    consistent with :func:`residualize`). Off-diagonal row and column means of
+    the result are zero, and the operation is idempotent.
+
+    WARNING: on a mixed-format bank do not use this alone — stripping the item
+    effects *promotes* the shared-format signal (measured on spacing-exp2:
+    format-leakage AUC 0.695 -> 0.764, D11). Pair it with the format-mean
+    correction, or use ``residualize(..., item_effects=True)``, which fits the
+    item and format terms jointly.
+    """
+    n = len(sim_mtx)
+    if sim_mtx.shape != (n, n) or n < 3:
+        raise ValueError(f"double_center needs a square matrix with at least 3 rows, got {sim_mtx.shape}")
+    return sim_mtx.astype(np.float64) - _row_effects_fit(sim_mtx)
+
+
+def residualize(sim_mtx: np.ndarray, groups: Sequence, *, item_effects: bool = False,
+                min_pairs: int = 30, tol: float = 1e-10,
+                max_iter: int = 50, verbose: bool = True) -> np.ndarray:
     """Remove the part of a similarity matrix that only reflects the pair of groups.
 
     Question congruity depends on the *format* of the two questions as well as
@@ -33,64 +69,92 @@ def residualize(sim_mtx: np.ndarray, groups: Sequence, min_pairs: int = 30,
     above a fill-in/multiple-choice pair whether or not the two are related, so
     clustering recovers format families instead of knowledge components.
 
-    Each unordered pair of group labels is a stratum with its own location and
-    scale, estimated from the pairs it contains. Every entry is then re-expressed
-    as standard deviations above what is typical *for its own stratum*::
+    Each unordered pair of group labels is a stratum. The default subtracts each
+    stratum's mean::
 
-        adjusted[i, j] = (sim[i, j] - mu[g_i, g_j]) / sd[g_i, g_j]
+        adjusted[i, j] = sim[i, j] - mu[g_i, g_j]
 
-    Subtracting the stratum mean is exactly the residual of an OLS fit of the
-    similarities on a saturated set of stratum dummies (the design is saturated,
-    so the fitted values are the stratum means); dividing by the stratum standard
-    deviation is a further step OLS does not perform, and is what makes strata
-    with different spreads comparable.
+    which is exactly the residual of an OLS fit of the similarities on a
+    saturated set of stratum dummies (the design is saturated, so the fitted
+    values are the stratum means). The output stays in the units of the input
+    (nats for a PMI matrix) and remains spectrally comparable to it.
+
+    ``item_effects=True`` returns the residual of the joint additive model::
+
+        sim[i, j] ~ mu + a[i] + a[j] + gamma[g_i, g_j]
+
+    per-item effects together with the format-pair means; it subsumes
+    double-centering, and is the recommended correction for mixed-format banks
+    (D11): beyond the format means it removes each question's tendency to score
+    high with everything, which otherwise dominates retrieval and spectral uses.
+    Fit by backfitting — alternating the exact stratum-mean and row-effect
+    least-squares updates (block coordinate descent) until the change is below
+    ``tol`` in relative Frobenius norm. The individual coefficients are not
+    identified (``mu``, ``a`` and ``gamma`` share constants); that is harmless
+    and expected — the *residual* is unique, so do not "fix" it.
+
+    D9 additionally divided each stratum by its standard deviation. That step
+    was removed in D11: it is not part of any least-squares residual, it
+    measured worse than the mean-only correction on the one unbalanced bank,
+    and the per-stratum rescaling distorts the spectrum. Matrices written
+    before D11 are the z-scored variant and are not comparable with these.
 
     The strata are fit on *all* their pairs rather than on known-unrelated ones:
     genuinely related pairs are a small minority of any stratum, and requiring
     them to be identified in advance would make the correction unusable for KC
     discovery, where no reference model exists. A stratum with fewer than
-    ``min_pairs`` pairs, or with no spread, is standardized with the pooled
-    statistics instead — a handful of pairs cannot support its own estimate.
+    ``min_pairs`` pairs falls back to the pooled statistics — a handful of
+    pairs cannot support its own estimate.
 
-    A single-group matrix is rescaled globally and therefore reordered nowhere:
-    with one format there is nothing to correct, which is the right no-op.
+    A single-group matrix is shifted globally and therefore reordered nowhere:
+    with one format there is nothing to correct, which is the right no-op
+    (under ``item_effects=True`` the result equals ``double_center``).
 
     :param sim_mtx: A square, symmetric similarity matrix (e.g. ``pmi_mat``)
     :param groups: One label per row/column, e.g. each question's ``q_type``
-    :param min_pairs: Smallest stratum that may be standardized on its own
+    :param item_effects: Remove the joint item + format-pair model instead of
+        the format-pair means alone
+    :param min_pairs: Smallest stratum that may be fit on its own
+    :param tol: Relative convergence threshold of the backfitting loop
+    :param max_iter: Iteration cap of the backfitting loop
     :param verbose: Print the per-stratum table (the nuisance being removed)
-    :return: A new matrix in per-stratum standard-deviation units
+    :return: A new float64 matrix, in the same units as the input
     """
     n = len(sim_mtx)
     if sim_mtx.shape != (n, n):
         raise ValueError(f"residualize needs a square similarity matrix, got {sim_mtx.shape}")
     if len(groups) != n:
         raise ValueError(f"got {len(groups)} group labels for a {n}x{n} matrix")
+    if item_effects and n < 3:
+        raise ValueError(f"item_effects=True needs at least 3 questions, got {n}")
 
     labels = np.asarray(groups)
+    # Correct in float64 even when the input is float32 (what the local engine
+    # saves): the correction is a difference of numbers around 20 nats over up
+    # to ~1e6 cells per stratum, and float32 leaves ~1e-6 of rounding in the
+    # very stratum means this is supposed to zero.
+    work = sim_mtx.astype(np.float64)
     # The diagonal is a question against itself, not a pair of questions; it is
     # not evidence about any stratum (and affinity propagation overwrites it
-    # with the preference), so it is excluded from every fit.
+    # with the preference), so it is excluded from every fit and transformed by
+    # its fitted value.
     off_diag = ~np.eye(n, dtype=bool)
-    pooled_mu, pooled_sd = sim_mtx[off_diag].mean(), sim_mtx[off_diag].std()
+    pooled_mu = work[off_diag].mean()
 
-    adjusted = np.empty_like(sim_mtx, dtype=float)
-    rows, thin = [], []
+    strata, rows, thin = [], [], []
     for a, b in itertools.combinations_with_replacement(sorted(set(labels)), 2):
         # Unordered: {a, b} covers both the (a, b) and the (b, a) cells.
         is_a, is_b = labels == a, labels == b
         stratum = np.outer(is_a, is_b) | np.outer(is_b, is_a)
-        sample = sim_mtx[stratum & off_diag]
-        if sample.size == 0:
-            continue
-        mu, sd = sample.mean(), sample.std()
-        if sample.size < min_pairs or not sd:
-            mu, sd, is_thin = pooled_mu, pooled_sd, True
+        sample = work[stratum & off_diag]
+        # An all-diagonal stratum (a single-question group) has nothing to
+        # estimate, and is thin like any other.
+        is_thin = sample.size < min_pairs
+        if is_thin:
             thin.append(f"{a} x {b}")
-        else:
-            is_thin = False
-        adjusted[stratum] = (sim_mtx[stratum] - mu) / sd
-        rows.append((f"{a} x {b}", sample.size, sample.mean(), sample.std(), is_thin))
+        strata.append((stratum, is_thin, sample.mean() if sample.size else pooled_mu))
+        if sample.size:
+            rows.append((f"{a} x {b}", sample.size, sample.mean(), sample.std(), is_thin))
 
     if verbose:
         print(f"*** Residualizing congruity over {len(rows)} strata "
@@ -103,9 +167,32 @@ def residualize(sim_mtx: np.ndarray, groups: Sequence, min_pairs: int = 30,
             note = "  <- pooled (too few pairs)" if is_thin else ""
             print(f"    {name:<{width}}{size:>9,}{mu:>9.3f}{sd:>8.3f}{note}")
     if thin:
-        print(f"*** WARNING: {len(thin)} stratum/strata standardized with pooled statistics: "
+        print(f"*** WARNING: {len(thin)} stratum/strata fell back to pooled statistics: "
               f"{', '.join(thin)} ***")
-    return adjusted
+
+    if not item_effects:
+        adjusted = np.empty_like(work)
+        for stratum, is_thin, mu in strata:
+            adjusted[stratum] = work[stratum] - (pooled_mu if is_thin else mu)
+        return adjusted
+
+    # Backfitting for the joint model: each pass applies the exact
+    # least-squares update of one block on the current residual, so the loop
+    # is block coordinate descent and converges to the unique joint residual.
+    residual = work.copy()
+    scale_ref = np.linalg.norm(work[off_diag]) or 1.0
+    for _ in range(max_iter):
+        prev = residual.copy()
+        pooled = residual[off_diag].mean()
+        for stratum, is_thin, _ in strata:
+            residual[stratum] -= pooled if is_thin else residual[stratum & off_diag].mean()
+        residual -= _row_effects_fit(residual)
+        if np.linalg.norm(residual - prev) <= tol * scale_ref:
+            break
+    else:
+        print(f"*** WARNING: residualize(item_effects=True) did not converge "
+              f"within {max_iter} iterations ***")
+    return residual
 
 
 class PointwiseMutualInfo:

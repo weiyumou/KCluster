@@ -56,17 +56,26 @@ def main(args):
             kc.to_csv(os.path.join(out_dir, f"{ds}_kcluster-unnorm-kc.csv"), index=False)
             print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
 
-        # An additional KC model with the question-format nuisance divided out.
-        # Written alongside the plain one rather than replacing it: whether the
+        # Additional KC models with the question-format nuisance removed,
+        # written alongside the plain one rather than replacing it: whether the
         # correction helps is an empirical question per dataset, and on a
         # single-format bank it is a no-op the comparison should show.
-        if getattr(args, "residualize", False):
-            print("*** Building KCs for KCluster-PMI, residualized by question type ***")
-            adjusted = residualize(pmi.pmi_mat, [q.q_type for q in questions])
-            np.save(os.path.join(mat_dir, f"{ds}_pmi-unnorm-resid.npy"), adjusted)
+        # --residualize subtracts the per-format-pair means (D11: mean-only, no
+        # longer z-scored); --residualize_full removes the joint item + format
+        # model, the recommended correction for mixed-format banks, and implies
+        # --residualize so downstream comparisons get both variants.
+        want_full = getattr(args, "residualize_full", False)
+        want_resid = want_full or getattr(args, "residualize", False)
+        for enabled, tag, kwargs in [(want_resid, "resid", {}),
+                                     (want_full, "residfull", {"item_effects": True})]:
+            if not enabled:
+                continue
+            print(f"*** Building KCs for KCluster-PMI, format-corrected congruity ({tag}) ***")
+            adjusted = residualize(pmi.pmi_mat, [q.q_type for q in questions], **kwargs)
+            np.save(os.path.join(mat_dir, f"{ds}_pmi-unnorm-{tag}.npy"), adjusted)
             kc = create_kc(concept_df, questions, adjusted)
             if isinstance(kc, pd.DataFrame):
-                kc.to_csv(os.path.join(out_dir, f"{ds}_kcluster-unnorm-resid-kc.csv"), index=False)
+                kc.to_csv(os.path.join(out_dir, f"{ds}_kcluster-unnorm-{tag}-kc.csv"), index=False)
                 print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
 
     # Save arguments
@@ -80,8 +89,12 @@ def add_arguments(parser):
     parser.add_argument("--pmi_dir", default=argparse.SUPPRESS, type=str,
                         help="Directory of raw score shards (default: <result_dir>/mat/pmi/raw)")
     parser.add_argument("--residualize", action="store_true",
-                        help="Also build a KC model from congruity residualized by question type, "
-                             "which stops a mixed-format bank from clustering by format")
+                        help="Also build a KC model from congruity with the per-format-pair means "
+                             "subtracted, which stops a mixed-format bank from clustering by format")
+    parser.add_argument("--residualize_full", action="store_true",
+                        help="Also build a KC model from congruity with the joint item + format "
+                             "correction removed — the recommended variant for mixed-format banks; "
+                             "implies --residualize")
     parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
                         help="Result folder shared by every step of this run (env: KCLUSTER_RUN_DIR)")
 
