@@ -6,7 +6,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from kcluster.core.pmi import PointwiseMutualInfo, residualize
+from kcluster.core.pmi import PointwiseMutualInfo, correction_variants, residualize
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import kc_dir, pmi_dir, pmi_raw_dir, prepare_output_dir, run_dir
 from kcluster.tasks.cluster import create_kc
@@ -32,10 +32,17 @@ def main(args):
     concept_df = pd.read_csv(os.path.join(out_dir, fname))
     assert concept_df["KC"].str.strip().all(), "Some concepts are invalid"
 
-    # Recover the questions behind the concepts
-    [fname] = glob.glob("args-concept-*.json", root_dir=result_dir)
-    with open(os.path.join(result_dir, fname), "r") as f:
-        args.data_path = json.load(f)["data_path"]
+    # Recover the questions behind the concepts. --data_path overrides the
+    # recorded one, as in the embed command: a result dir is often rebuilt on a
+    # different machine than it was scored on (a cluster run pulled back to a
+    # laptop records a path that does not exist there).
+    if not getattr(args, "data_path", None):
+        [fname] = glob.glob("args-concept-*.json", root_dir=result_dir)
+        with open(os.path.join(result_dir, fname), "r") as f:
+            args.data_path = json.load(f)["data_path"]
+    if not os.path.isfile(args.data_path):
+        raise SystemExit(f"Question file not found: {args.data_path} — pass --data_path with a "
+                         "reachable copy of this dataset's questions")
     questions = load_questions(args.data_path)
 
     # Create KC for KCluster-PMI from the raw score shards
@@ -58,20 +65,21 @@ def main(args):
 
         # Additional KC models with the question-format nuisance removed,
         # written alongside the plain one rather than replacing it: whether the
-        # correction helps is an empirical question per dataset, and on a
-        # single-format bank it is a no-op the comparison should show.
+        # correction helps is an empirical question per dataset.
         # --residualize subtracts the per-format-pair means (D11: mean-only, no
         # longer z-scored); --residualize_full removes the joint item + format
         # model, the recommended correction for mixed-format banks, and implies
         # --residualize so downstream comparisons get both variants.
+        groups = [q.q_type for q in questions]
         want_full = getattr(args, "residualize_full", False)
-        want_resid = want_full or getattr(args, "residualize", False)
-        for enabled, tag, kwargs in [(want_resid, "resid", {}),
-                                     (want_full, "residfull", {"item_effects": True})]:
-            if not enabled:
-                continue
+        want_mean = want_full or getattr(args, "residualize", False)
+        variants = correction_variants(groups, mean_only=want_mean, joint=want_full)
+        if want_mean and not any(tag == "resid" for tag, _ in variants):
+            print("*** Single-format bank: skipping the mean-only model, which would duplicate "
+                  "the uncorrected one (with one stratum it is a constant shift) ***")
+        for tag, kwargs in variants:
             print(f"*** Building KCs for KCluster-PMI, format-corrected congruity ({tag}) ***")
-            adjusted = residualize(pmi.pmi_mat, [q.q_type for q in questions], **kwargs)
+            adjusted = residualize(pmi.pmi_mat, groups, **kwargs)
             np.save(os.path.join(mat_dir, f"{ds}_pmi-unnorm-{tag}.npy"), adjusted)
             kc = create_kc(concept_df, questions, adjusted)
             if isinstance(kc, pd.DataFrame):
@@ -88,6 +96,8 @@ def add_arguments(parser):
                         help="The result directory holding the concept step's output (default: --run_dir)")
     parser.add_argument("--pmi_dir", default=argparse.SUPPRESS, type=str,
                         help="Directory of raw score shards (default: <result_dir>/mat/pmi/raw)")
+    parser.add_argument("--data_path", default=argparse.SUPPRESS, type=str,
+                        help="Question file (default: the path recorded in args-concept-*.json)")
     parser.add_argument("--residualize", action="store_true",
                         help="Also build a KC model from congruity with the per-format-pair means "
                              "subtracted, which stops a mixed-format bank from clustering by format")

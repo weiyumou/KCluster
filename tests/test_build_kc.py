@@ -7,6 +7,7 @@ involved — this pins the whole local pipeline downstream of the GPU steps.
 
 import argparse
 import json
+import os
 
 import numpy as np
 import pandas as pd
@@ -129,6 +130,18 @@ def test_build_kc_residualize_full_adds_both_corrected_models(tmp_path, result_d
     assert not np.allclose(resid, full)    # ... and the two variants differ
 
 
+def test_build_kc_skips_the_redundant_mean_only_model_on_one_format(result_dir, capsys):
+    """The fixture bank is single-format, where the mean-only correction is a
+    constant shift: only the joint model is worth writing (D11 follow-up)."""
+    build_kc.main(argparse.Namespace(result_dir=str(result_dir), residualize_full=True))
+
+    kc_dir, mat_dir = result_dir / "kc", result_dir / "mat" / "pmi"
+    assert (kc_dir / "questions_kcluster-unnorm-residfull-kc.csv").exists()
+    assert not (kc_dir / "questions_kcluster-unnorm-resid-kc.csv").exists()
+    assert not (mat_dir / "questions_pmi-unnorm-resid.npy").exists()
+    assert "Single-format bank" in capsys.readouterr().out
+
+
 def test_build_kc_without_shards_builds_no_kcluster_model(result_dir):
     """A result dir the pmi step has not reached yet: the Concept KC is
     validated and the breadcrumb written, but no KCluster model appears."""
@@ -137,6 +150,20 @@ def test_build_kc_without_shards_builds_no_kcluster_model(result_dir):
     build_kc.main(argparse.Namespace(result_dir=str(result_dir)))
     assert not (result_dir / "kc" / "questions_kcluster-unnorm-kc.csv").exists()
     assert (result_dir / "args-kc-questions.json").exists()
+
+
+def test_build_kc_data_path_overrides_an_unreachable_recorded_path(result_dir, tmp_path):
+    """A result dir scored on a cluster and rebuilt on a laptop records a path
+    that does not exist here; --data_path supplies a reachable copy."""
+    recorded = json.loads((result_dir / "args-concept-questions.json").read_text())["data_path"]
+    moved = tmp_path / "elsewhere.jsonl"
+    os.rename(recorded, moved)
+
+    with pytest.raises(SystemExit, match="Question file not found"):
+        build_kc.main(argparse.Namespace(result_dir=str(result_dir)))
+
+    build_kc.main(argparse.Namespace(result_dir=str(result_dir), data_path=str(moved)))
+    assert (result_dir / "kc" / "questions_kcluster-unnorm-kc.csv").exists()
 
 
 def test_build_kc_requires_a_result_dir_without_a_run_dir(monkeypatch):

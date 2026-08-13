@@ -56,7 +56,10 @@ def double_center(sim_mtx: np.ndarray) -> np.ndarray:
     n = len(sim_mtx)
     if sim_mtx.shape != (n, n) or n < 3:
         raise ValueError(f"double_center needs a square matrix with at least 3 rows, got {sim_mtx.shape}")
-    return sim_mtx.astype(np.float64) - _row_effects_fit(sim_mtx)
+    # Fit in float64, for the reason given in residualize: a float32 input
+    # otherwise leaves ~1e-6 in the row means this is supposed to zero.
+    work = sim_mtx.astype(np.float64)
+    return work - _row_effects_fit(work)
 
 
 def residualize(sim_mtx: np.ndarray, groups: Sequence, *, item_effects: bool = False,
@@ -193,6 +196,32 @@ def residualize(sim_mtx: np.ndarray, groups: Sequence, *, item_effects: bool = F
         print(f"*** WARNING: residualize(item_effects=True) did not converge "
               f"within {max_iter} iterations ***")
     return residual
+
+
+def correction_variants(groups: Sequence, *, mean_only: bool = False,
+                        joint: bool = False) -> list[tuple[str, dict]]:
+    """The format corrections worth building for a bank with these ``groups``.
+
+    Returns ``(artifact tag, residualize keyword arguments)`` pairs in the
+    order they should be written, so both engines agree on which models a
+    given pair of flags produces.
+
+    With a single group the mean-only correction subtracts one constant from
+    the whole matrix. Affinity propagation is invariant to that, so its KC
+    model would be a duplicate of the uncorrected one and is dropped rather
+    than written twice. The joint fit still earns its place on a single-format
+    bank: removing the per-item effects is a real change with one stratum too,
+    and it measured better than uncorrected on every single-format bank tried
+    (D11) — with one format there is also no format contrast for it to
+    promote, which is the hazard that keeps ``double_center`` out of the
+    mixed-format path.
+    """
+    variants = []
+    if mean_only and len(set(groups)) > 1:
+        variants.append(("resid", {}))
+    if joint:
+        variants.append(("residfull", {"item_effects": True}))
+    return variants
 
 
 class PointwiseMutualInfo:

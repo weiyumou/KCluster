@@ -11,7 +11,7 @@ import itertools
 import numpy as np
 import pytest
 
-from kcluster.core.pmi import double_center, residualize
+from kcluster.core.pmi import correction_variants, double_center, residualize
 
 SIX_EFFECTS = dict(zip([frozenset(p) for p in
                         itertools.combinations_with_replacement(("FI", "S1", "SA"), 2)],
@@ -199,18 +199,33 @@ def test_a_thin_stratum_falls_back_to_pooled_statistics(capsys):
     assert np.isfinite(residualize(mat, groups, min_pairs=30, item_effects=True, verbose=False)).all()
 
 
-@pytest.mark.parametrize("item_effects", [False, True])
-def test_a_float32_matrix_is_corrected_in_float64(item_effects):
-    # The local engine saves congruity as float32. Correcting in that dtype
-    # leaves ~1e-6 of rounding in the stratum means the correction is supposed
-    # to zero, so both live paths upcast first.
+def _float32_fixture():
     rng = np.random.default_rng(13)
     groups = ["FI"] * 60 + ["S1"] * 40
     mat = _blocked(groups, {frozenset(("FI", "FI")): 19.0, frozenset(("FI", "S1")): 9.0,
                             frozenset(("S1", "S1")): 11.0}, rng=rng).astype(np.float32)
+    return mat, groups
+
+
+@pytest.mark.parametrize("item_effects", [False, True])
+def test_a_float32_matrix_is_corrected_in_float64(item_effects):
+    # The local engine saves congruity as float32. Correcting in that dtype
+    # leaves ~1e-6 of rounding in the stratum means the correction is supposed
+    # to zero, so every path upcasts first.
+    mat, groups = _float32_fixture()
     adjusted = residualize(mat, groups, item_effects=item_effects, verbose=False)
     assert adjusted.dtype == np.float64
     assert max(abs(m) for m in _stratum_means(adjusted, groups)) < 1e-12
+
+
+def test_double_center_of_a_float32_matrix_is_fit_in_float64():
+    # Same trap, and the one double_center actually fell into: it returned a
+    # float64 array whose fit had been computed in float32, leaving the row
+    # means it exists to zero at ~1e-6.
+    mat, _ = _float32_fixture()
+    centred = double_center(mat)
+    assert centred.dtype == np.float64
+    assert np.abs(_offdiag_row_means(centred)).max() < 1e-12
 
 
 def test_the_retired_zscoring_is_not_reachable():
@@ -244,6 +259,35 @@ def test_double_center_zeroes_row_means_and_is_idempotent():
     assert np.abs(_offdiag_row_means(centred.T)).max() < 1e-12
     assert np.allclose(double_center(centred), centred)
     assert np.allclose(centred, centred.T)
+
+
+def test_correction_variants_drops_the_redundant_mean_only_model():
+    # On a single-format bank the mean-only correction is a constant shift, so
+    # its KC model duplicates the uncorrected one and is not worth writing;
+    # the joint fit still is, because removing item effects is a real change.
+    one, many = ["MC"] * 5, ["MC"] * 3 + ["FI"] * 2
+
+    assert correction_variants(many, mean_only=True) == [("resid", {})]
+    assert correction_variants(one, mean_only=True) == []
+
+    assert [t for t, _ in correction_variants(many, mean_only=True, joint=True)] == ["resid", "residfull"]
+    assert [t for t, _ in correction_variants(one, mean_only=True, joint=True)] == ["residfull"]
+
+    # the joint variant is never dropped, and never silently reordered
+    assert correction_variants(one, joint=True) == [("residfull", {"item_effects": True})]
+    assert correction_variants(one) == correction_variants(many) == []
+
+
+def test_correction_variants_kwargs_drive_residualize():
+    # The kwargs are not decoration: they must select the documented paths.
+    rng = np.random.default_rng(14)
+    groups = ["FI"] * 20 + ["S1"] * 20
+    mat = _blocked(groups, {frozenset(("FI", "FI")): 19.0, frozenset(("FI", "S1")): 9.0,
+                            frozenset(("S1", "S1")): 11.0}, rng=rng)
+    built = {tag: residualize(mat, groups, verbose=False, **kw)
+             for tag, kw in correction_variants(groups, mean_only=True, joint=True)}
+    assert np.allclose(built["resid"], residualize(mat, groups, verbose=False))
+    assert np.allclose(built["residfull"], residualize(mat, groups, item_effects=True, verbose=False))
 
 
 def test_double_center_rejects_degenerate_input():

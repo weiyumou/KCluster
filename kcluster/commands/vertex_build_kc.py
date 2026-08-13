@@ -13,7 +13,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from kcluster.core.pmi import PointwiseMutualInfo, residualize
+from kcluster.core.pmi import PointwiseMutualInfo, correction_variants, residualize
 from kcluster.engine.vertex import VertexConfig, collected_inputs, download_concepts, download_pmi
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import kc_dir, pmi_dir, prepare_output_dir
@@ -85,13 +85,15 @@ def main(args):
         # (D9, amended by D11: --residualize is mean-only, --residualize_full
         # the joint item + format model and implies --residualize). Written
         # alongside rather than replacing it, as in build-kc.
+        groups = [q.q_type for q in questions]
         want_full = getattr(args, "residualize_full", False)
-        want_resid = want_full or getattr(args, "residualize", False)
-        for enabled, tag, kwargs in [(want_resid, "resid", {}),
-                                     (want_full, "residfull", {"item_effects": True})]:
-            if not enabled:
-                continue
-            adjusted = residualize(sim_mtx, [q.q_type for q in questions], **kwargs)
+        want_mean = want_full or getattr(args, "residualize", False)
+        variants = correction_variants(groups, mean_only=want_mean, joint=want_full)
+        if want_mean and not any(tag == "resid" for tag, _ in variants):
+            print("*** Single-format bank: skipping the mean-only model, which would duplicate "
+                  "the uncorrected one (with one stratum it is a constant shift) ***")
+        for tag, kwargs in variants:
+            adjusted = residualize(sim_mtx, groups, **kwargs)
             # Saved beside the raw matrix, not just clustered: the corrected
             # congruity is what a pairwise analysis of these questions should
             # read, and recovering it otherwise means redoing the strata by hand.
