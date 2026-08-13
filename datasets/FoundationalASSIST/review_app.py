@@ -319,7 +319,7 @@ boot();
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--triage", required=True, type=str, help="triage.csv from the answerability run")
-    parser.add_argument("--questions", default=None, type=str, help="questions.jsonl (default: alongside the data)")
+    parser.add_argument("--questions", default=None, type=str, help="question jsonl (default: alongside the data)")
     parser.add_argument("--interactions", default=None, type=str, help="interactions.csv (default: alongside)")
     parser.add_argument("--verdict", default="review", type=str, help="Which verdict to review (default: review)")
     parser.add_argument("--port", default=8765, type=int)
@@ -328,7 +328,7 @@ def main():
 
     out_dir = os.path.dirname(os.path.abspath(args.triage))
     processed = os.path.abspath(os.path.join(out_dir, "..", ".."))
-    questions = args.questions or os.path.join(processed, "questions.jsonl")
+    questions = args.questions or os.path.join(processed, "foundational-assist.jsonl")
     interactions = args.interactions or os.path.join(processed, "interactions.csv")
 
     items = build_review_set(args.triage, questions, interactions,

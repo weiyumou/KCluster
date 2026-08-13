@@ -4,7 +4,11 @@ import pytest
 
 bs4 = pytest.importorskip("bs4")
 
-from kcluster.io.loaders.oli_html import parse_all_mcqs, parse_mcq  # noqa: E402
+from kcluster.io.loaders.oli_html import (  # noqa: E402
+    attach_datashop_steps,
+    parse_all_mcqs,
+    parse_mcq,
+)
 
 
 def _question_div(q_id="mcq-one", part_id="p1", stem_ps=("Which material bends?",),
@@ -87,7 +91,85 @@ def test_parse_all_mcqs_dedupes_and_folds_identical_content(tmp_path):
     assert "oli-part-id" not in folded
 
 
+def test_choice_text_drops_a_bare_value_token_before_the_marker(tmp_path):
+    # Some OLI choices render as "Audio value (value: <id>)" — the bare token
+    # is markup. A "value" anywhere else is the author's word and stays.
+    page = _write_html(tmp_path / "page.html", _question_div(choices=(
+        ("v1", "Audio value (value: v1)"),
+        ("v2", "A demo showing the value of functions (value: v2)"),
+    )))
+    [q] = parse_mcq(page)
+    assert [c["text"] for c in q["question"]["choices"]] == [
+        "Audio", "A demo showing the value of functions",
+    ]
+
+
+def test_parse_all_mcqs_records_a_step_once_per_question(tmp_path):
+    # The same question on two pages, differing only in the exported image
+    # filename: the repr-dedup keeps both copies, but the step is one step.
+    _write_html(tmp_path / "page1.html", _question_div(img="figs/pic_abc123.png"))
+    _write_html(tmp_path / "page2.html", _question_div(img="figs/pic_def456.png"))
+
+    [q] = parse_all_mcqs(str(tmp_path))
+    assert q["step-name"] == ["mcq-one_p1"]
+    assert q["skillref"] == ["skill-a"]
+
+
 def test_parse_all_mcqs_id_prefix(tmp_path):
     _write_html(tmp_path / "page.html", _question_div())
     [q] = parse_all_mcqs(str(tmp_path), id_prefix="oli")
     assert q["id"] == "oli-0"
+
+
+# --- attach_datashop_steps ---
+
+def _questions(tmp_path):
+    """Two questions, the first folded across two OLI steps."""
+    same = _question_div(q_id="mcq-one", part_id="p1")
+    _write_html(tmp_path / "page1.html", same,
+                _question_div(q_id="mcq-two", part_id="p2", stem_ps=("A different stem?",)))
+    _write_html(tmp_path / "page2.html", _question_div(q_id="mcq-dup", part_id="p3", skillref="skill-b"))
+    return parse_all_mcqs(str(tmp_path))
+
+
+def test_attach_keeps_matched_questions_and_lists_every_raw_step(tmp_path):
+    # One OLI step is delivered as two DataShop steps; mcq-two has none
+    raw = ["mcq-one_p1 Row1", "mcq-one_p1 Row2", "mcq-dup_p3 Row1"]
+    kept = attach_datashop_steps(_questions(tmp_path), raw,
+                                 raw_key=lambda r: r.split(" ")[0], step_key=lambda s: s)
+
+    [q] = kept
+    assert sorted(q["step-name"]) == ["mcq-dup_p3", "mcq-one_p1"]
+    assert q["ds-step-name"] == ["mcq-one_p1 Row1", "mcq-one_p1 Row2", "mcq-dup_p3 Row1"]
+
+
+def test_attach_narrows_a_folded_question_to_the_steps_the_dataset_has(tmp_path):
+    kept = attach_datashop_steps(_questions(tmp_path), ["mcq-dup_p3 Row1"],
+                                 raw_key=lambda r: r.split(" ")[0], step_key=lambda s: s)
+
+    [q] = kept
+    assert q["step-name"] == ["mcq-dup_p3"]      # mcq-one_p1 dropped with its skillref
+    assert q["skillref"] == ["skill-b"]
+    assert q["ds-step-name"] == ["mcq-dup_p3 Row1"]
+
+
+def test_attach_projects_both_sides_onto_a_common_key(tmp_path):
+    # The 2023 notation: the part id sits after a "part" marker on one side and
+    # after an underscore on the other
+    raw = ["Activity foo, part p1 Multiple choice submission"]
+    kept = attach_datashop_steps(_questions(tmp_path), raw,
+                                 raw_key=lambda r: r.split(" part ")[1].split()[0],
+                                 step_key=lambda s: s.split("_")[-1])
+    assert [q["ds-step-name"] for q in kept] == [raw]
+
+
+def test_attach_ignores_raw_steps_with_no_key(tmp_path):
+    kept = attach_datashop_steps(_questions(tmp_path), ["no marker here", "mcq-one_p1 Row1"],
+                                 raw_key=lambda r: r.split(" ")[0] if "_" in r else None,
+                                 step_key=lambda s: s)
+    assert [q["ds-step-name"] for q in kept] == [["mcq-one_p1 Row1"]]
+
+
+def test_attach_returns_nothing_when_the_dataset_shares_no_step(tmp_path):
+    assert attach_datashop_steps(_questions(tmp_path), ["other_p9 Row1"],
+                                 raw_key=lambda r: r.split(" ")[0], step_key=lambda s: s) == []

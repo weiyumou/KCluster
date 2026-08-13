@@ -1,9 +1,9 @@
 """Tests for the Foundational ASSIST driver (datasets/FoundationalASSIST/).
 
-Covers the parts that can fail silently: the problem-row -> Question mapping,
-the truncated-decimal key repair, and the scoring of Gemini's answerability
-responses. The cleaning itself needs the gated raw export and is exercised by
-running the driver.
+Covers the parts that can fail silently: the HTML cleaning (vendored
+``clean_utils`` plus the driver's own fixes), the problem-row -> Question
+mapping, the truncated-decimal key repair, and the scoring of Gemini's
+answerability responses.
 """
 
 import importlib.util
@@ -139,6 +139,92 @@ def test_answer_key_absent_from_options_is_rejected(processing):
             "Problem Type": "Multiple Choice (select 1)", "Multiple Choice Options": "No || Yes",
             "Multiple Choice Answers": "Maybe",
         }))
+
+
+# --- HTML cleaning ----------------------------------------------------------
+# The vendored clean_utils absorbed a runtime patch of the export's own module;
+# these pin the behaviors the patch existed for, verified equivalent to the
+# patched original over every raw text cell (16,975; 0 disagreements).
+
+@pytest.mark.parametrize("body, expected", [
+    # nested structure survives: mfrac inside mfenced, not flattened to "14"
+    ("<math><mfenced><mfrac><mn>1</mn><mn>4</mn></mfrac></mfenced></math>", "(1/4)"),
+    # nth root: was rendering ∛27 as "273"
+    ("<math><mroot><mn>27</mn><mn>3</mn></mroot></math>", "root3(27)"),
+    # whitespace-only <mo> is a space between words…
+    ("<math><mi>1</mi><mo>&#160;</mo><mi>to</mi><mo>&#160;</mo><mi>12</mi></math>", "1 to 12"),
+    # …but nothing inside a spaced-out numeral
+    ("<math><mn>0</mn><mo>.</mo><mo>&#160;</mo><mn>2</mn></math>", "0.2"),
+    # upstream's own rendering is unchanged
+    ("<math><mfrac><mn>4</mn><mn>3</mn></mfrac></math>", "(4/3)"),
+    ("Area is <math><msup><mi>x</mi><mn>2</mn></msup></math>.", "Area is x^2 ."),
+])
+def test_vendored_mathml_parsing(processing, body, expected):
+    assert processing.clean_utils.clean_problem_body(body) == expected
+
+
+def test_clean_body_renders_blanks_and_html_scripts(processing):
+    # the driver's own layer: <ast-r> answer blanks (numbered when multiple)
+    # and HTML sup/sub, neither of which upstream handles
+    clean_body = processing.make_clean_body()
+    assert clean_body('1 - <ast-r marker="1"></ast-r> = 0.863') == "1 - ____ = 0.863"
+    assert clean_body('<ast-r marker="1"/> and <ast-r marker="2"/>') == "____(1) and ____(2)"
+    assert clean_body("10<sup>3</sup> cm<sup>-2</sup>") == "10^3 cm^(-2)"
+
+
+# --- student-step reduction ------------------------------------------------
+def _interactions() -> pd.DataFrame:
+    # Student 7 attempts problem 151389 three times: ids 1 and 2 tie on the
+    # earliest end_time, so id 1 (incorrect) must win the tie-break on log id
+    # over id 2 (correct); id 3 is later. Timestamps carry the export's
+    # stripped-zero precision on purpose.
+    return pd.DataFrame({
+        "id": [3, 1, 2, 4, 5],
+        "problem_id": [151389, 151389, 151389, 253, 253],
+        "user_id": [7, 7, 7, 7, 8],
+        "hint_count": [0, 2, 0, 0, 0],
+        "answer_text": ["4", "5", "4", "Yes", "No"],
+        "saw_answer": [False, False, False, False, True],
+        "discrete_score": [1.0, 0.0, 1.0, 1.0, 0.0],
+        "end_time": ["2019-08-25 22:52:54.87+00", "2019-08-25 22:52:54+00",
+                     "2019-08-25 22:52:54+00", "2019-08-26 02:07:21.1+00",
+                     "2019-09-05 00:54:03.194+00"],
+    })
+
+
+def _problems() -> pd.DataFrame:
+    return pd.DataFrame({"problem_id": [151389, 253],
+                         "skill_code": ["4.OA.A.1~~4.NF.B.4b", "6.EE.B.5"]})
+
+
+def test_first_attempt_is_earliest_end_time(processing):
+    ss = processing.build_student_step(_interactions(), _problems())
+    assert len(ss) == 3  # one row per (student, problem)
+    row = ss[(ss["Anon Student Id"] == "7") & (ss["Step Name"] == "fa-151389")].squeeze()
+    assert row["First Attempt"] == "incorrect"  # id 1, not the later corrects
+    assert row["First Transaction Time"] == "2019-08-25 22:52:54+00"
+
+
+def test_student_step_carries_ids_and_expert_kc(processing):
+    ss = processing.build_student_step(_interactions(), _problems())
+    assert ss["Problem Name"].equals(ss["Step Name"])
+    fa253 = ss[ss["Step Name"] == "fa-253"]
+    assert fa253["KC (CCSS)"].eq("6.EE.B.5").all()
+    assert "Opportunity (CCSS)" not in ss.columns
+
+
+def test_student_step_meets_the_contract(processing):
+    from kcluster.io.student_step import check_coverage, validate_student_step
+    problem_rows = [_row(), _row(**{
+        "problem_id": 253, "Problem Type": "Multiple Choice (select 1)",
+        "Answer Types": "Multiple Choice", "Problem Body": "Is there such a week?",
+        "Fill-in Options": "", "Fill-in Answers": "",
+        "Multiple Choice Options": "No || Yes", "Multiple Choice Answers": "Yes",
+    })]
+    questions = [processing.build_question(row) for row in problem_rows]
+    ss = processing.build_student_step(_interactions(), _problems())
+    validate_student_step(ss)
+    assert check_coverage(questions, ss) == []
 
 
 # --- answerability scoring -------------------------------------------------

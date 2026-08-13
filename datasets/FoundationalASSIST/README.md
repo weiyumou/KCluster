@@ -6,20 +6,44 @@ interaction log. The dataset is **gated**, licensed CC-BY-NC-4.0, and carries a
 data-security undertaking — keep every raw and processed file outside this
 repository and never commit any of it.
 
-`raw_data` is a symlink to the export root, which holds the dataset's own
-`Code/` (its `clean_utils.py` is loaded at runtime, not vendored here), `Data/`,
-and `README.md`.
+`data` is a symlink to the dataset directory, which holds `raw/` (the release's
+own `Code/`, `Data/`, and `README.md`), `interim/`, and `processed/`. The
+release's HTML-cleaning code is vendored here as `clean_utils.py` — adapted
+from `raw/Code/clean_utils.py`, with provenance, license (CC-BY-NC-4.0, unlike
+the MIT package) and the changes made documented in the module docstring — so
+the driver no longer imports code out of the gated data directory.
 
 ## Pipeline
 
-    python processing.py                  # -> processed/{problems.csv, interactions.csv, questions.jsonl}
+    python processing.py                  # -> interim/{problems.csv, interactions.csv}
+                                          #    processed/{foundational-assist.jsonl,
+                                          #               foundational-assist_student-step.txt}
     python answerability.py --dry_run     # inspect the prompts, no API calls
 
-`processing.py` writes all three artifacts to `<raw_data_dir>/processed/` in one
-pass — generating the questions separately would let `questions.jsonl` drift out
-of step with `problems.csv`. Problems are typed by `Problem Type` so both
-multiple-choice families keep the `Multiple Choice …` prefix that
-`validate_question` guards on.
+`processing.py` writes all four artifacts in one
+pass — generating the questions or the student-step file separately would let
+them drift out of step with `problems.csv`. The jsonl stem `foundational-assist`
+is the dataset id: every KC artifact downstream inherits it as a filename
+prefix. Problems are typed by `Problem Type` so both multiple-choice families
+keep the `Multiple Choice …` prefix that `validate_question` guards on.
+
+## Student-step file
+
+`foundational-assist_student-step.txt` follows the minimal student-step
+contract (`kcluster.io.student_step`): one row per student × problem holding
+the **first attempt** — the interaction with the earliest `end_time`, ties
+broken by log id (2.6% of student–problem pairs have more than one log row;
+the export does not say whether repeats are new encounters or retries, so
+everything after the first attempt is dropped, not guessed at). Outcomes keep
+the platform's scoring: `discrete_score` 1 → `correct`, 0 → `incorrect`.
+ASSISTments logs hint use and answer viewing separately from the score;
+DataShop would code a hint-first attempt as `hint` (a failure in AFM), but
+88.5k of 88.8k hint-assisted rows and 375.2k of 375.5k saw-answer rows are
+scored 0 anyway, so the mapping moves ~0.03% of outcomes and we keep the
+source's semantics. `Step Name` holds the question id (`fa-<problem_id>`),
+`Problem Name` copies it, and the expert CCSS model rides along as
+`KC (CCSS)` — with **no** `Opportunity` column, because the KC tagger owns
+opportunity counting for expert and generated models alike.
 
 The cleaning rules were derived in an exploratory notebook that is **not** in the
 repository: its saved outputs embed problem text and interaction rows from a
@@ -67,7 +91,7 @@ probability signal:
 
 The report's `mode` column records which path produced each row.
 
-Output lands in `processed/answerability/<timestamp>/`: the raw responses for
+Output lands in `interim/answerability/<timestamp>/`: the raw responses for
 each arm plus `answerability.csv`, one row per problem with the model's answer,
 `exact_match`, the probabilities, and a `flag_reason`. A run can be continued
 with `--resume_from <earlier dir>`, which reuses every non-error response.

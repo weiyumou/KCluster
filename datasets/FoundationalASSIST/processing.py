@@ -1,39 +1,51 @@
 """Driver for the Foundational ASSIST dataset (ASSISTments; gated HuggingFace release).
 
 Cleans the raw ``Problems.csv`` / ``Skills.csv`` / ``Interactions.csv`` export into
-two analysis-ready tables plus the Question JSONL the rest of KCluster consumes.
+two analysis-ready tables plus the two artifacts the rest of KCluster consumes:
+the Question JSONL (``foundational-assist.jsonl``) and the minimal student-step
+file (``foundational-assist_student-step.txt``; contract in
+``kcluster.io.student_step``). The jsonl stem is the dataset id — every KC
+artifact downstream inherits it as a filename prefix.
 The cleaning rules were worked out in an exploratory notebook that is not
 distributed — its saved cell outputs embed problem text and interaction rows from
 a gated dataset — so this module is the record: each numbered step carries the
 finding that motivated it, and the counts it pins are the evidence.
 
-All three artifacts are written in one pass on purpose. Generating the questions
-separately lets ``questions.jsonl`` describe a different problem set than
-``problems.csv`` with nothing to signal the drift — every ``--drop_*`` flag
-changes both.
+All four artifacts are written in one pass on purpose. Generating the questions
+or the student-step file separately lets them describe a different problem set
+than ``problems.csv`` with nothing to signal the drift — every ``--drop_*`` flag
+changes all of them. They land in two tiers of the dataset directory: the
+cleaned tables in ``interim/`` (regenerable working files) and the contract pair
+in ``processed/`` (what the student-step contract names, and the only tier that
+has to travel to a cluster).
 
-The export's own ``Code/clean_utils.py`` does the heavy lifting for MathML, Wiris
-formulas, tables and HTML entities. It is loaded from the raw data directory (it
-ships with the data, not with this repo) and patched in two places — see
-``patch_mathml_parser`` and ``make_clean_body``.
+The vendored ``clean_utils`` module beside this driver does the heavy lifting
+for MathML, Wiris formulas, tables and HTML entities. It is adapted from the
+export's own ``Code/clean_utils.py`` — provenance, license and the changes made
+are documented there — and ``make_clean_body`` layers the driver's two
+ASSISTments-specific fixes on top.
 
 The dataset is gated, licensed CC-BY-NC-4.0, and carries a data-security
-undertaking, so the processed tables are written back beside the raw export,
-outside this repository. Never commit them.
+undertaking, so every tier lives under the ``data`` symlink, outside this
+repository. Never commit any of it.
 """
 
 import argparse
-import importlib.util
 import os
 import re
 from fractions import Fraction
 
+import clean_utils
 import pandas as pd
 from bs4 import BeautifulSoup
 from unanswerable import REVIEWED_KEY_FIXES, UNANSWERABLE_PROBLEM_IDS
 
 from kcluster.core.question import Question
 from kcluster.io.jsonl import dump_questions, validate_question
+from kcluster.io.student_step import check_coverage, save_student_step, validate_student_step
+
+# The dataset id: stem of the question JSONL, prefix of every downstream artifact.
+DS = "foundational-assist"
 
 # Spanish-language problems. The dataset is otherwise English; these carry a
 # separate translation of the same items and would pollute a text-similarity
@@ -59,99 +71,8 @@ SELECT_ONE = "Multiple Choice (select 1)"
 SELECT_ALL = "Multiple Choice (select all)"
 
 
-def load_clean_utils(raw_data_dir: str):
-    """Import ``Code/clean_utils.py`` from the raw export directory."""
-    path = os.path.join(raw_data_dir, "Code", "clean_utils.py")
-    if not os.path.isfile(path):
-        raise FileNotFoundError(f"clean_utils.py not found at {path}; is --raw_data_dir correct?")
-    spec = importlib.util.spec_from_file_location("fa_clean_utils", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def patch_mathml_parser(clean_utils) -> None:
-    """Teach ``clean_utils.parse_mathml_element`` the container elements it drops.
-
-    The original handles 12 tags and sends everything else to ``get_text()``,
-    which flattens nested structure — so a ``<mfrac>`` inside an ``<mfenced>``
-    becomes ``14`` instead of ``(1/4)``. We handle the containers explicitly and
-    make the fallback recurse, so nesting always survives. Whitespace-only
-    ``<mo>`` (e.g. ``<mo>&#160;</mo>``) is rendered as a space — the original
-    strips it to nothing, gluing tokens together ("1 to 12" -> "1to12").
-
-    ``clean_problem_body`` resolves ``parse_mathml_element`` from the module
-    namespace at call time, so rebinding it here is enough.
-    """
-    original = clean_utils.parse_mathml_element
-    if getattr(original, "_patched", False):
-        return
-
-    def kids(elem):
-        return [c for c in elem.children if getattr(c, "name", None)]
-
-    def parse(elem):
-        if elem.name is None:
-            return str(elem).strip()
-
-        if elem.name == "mfenced":  # (a, b) — parentheses were being dropped
-            opening, closing = elem.get("open", "("), elem.get("close", ")")
-            separators = elem.get("separators", ",")
-            parts = [parse(c) for c in kids(elem)]
-            if len(parts) <= 1:
-                body = "".join(parts)
-                # child already supplied parens (mfrac -> "(1/2)"): don't double up
-                if opening == "(" and closing == ")" and body.startswith("(") and body.endswith(")"):
-                    return body
-            else:
-                out = [parts[0]]
-                for idx, part in enumerate(parts[1:]):
-                    sep = separators[idx] if idx < len(separators) else (separators[-1:] or ",")
-                    out.append(f"{sep}{part}" if sep.strip() else part)
-                body = "".join(out)
-            return f"{opening}{body}{closing}"
-
-        if elem.name == "mroot":  # nth root: was rendering ∛27 as "273"
-            ch = kids(elem)
-            if len(ch) >= 2:
-                return f"root{parse(ch[1])}({parse(ch[0])})"
-
-        if elem.name == "mtable":
-            return "; ".join(parse(r) for r in kids(elem))
-        if elem.name == "mtr":
-            return ", ".join(parse(c) for c in kids(elem))
-        if elem.name in ("mspace", "msline", "none"):
-            return " "
-
-        # Whitespace-only operator (&#160;): the original strips it to "",
-        # gluing tokens together ("1 to 12" -> "1to12"). Emit a space, unless
-        # it sits inside a number — some bodies use &nbsp; to space out the
-        # digits of "0.2", and a space there would split the numeral.
-        if elem.name == "mo" and not elem.get_text(strip=True):
-            def in_number(sibling):
-                if sibling is None:
-                    return False
-                return sibling.name == "mn" or (sibling.name == "mo" and sibling.get_text(strip=True) == ".")
-
-            if in_number(elem.find_previous_sibling()) and in_number(elem.find_next_sibling()):
-                return ""
-            return " "
-
-        # tags the original already renders correctly
-        if elem.name in ("mfrac", "msup", "msub", "msqrt", "mo", "mn", "mi",
-                         "mtext", "mrow", "math", "mpadded", "mstyle"):
-            return original(elem)
-
-        # mtd / menclose / mover / munder / mstack / mlongdiv / msrow / msgroup
-        # and anything unknown: recurse so nested structure is preserved
-        return clean_utils.parse_mathml_element_children(elem)
-
-    parse._patched = True
-    clean_utils.parse_mathml_element = parse
-
-
-def make_clean_body(clean_utils, blank: str = "____"):
-    """Build the body cleaner, extending ``clean_problem_body`` with two fixes.
+def make_clean_body(blank: str = "____"):
+    """Build the body cleaner, extending ``clean_utils.clean_problem_body``.
 
     ``clean_problem_body`` handles MathML, Wiris formulas, tables and HTML
     entities well, but it drops two things that carry meaning in these problems:
@@ -427,6 +348,8 @@ def build_question(row: pd.Series) -> Question:
     Question field              Source
     ==========================  ==============================================
     ``id``                      ``fa-<problem_id>``
+    ``ds-step-name``            the same value: the step this question is
+                                answered at, declared for the KC tagger
     ``type``                    ``Problem Type`` verbatim, so both multiple-
                                 choice families keep the ``Multiple Choice …``
                                 prefix that ``validate_question`` guards on
@@ -445,6 +368,10 @@ def build_question(row: pd.Series) -> Question:
     """
     q_dict = {
         "id": f"fa-{row['problem_id']}",
+        # ASSISTments is not a DataShop dataset, so the question id *is* the
+        # step: build_student_step writes this same value to Step Name, and
+        # declaring it here is what lets the KC tagger key the join.
+        "ds-step-name": f"fa-{row['problem_id']}",
         "type": row["Problem Type"],
         "question": {"stem": row["Problem Body"]},
     }
@@ -483,13 +410,57 @@ def build_questions(problem_df: pd.DataFrame) -> list[Question]:
     return questions
 
 
-def process(raw_data_dir: str, drop_image_problems: bool = True, drop_unanswerable: bool = True,
+def build_student_step(interaction_df: pd.DataFrame, problem_df: pd.DataFrame) -> pd.DataFrame:
+    """Reduce the cleaned interaction log to a minimal student-step file.
+
+    One row per student x problem: the *first* attempt, the interaction with
+    the earliest ``end_time`` (ties broken by log id, so the reduction is
+    deterministic). 2.6% of student-problem pairs carry more than one log row
+    (up to 89); whether repeats are later encounters or retries within one is
+    not recorded, so everything after the first attempt is dropped, not guessed
+    at.
+
+    Outcomes keep the platform's own scoring: ``discrete_score`` 1 ->
+    ``correct``, 0 -> ``incorrect``. ASSISTments records hint usage
+    (``hint_count``) and answer viewing (``saw_answer``) separately from the
+    score; DataShop would code a hint-first attempt as ``hint``, which AFM
+    scores as a failure — but 88.5k of 88.8k hint-assisted rows and 375.2k of
+    375.5k saw-answer rows are scored 0 already, so the choice moves ~0.03% of
+    outcomes and we prefer the source's semantics.
+
+    ``Step Name`` is the question id (``fa-<problem_id>``): the dataset is not
+    from DataShop, so there is no native step identity to preserve, and the id
+    is what the KC CSVs join on. ``Problem Name`` copies it. ``end_time``
+    passes through unchanged; the platform strips trailing zeros from the
+    fractional seconds, and the validator proves string sort still equals time
+    sort (the "+" of the timezone suffix sorts below every digit). The expert
+    CCSS model rides along as ``KC (CCSS)``, ``~~``-joined exactly as the
+    questions carry it in ``skill_code``.
+    """
+    first = interaction_df.sort_values(["end_time", "id"]).drop_duplicates(subset=["user_id", "problem_id"])
+
+    scores = first["discrete_score"]
+    assert scores.isin([0.0, 1.0]).all(), "non-binary discrete_score survived clean_interactions"
+    skill_code = first["problem_id"].map(problem_df.set_index("problem_id")["skill_code"])
+    assert skill_code.notna().all(), "an interaction references a problem with no skill row"
+
+    step_name = "fa-" + first["problem_id"].astype(str)
+    ss = pd.DataFrame({
+        "Anon Student Id": first["user_id"].astype(str),
+        "Problem Name": step_name,
+        "Step Name": step_name,
+        "First Attempt": scores.map({1.0: "correct", 0.0: "incorrect"}),
+        "First Transaction Time": first["end_time"],
+        "KC (CCSS)": skill_code,
+    })
+    return ss.sort_values(["Anon Student Id", "First Transaction Time", "Step Name"], ignore_index=True)
+
+
+def process(raw_dir: str, drop_image_problems: bool = True, drop_unanswerable: bool = True,
             drop_select_all: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Run the full pipeline, returning the cleaned (problems, interactions)."""
-    data_dir = os.path.join(raw_data_dir, "Data")
-    clean_utils = load_clean_utils(raw_data_dir)
-    patch_mathml_parser(clean_utils)
-    clean_body = make_clean_body(clean_utils)
+    data_dir = os.path.join(raw_dir, "Data")
+    clean_body = make_clean_body()
 
     problem_df = clean_problems(os.path.join(data_dir, "Problems.csv"), clean_body,
                                 drop_image_problems, drop_unanswerable, drop_select_all)
@@ -511,10 +482,12 @@ def process(raw_data_dir: str, drop_image_problems: bool = True, drop_unanswerab
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--raw_data_dir", default="raw_data", type=str,
-                        help="Raw export root, containing Code/ and Data/ (default: raw_data)")
-    parser.add_argument("--output_dir", default=None, type=str,
-                        help="Where to write the processed tables (default: <raw_data_dir>/processed)")
+    parser.add_argument("--raw_dir", default="data/raw", type=str,
+                        help="Raw export root, containing Data/ (default: data/raw)")
+    parser.add_argument("--interim_dir", default="data/interim", type=str,
+                        help="Where to write the cleaned tables (default: data/interim)")
+    parser.add_argument("--output_dir", default="data/processed", type=str,
+                        help="Where to write the question/student-step pair (default: data/processed)")
     parser.add_argument("--keep_image_problems", action="store_true",
                         help="Keep problems that depend on a figure (dropped by default)")
     parser.add_argument("--keep_unanswerable", action="store_true",
@@ -523,11 +496,13 @@ def main():
                         help="Drop select-all-that-apply problems, leaving fill-in and single-answer MCQs")
     args = parser.parse_args()
 
-    output_dir = args.output_dir or os.path.join(args.raw_data_dir, "processed")
-    output_dir = os.path.abspath(output_dir)
+    # The cleaned tables are interim: regenerable, and not what the student-step
+    # contract names. Only the pair below is processed/.
+    interim_dir, output_dir = os.path.abspath(args.interim_dir), os.path.abspath(args.output_dir)
+    os.makedirs(interim_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
-    problem_df, interaction_df = process(args.raw_data_dir,
+    problem_df, interaction_df = process(args.raw_dir,
                                          drop_image_problems=not args.keep_image_problems,
                                          drop_unanswerable=not args.keep_unanswerable,
                                          drop_select_all=args.drop_select_all)
@@ -536,16 +511,26 @@ def main():
     print(problem_df.groupby("Problem Type")["Answer Types"].value_counts().to_string())
 
     for name, df in (("problems.csv", problem_df), ("interactions.csv", interaction_df)):
-        path = os.path.join(output_dir, name)
+        path = os.path.join(interim_dir, name)
         df.to_csv(path, index=False)
         print(f"** Saved {len(df)} rows to {path} **")
 
-    # Written in the same pass as the tables: a questions.jsonl produced
-    # separately can silently describe a different problem set than the CSV.
-    questions_path = os.path.join(output_dir, "questions.jsonl")
+    # Written in the same pass as the tables: a question JSONL or student-step
+    # file produced separately can silently describe a different problem set
+    # than the CSV.
+    questions_path = os.path.join(output_dir, f"{DS}.jsonl")
     questions = build_questions(problem_df)
     dump_questions(questions, questions_path)
     print(f"** Saved {len(questions)} questions to {questions_path} **")
+
+    ss = build_student_step(interaction_df, problem_df)
+    validate_student_step(ss)
+    uncovered = check_coverage(questions, ss)
+    assert not uncovered, f"{len(uncovered)} question(s) have no student-step rows: {uncovered[:5]}"
+    ss_path = os.path.join(output_dir, f"{DS}_student-step.txt")
+    save_student_step(ss, ss_path)
+    print(f"** Saved {len(ss)} student-step rows ({ss['Anon Student Id'].nunique()} students, "
+          f"{ss['First Attempt'].eq('correct').mean():.1%} correct) to {ss_path} **")
 
 
 if __name__ == "__main__":

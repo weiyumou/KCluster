@@ -1,106 +1,99 @@
-"""Dataset drivers for the E-learning Design Principles and Methods courses.
+"""Dataset driver for the 2022 E-learning Design Principles and Methods course.
 
-Course-specific glue for the 2022 (DataShop ds5426) and 2023 (ds5843)
-offerings: each driver parses the downloaded OLI course HTML with the generic
-``oli_html`` loader, keeps only the questions whose steps appear in that
-dataset's DataShop KC template, and attaches the DataShop step names
-(``ds-step-name``) needed to join against student-step data. The two
-offerings encode step names differently, hence the separate mappings.
+Course-specific glue for the 2022 offering (DataShop ds5426): parses the
+downloaded OLI course HTML with the generic ``oli_html`` loader, keeps only the
+questions whose steps ds5426 knows about, and attaches the DataShop step names
+(``ds-step-name``) that key those questions to student-step rows.
+
+    python build.py            # reads data/raw/, writes data/processed/
+
+writes the pair — ``elearning22-mcq.jsonl`` and
+``elearning22-mcq_student-step.txt`` (the contract in
+``kcluster.io.student_step``) — in one pass, so the questions and the
+interaction rows cannot come to describe different step sets.
+
+The 2023 offering (ds5843) is a separate driver, ``datasets/elearning23``: the
+two share the course HTML and every step of the procedure, and differ only in
+how their step names encode the OLI part id and in which KC models they carry.
+Both halves of the procedure are therefore in the package —
+``oli_html.attach_datashop_steps`` and ``loaders.datashop_export`` — and what
+is left here is this offering's own notation.
+
+ds5426's expert models were verified against ``ds5426_kcm.txt``, the KC-model
+export of the same steps: the two agree row for row, modulo the ``(unit)``-style
+level markers the KC-model export writes into ``Problem Hierarchy`` and the
+student-step export does not.
 """
 
-import copy
-import itertools
+import argparse
 import os
-import re
 
-from kcluster.io.datashop import KC_PAT, load_datashop_temp
 from kcluster.io.jsonl import dump_questions
-from kcluster.io.loaders.oli_html import parse_all_mcqs
+from kcluster.io.loaders.datashop_export import load_export, reduce_to_steps, universe_steps
+from kcluster.io.loaders.oli_html import attach_datashop_steps, parse_all_mcqs
+from kcluster.io.student_step import check_coverage, save_student_step, validate_student_step
+
+#: The jsonl stem is the dataset id: every KC artifact downstream inherits it.
+DS = "elearning22-mcq"
+
+#: The expert KC models ds5426 ships. They define the universe (a step the
+#: experts never tagged is not part of the comparison) and ride along in the
+#: student-step file for the tagger to count opportunities for.
+EXPERT_KC_MODELS = ("LOs-MCQ", "LOs-new-MCQ")
+
+#: Default inputs, under the ``data`` symlink to the dataset directory.
+OLI_ROOT = "data/raw/oli-2022-course-export/e_learning_dp-4.2_27gtpdr5/Course_Syllabus"
+EXPORT = "data/raw/datashop/ds5426_student_step.txt"
 
 
-def write_elearning22_mcqs(root_dir: str, out_dir: str, temp_path: str):
+def step_key(raw: str) -> str:
+    """The OLI step name a 2022 DataShop step name leads with.
+
+    ``"<question id>_<part id> UpdateRadioButton"`` -> ``"<question id>_<part id>"``,
+    which is exactly a question's OLI ``step-name``.
     """
-    Extract MCQs from the E-learning 2022 dataset and write them to a JSON file
-    :param root_dir: A path to downloaded HTML files,
-    e.g., "Downloads/_E-Learning_Design_Principles_and_Methods__v_4_2/e_learning_dp-4.2_27gtpdr5/Course_Syllabus"
-    :param out_dir: A path to an output dir, e.g., data/elearning/
-    :param temp_path: A path to a KC model file, e.g., "data/datashop/ds5426-elearning/ds5426_kcm.txt"
-    :return: None
-    """
-    # Load the KC template
-    kc_temp = load_datashop_temp(temp_path)
-    kc_mask = kc_temp.filter(regex=KC_PAT).notna().all(axis=1)
-
-    raw_step_names = list(kc_temp.loc[kc_mask, "Step Name"].unique())
-    step_names = [x.split(" ")[0] for x in raw_step_names]
-
-    # Create a mapping between step names and raw step names
-    step_dict = dict()
-    for step, raw_step in zip(step_names, raw_step_names, strict=True):
-        step_dict.setdefault(step, []).append(raw_step)
-
-    # Parse all MCQs
-    all_questions = parse_all_mcqs(root_dir)
-
-    # Filter out questions that are not in the template
-    elearning22 = []
-    for q in all_questions:
-        mask = [step in step_dict for step in q["step-name"]]
-        if sum(mask) > 0:
-            qc = copy.deepcopy(q)
-            qc["skillref"] = list(itertools.compress(q["skillref"], mask))
-            qc["step-name"] = list(itertools.compress(q["step-name"], mask))
-
-            qc["ds-step-name"] = []
-            for s in qc["step-name"]:
-                qc["ds-step-name"].extend(step_dict[s])
-            elearning22.append(qc)
-
-    # Write MCQs to a JSON file for program readability
-    out_path = os.path.join(out_dir, "elearning22-mcq.jsonl")
-    dump_questions(elearning22, out_path)
-    print(f"Wrote {len(elearning22)} questions to {out_path}")
+    return raw.split(" ")[0]
 
 
-def write_elearning23_mcqs(root_dir: str, out_dir: str, temp_path: str):
-    """
-    Extract MCQs from the E-learning 2023 dataset and write them to a JSON file
-    :param root_dir: A path to downloaded HTML files,
-    e.g., "Downloads/_E-Learning_Design_Principles_and_Methods__v_4_2/e_learning_dp-4.2_27gtpdr5/Course_Syllabus"
-    :param out_dir: A path to an output dir, e.g., data/elearning/
-    :param temp_path: A path to a KC model file, e.g., "data/datashop/ds5843-elearning/ds5843_kcm.txt"
-    :return: None
-    """
-    # Load the KC template
-    kc_temp = load_datashop_temp(temp_path)
-    kc_mask = kc_temp.filter(regex=KC_PAT).notna().all(axis=1)
+def write_elearning22(root_dir: str, export_path: str, out_dir: str,
+                      kc_models: tuple[str, ...] = EXPERT_KC_MODELS) -> None:
+    """Write the 2022 offering's question JSONL and minimal student-step file."""
+    export = load_export(export_path, kc_models)
+    print(f"** Read {len(export)} student-step rows from {export_path} **")
 
-    raw_step_names = list(kc_temp.loc[kc_mask, "Step Name"].unique())
-    step_names = [re.search(r"(?<=part ).+", x).group(0).split()[0] for x in raw_step_names]
+    questions = attach_datashop_steps(parse_all_mcqs(root_dir), universe_steps(export, kc_models),
+                                      raw_key=step_key, step_key=lambda step: step)
+    questions_path = os.path.join(out_dir, f"{DS}.jsonl")
+    dump_questions(questions, questions_path)
+    print(f"** Saved {len(questions)} questions to {questions_path} **")
 
-    # Create a mapping between step names and raw step names
-    step_dict = dict()
-    for step, raw_step in zip(step_names, raw_step_names, strict=True):
-        step_dict.setdefault(step, []).append(raw_step)
+    ss = reduce_to_steps(export, {step for q in questions for step in q["ds-step-name"]})
+    validate_student_step(ss)
+    uncovered = check_coverage(questions, ss)
+    assert not uncovered, f"{len(uncovered)} question(s) have no student-step rows: {uncovered[:5]}"
+    ss_path = os.path.join(out_dir, f"{DS}_student-step.txt")
+    save_student_step(ss, ss_path)
+    print(f"** Saved {len(ss)} student-step rows, {len(export) - len(ss)} dropped as unresolvable "
+          f"({ss['Anon Student Id'].nunique()} students, "
+          f"{ss['First Attempt'].eq('correct').mean():.1%} correct) to {ss_path} **")
 
-    # Parse all MCQs
-    all_questions = parse_all_mcqs(root_dir)
 
-    # Filter out questions that are not in the template
-    elearning23 = []
-    for q in all_questions:
-        mask = [step.split("_")[-1] in step_dict for step in q["step-name"]]
-        if sum(mask) > 0:
-            qc = copy.deepcopy(q)
-            qc["skillref"] = list(itertools.compress(q["skillref"], mask))
-            qc["step-name"] = list(itertools.compress(q["step-name"], mask))
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--root_dir", default=OLI_ROOT, type=str,
+                        help=f"Root of the downloaded OLI course HTML (default: {OLI_ROOT})")
+    parser.add_argument("--export", default=EXPORT, type=str,
+                        help=f"Path to the ds5426 DataShop student-step export (default: {EXPORT})")
+    parser.add_argument("--out_dir", default="data/processed", type=str,
+                        help="Where to write the pair (default: data/processed)")
+    parser.add_argument("--kc_models", nargs="+", default=list(EXPERT_KC_MODELS), type=str,
+                        help="Expert KC models defining the universe, carried into the student-step file")
+    args = parser.parse_args()
 
-            qc["ds-step-name"] = []
-            for s in qc["step-name"]:
-                qc["ds-step-name"].extend(step_dict[s.split("_")[-1]])
-            elearning23.append(qc)
+    out_dir = os.path.abspath(args.out_dir)
+    os.makedirs(out_dir, exist_ok=True)
+    write_elearning22(args.root_dir, args.export, out_dir, tuple(args.kc_models))
 
-    # Write MCQs to a JSON file for program readability
-    out_path = os.path.join(out_dir, "elearning23-mcq.jsonl")
-    dump_questions(elearning23, out_path)
-    print(f"Wrote {len(elearning23)} questions to {out_path}")
+
+if __name__ == "__main__":
+    main()

@@ -353,8 +353,11 @@ async def main_async(args):
             print(f"[user] {probe_job(q, args.thinking_budget, not args.no_logprobs)[0][0]['parts'][0]['text']}")
         return
 
+    # A screening run is a derived working artifact, not part of the contract:
+    # it lands in interim/, the sibling of the processed/ file it screens.
     output_dir = os.path.abspath(args.output_dir or os.path.join(
-        os.path.dirname(args.data_path), "answerability", time.strftime("%Y%m%d-%H%M%S")))
+        os.path.dirname(os.path.dirname(args.data_path)),
+        "interim", "answerability", time.strftime("%Y%m%d-%H%M%S")))
     os.makedirs(output_dir, exist_ok=True)
     print(f"** Writing results to {output_dir} **")
 
@@ -410,10 +413,10 @@ async def main_async(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--data_path", default="raw_data/processed/questions.jsonl", type=str,
-                        help="Question JSONL written by questions.py")
+    parser.add_argument("--data_path", default="data/processed/foundational-assist.jsonl", type=str,
+                        help="Question JSONL written by processing.py")
     parser.add_argument("--output_dir", default=None, type=str,
-                        help="Output directory (default: <data dir>/answerability/<timestamp>)")
+                        help="Output directory (default: data/interim/answerability/<timestamp>)")
     parser.add_argument("--model", default="gemini-3.6-flash", type=str,
                         help="Gemini model; pass gemini-3.1-pro-preview for a more accurate (and pricier) screen. "
                              "Only Vertex AI's 2.5 family serves log-probabilities")
