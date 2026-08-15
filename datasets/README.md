@@ -24,22 +24,34 @@ The dataset directory behind the symlink holds `raw/`, `interim/` and
   up. A DataShop export is raw however tidy it looks: you cannot rebuild it,
   only re-download it. Keep the download whole; a column-reduced copy of an
   export is a derived file, not the export.
-- **Is it named by the student-step contract?** Only `<ds>.jsonl` and
-  `<ds>_student-step.txt` are (see `kcluster.io.student_step`). Those two are
-  `processed/`; everything else you generated is `interim/`.
+- **Is it what KCluster runs on?** Only `<ds>.jsonl` is (the question bank), so
+  that is `processed/`; everything else you generated is `interim/`, including
+  the driver's `<ds>_student-step-minimal.txt` — an untagged file is an input to
+  `kcluster tag`, regenerable from the raw export like any other working file.
 
 That second cut is what makes `processed/` the sync unit — the tier that
-travels to a cluster, and the one a driver is contracted to produce. Keeping it
-to the pair means "what do I need over there?" is never a judgement call.
+travels to a cluster. Keeping it to the banks means "what do I need over there?"
+is never a judgement call.
 
-Two consequences worth stating:
+Three consequences worth stating:
 
 - **One `<ds>` id threads data through results.** The jsonl stem is the dataset
-  id: `elearning22-mcq.jsonl` → `elearning22-mcq_student-step.txt` →
-  `results/<run>/kc/elearning22-mcq_*-kc.csv`. Never rename it mid-pipeline.
-- **A tagged student-step file is a run output, not a dataset file.** It is a
-  function of one run's KC models, so `kcluster tag` writes it into that run's
-  result directory, not back into `processed/`.
+  id: `elearning22-mcq.jsonl` → `elearning22-mcq_student-step-minimal.txt` →
+  `results/<run>/kc/elearning22-mcq_*-kc.csv` →
+  `results/<run>/elearning22-mcq_student-step-tagged.txt`. Never rename it
+  mid-pipeline.
+- **The two student-step files are named for their stage.** `-minimal` has no KC
+  model of KCluster's making (expert models may ride along); `-tagged` is what
+  `kcluster tag` wrote and what gets scored. The suffixes are `MINIMAL_SUFFIX` /
+  `TAGGED_SUFFIX` in `kcluster.io.student_step`, so a driver spells the
+  convention once.
+- **A tagged file belongs to a run, not to the dataset.** One minimal file is
+  common to every run; joining a particular run's KC models onto it produces a
+  file only that run explains, so `kcluster tag` writes it into that result dir.
+  Datasets clustered in banks (one result dir per course under a work dir) need
+  no joint KC table on disk for this: the tagger concatenates the parts of each
+  model in memory, namespacing each part's labels by its bank (`EPLA-Physics:
+  Newton's third law`) so the banks keep disjoint KC spaces.
 
 One directory per *data source*, not per paper: two DataShop exports of the same
 course share the expensive artifact (the course HTML), so they stay together —

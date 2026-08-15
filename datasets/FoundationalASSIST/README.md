@@ -15,9 +15,9 @@ the driver no longer imports code out of the gated data directory.
 
 ## Pipeline
 
-    python processing.py                  # -> interim/{problems.csv, interactions.csv}
-                                          #    processed/{foundational-assist.jsonl,
-                                          #               foundational-assist_student-step.txt}
+    python processing.py                  # -> interim/{problems.csv, interactions.csv,
+                                          #             foundational-assist_student-step-minimal.txt}
+                                          #    processed/foundational-assist.jsonl
     python answerability.py --dry_run     # inspect the prompts, no API calls
 
 `processing.py` writes all four artifacts in one
@@ -29,12 +29,14 @@ keep the `Multiple Choice …` prefix that `validate_question` guards on.
 
 ## Student-step file
 
-`foundational-assist_student-step.txt` follows the minimal student-step
-contract (`kcluster.io.student_step`): one row per student × problem holding
-the **first attempt** — the interaction with the earliest `end_time`, ties
-broken by log id (2.6% of student–problem pairs have more than one log row;
-the export does not say whether repeats are new encounters or retries, so
-everything after the first attempt is dropped, not guessed at). Outcomes keep
+`interim/foundational-assist_student-step-minimal.txt` follows the minimal
+student-step contract (`kcluster.io.student_step`) — `kcluster tag --run_dir
+<results>/foundational-assist-<run>` turns it into that run's
+`foundational-assist_student-step-tagged.txt`. It holds one row per
+student × problem, the **first attempt**: the interaction with the earliest
+`end_time`, ties broken by log id (2.5% of student–problem pairs have more than
+one log row; everything after the first is dropped — see *What counts as one
+encounter* below for why nothing better is available). Outcomes keep
 the platform's scoring: `discrete_score` 1 → `correct`, 0 → `incorrect`.
 ASSISTments logs hint use and answer viewing separately from the score;
 DataShop would code a hint-first attempt as `hint` (a failure in AFM), but
@@ -44,6 +46,51 @@ source's semantics. `Step Name` holds the question id (`fa-<problem_id>`),
 `Problem Name` copies it, and the expert CCSS model rides along as
 `KC (CCSS)` — with **no** `Opportunity` column, because the KC tagger owns
 opportunity counting for expert and generated models alike.
+
+### What counts as one encounter
+
+DataShop's rollup gives a step one row per *encounter*, holding only how that
+encounter opened; attempts a student makes after seeing feedback belong to the
+encounter they followed, and their evidence of learning is the next encounter's
+first attempt. Splitting the two therefore needs a boundary, and DataShop takes
+one the tutor logged rather than inferring it from a clock. This export has
+none: the interaction log carries `id`, `problem_id`, `hint_count`,
+`answer_text`, `saw_answer`, `discrete_score`, `end_time`, `user_id` — no
+session, no assignment, no problem-instance id, not even a start time.
+
+Nor is there a threshold to fall back on. The 32,413 repeat rows — spread over
+28,022 of the 1,121,491 student–problem pairs — fall across every time scale,
+with quartiles at 51 minutes, 1.9 days and 10 days:
+
+| gap to previous row | rows | previously correct | now correct |
+|---|--:|--:|--:|
+| < 1 min | 410 | 44% | 65% |
+| 1–10 min | 3,835 | 39% | 89% |
+| 10 min – 1 h | 4,035 | 44% | 81% |
+| 1 h – 1 day | 5,807 | 45% | 76% |
+| 1–7 days | 8,758 | 52% | 68% |
+| > 7 days | 9,568 | 52% | 62% |
+
+The ends of that table are interpretable — a +50pp jump inside ten minutes is a
+correction after feedback, while a week later 62% sits just above these
+students' own 52% first attempts, as a fresh encounter would — but the decay is
+smooth, with no point at which one regime ends and the other begins. Around half
+the repeats resubmit the identical `answer_text`, and that holds in every band
+(48–63%), so it does not discriminate either.
+
+So the choice is deliberate rather than provisional: any cut would be an
+assumption the export cannot support, and it would buy little — 2.2% more rows
+at 30 minutes or an hour, 1.6% at a day, 0.9% at a week — much of it corrections
+that make KCs look easier than they are. Every KC model sees the same rows
+either way, so model comparison is unaffected. Two consequences worth carrying
+into analysis: `Opportunity` is 1 for nearly every row here, so an AFM learning
+rate on this dataset rests on students meeting a *KC* through different
+problems rather than the same problem twice; and this is a thin spread rather
+than a few odd accounts — 2,359 of the 5,000 students have at least one repeat.
+
+Contrast `datasets/spacing-exp2`, where the same question had an answer: that
+export logs `Session Id`, and keying on it recovered 18.8% more rows that were
+the study's own treatment.
 
 The cleaning rules were derived in an exploratory notebook that is **not** in the
 repository: its saved outputs embed problem text and interaction rows from a

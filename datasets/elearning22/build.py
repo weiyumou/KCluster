@@ -5,12 +5,14 @@ downloaded OLI course HTML with the generic ``oli_html`` loader, keeps only the
 questions whose steps ds5426 knows about, and attaches the DataShop step names
 (``ds-step-name``) that key those questions to student-step rows.
 
-    python build.py            # reads data/raw/, writes data/processed/
+    python build.py            # reads data/raw/, writes data/processed/ and data/interim/
 
-writes the pair — ``elearning22-mcq.jsonl`` and
-``elearning22-mcq_student-step.txt`` (the contract in
-``kcluster.io.student_step``) — in one pass, so the questions and the
-interaction rows cannot come to describe different step sets.
+writes the pair — ``elearning22-mcq.jsonl`` into ``--out_dir`` and the minimal
+``elearning22-mcq_student-step-minimal.txt`` into ``--interim_dir`` (the contract
+in ``kcluster.io.student_step``) — in one pass, so the questions and the
+interaction rows cannot come to describe different step sets. The minimal file is
+the tagger's input, one per dataset; each run's tagged file lands in that run's
+result dir.
 
 The 2023 offering (ds5843) is a separate driver, ``datasets/elearning23``: the
 two share the course HTML and every step of the procedure, and differ only in
@@ -31,7 +33,12 @@ import os
 from kcluster.io.jsonl import dump_questions
 from kcluster.io.loaders.datashop_export import load_export, reduce_to_steps, universe_steps
 from kcluster.io.loaders.oli_html import attach_datashop_steps, parse_all_mcqs
-from kcluster.io.student_step import check_coverage, save_student_step, validate_student_step
+from kcluster.io.student_step import (
+    MINIMAL_SUFFIX,
+    check_coverage,
+    save_student_step,
+    validate_student_step,
+)
 
 #: The jsonl stem is the dataset id: every KC artifact downstream inherits it.
 DS = "elearning22-mcq"
@@ -55,7 +62,7 @@ def step_key(raw: str) -> str:
     return raw.split(" ")[0]
 
 
-def write_elearning22(root_dir: str, export_path: str, out_dir: str,
+def write_elearning22(root_dir: str, export_path: str, out_dir: str, interim_dir: str,
                       kc_models: tuple[str, ...] = EXPERT_KC_MODELS) -> None:
     """Write the 2022 offering's question JSONL and minimal student-step file."""
     export = load_export(export_path, kc_models)
@@ -71,7 +78,7 @@ def write_elearning22(root_dir: str, export_path: str, out_dir: str,
     validate_student_step(ss)
     uncovered = check_coverage(questions, ss)
     assert not uncovered, f"{len(uncovered)} question(s) have no student-step rows: {uncovered[:5]}"
-    ss_path = os.path.join(out_dir, f"{DS}_student-step.txt")
+    ss_path = os.path.join(interim_dir, f"{DS}{MINIMAL_SUFFIX}")
     save_student_step(ss, ss_path)
     print(f"** Saved {len(ss)} student-step rows, {len(export) - len(ss)} dropped as unresolvable "
           f"({ss['Anon Student Id'].nunique()} students, "
@@ -85,14 +92,17 @@ def main():
     parser.add_argument("--export", default=EXPORT, type=str,
                         help=f"Path to the ds5426 DataShop student-step export (default: {EXPORT})")
     parser.add_argument("--out_dir", default="data/processed", type=str,
-                        help="Where to write the pair (default: data/processed)")
+                        help="Where to write the question JSONL (default: data/processed)")
+    parser.add_argument("--interim_dir", default="data/interim", type=str,
+                        help="Where to write the minimal student-step file (default: data/interim)")
     parser.add_argument("--kc_models", nargs="+", default=list(EXPERT_KC_MODELS), type=str,
                         help="Expert KC models defining the universe, carried into the student-step file")
     args = parser.parse_args()
 
-    out_dir = os.path.abspath(args.out_dir)
+    out_dir, interim_dir = os.path.abspath(args.out_dir), os.path.abspath(args.interim_dir)
     os.makedirs(out_dir, exist_ok=True)
-    write_elearning22(args.root_dir, args.export, out_dir, tuple(args.kc_models))
+    os.makedirs(interim_dir, exist_ok=True)
+    write_elearning22(args.root_dir, args.export, out_dir, interim_dir, tuple(args.kc_models))
 
 
 if __name__ == "__main__":

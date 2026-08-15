@@ -1,8 +1,11 @@
 """Tests for the KC tagger (kcluster.tasks.tag)."""
 
+import os
+
 import pandas as pd
 import pytest
 
+from kcluster.commands.tag import _default_output, _run_dir_kc_paths, load_kc_models
 from kcluster.tasks.tag import (
     SINGLE_KC_NAME,
     UNIQUE_STEP_NAME,
@@ -123,3 +126,77 @@ def test_model_name_strips_dataset_prefix_and_kc_suffix():
     assert model_name("kc/foundational-assist_concept-kc.csv") == "concept"
     assert model_name("elearning22-mcq_kcluster-unnorm-residfull-kc.csv") == "kcluster-unnorm-residfull"
     assert model_name("questions_sbert-cosine-kc.csv") == "sbert-cosine"
+
+
+def test_default_output_swaps_minimal_for_tagged():
+    # The dataset convention: one <ds>, the stage in the suffix — the tagged
+    # name must not inherit '-minimal'.
+    assert _default_output("data/interim/spacing-exp2_student-step-minimal.txt", "/run") == \
+        "/run/spacing-exp2_student-step-tagged.txt"
+    assert _default_output("/d/interim/elearning22-mcq_student-step-minimal.txt", None) == \
+        "/d/interim/elearning22-mcq_student-step-tagged.txt"
+    # Anything else (a raw DataShop export, say) just gains '-tagged'.
+    assert _default_output("/d/ds5426_student_step.txt", None) == "/d/ds5426_student_step-tagged.txt"
+
+
+# --- resolving a run dir's KC models -----------------------------------------
+
+def _write_kc(path, ids, kcs):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"id": ids, "ds-step-name": ids, "KC": kcs}).to_csv(path, index=False)
+    return str(path)
+
+
+def test_run_dir_falls_back_to_per_bank_result_dirs(tmp_path):
+    # A work dir of per-course result dirs (as a Vertex batch writes) has no kc/
+    # of its own; its courses' models are the ones to tag with.
+    _write_kc(tmp_path / "Course-A" / "kc" / "Course-A_concept-kc.csv", ["a1"], ["alpha"])
+    _write_kc(tmp_path / "Course-B" / "kc" / "Course-B_concept-kc.csv", ["b1"], ["beta"])
+    assert [os.path.basename(p) for p in _run_dir_kc_paths(str(tmp_path))] == \
+        ["Course-A_concept-kc.csv", "Course-B_concept-kc.csv"]
+
+    # Once the run has its own kc/, that is the model — per-bank files are not
+    # mixed in, which would double every question.
+    _write_kc(tmp_path / "kc" / "ds_concept-kc.csv", ["a1", "b1"], ["alpha", "beta"])
+    assert [os.path.basename(p) for p in _run_dir_kc_paths(str(tmp_path))] == ["ds_concept-kc.csv"]
+
+
+def test_same_named_kc_files_are_concatenated_into_one_model(tmp_path):
+    # A and B both clustered a KC they call 'alpha'; the two arrived there
+    # separately, so the merged model must keep them apart.
+    paths = [_write_kc(tmp_path / "A" / "kc" / "A_concept-kc.csv", ["a1", "a2"], ["alpha", "alpha"]),
+             _write_kc(tmp_path / "B" / "kc" / "B_concept-kc.csv", ["b1"], ["alpha"]),
+             _write_kc(tmp_path / "B" / "kc" / "B_llm-cosine-kc.csv", ["b1"], ["gamma"])]
+
+    models = load_kc_models(paths)
+
+    assert set(models) == {"concept", "llm-cosine"}
+    assert models["concept"]["id"].tolist() == ["a1", "a2", "b1"]
+    assert models["concept"]["KC"].tolist() == ["A: alpha", "A: alpha", "B: alpha"]
+    # a single-part model is one bank's own, so its labels are left alone
+    assert models["llm-cosine"]["KC"].tolist() == ["gamma"]
+
+
+def test_namespacing_leaves_an_unlabeled_question_unlabeled(tmp_path):
+    # Prefixing an empty label would turn an incomplete model into a complete-
+    # looking one, hiding what _join_kc_model exists to catch.
+    paths = [_write_kc(tmp_path / "A" / "kc" / "A_concept-kc.csv", ["a1"], ["alpha"]),
+             _write_kc(tmp_path / "B" / "kc" / "B_concept-kc.csv", ["b1", "b2"], ["beta", ""])]
+
+    assert load_kc_models(paths)["concept"]["KC"].tolist() == ["A: alpha", "B: beta", ""]
+
+
+def test_multi_kc_cells_are_namespaced_label_by_label(tmp_path):
+    paths = [_write_kc(tmp_path / "A" / "kc" / "A_concept-kc.csv", ["a1"], ["alpha~~beta"]),
+             _write_kc(tmp_path / "B" / "kc" / "B_concept-kc.csv", ["b1"], ["beta"])]
+
+    assert load_kc_models(paths)["concept"]["KC"].tolist() == ["A: alpha~~A: beta", "B: beta"]
+
+
+def test_same_named_kc_files_over_the_same_questions_raise(tmp_path):
+    # Not parts of one model: two rival models that happen to share a name.
+    paths = [_write_kc(tmp_path / "one" / "kc" / "ds_concept-kc.csv", ["q1"], ["alpha"]),
+             _write_kc(tmp_path / "two" / "kc" / "ds_concept-kc.csv", ["q1"], ["beta"])]
+
+    with pytest.raises(SystemExit, match="renamed"):
+        load_kc_models(paths)

@@ -3,7 +3,7 @@
 Cleans the raw ``Problems.csv`` / ``Skills.csv`` / ``Interactions.csv`` export into
 two analysis-ready tables plus the two artifacts the rest of KCluster consumes:
 the Question JSONL (``foundational-assist.jsonl``) and the minimal student-step
-file (``foundational-assist_student-step.txt``; contract in
+file (``foundational-assist_student-step-minimal.txt``; contract in
 ``kcluster.io.student_step``). The jsonl stem is the dataset id — every KC
 artifact downstream inherits it as a filename prefix.
 The cleaning rules were worked out in an exploratory notebook that is not
@@ -15,9 +15,10 @@ All four artifacts are written in one pass on purpose. Generating the questions
 or the student-step file separately lets them describe a different problem set
 than ``problems.csv`` with nothing to signal the drift — every ``--drop_*`` flag
 changes all of them. They land in two tiers of the dataset directory: the
-cleaned tables in ``interim/`` (regenerable working files) and the contract pair
-in ``processed/`` (what the student-step contract names, and the only tier that
-has to travel to a cluster).
+cleaned tables and the minimal student-step file in ``interim/`` (regenerable
+working files — the minimal file is the tagger's input, not a scoreable file)
+and the question JSONL in ``processed/``, the tier KCluster runs on. The tagged
+student-step file is a run's output and lands in its result dir.
 
 The vendored ``clean_utils`` module beside this driver does the heavy lifting
 for MathML, Wiris formulas, tables and HTML entities. It is adapted from the
@@ -42,7 +43,12 @@ from unanswerable import REVIEWED_KEY_FIXES, UNANSWERABLE_PROBLEM_IDS
 
 from kcluster.core.question import Question
 from kcluster.io.jsonl import dump_questions, validate_question
-from kcluster.io.student_step import check_coverage, save_student_step, validate_student_step
+from kcluster.io.student_step import (
+    MINIMAL_SUFFIX,
+    check_coverage,
+    save_student_step,
+    validate_student_step,
+)
 
 # The dataset id: stem of the question JSONL, prefix of every downstream artifact.
 DS = "foundational-assist"
@@ -415,10 +421,13 @@ def build_student_step(interaction_df: pd.DataFrame, problem_df: pd.DataFrame) -
 
     One row per student x problem: the *first* attempt, the interaction with
     the earliest ``end_time`` (ties broken by log id, so the reduction is
-    deterministic). 2.6% of student-problem pairs carry more than one log row
-    (up to 89); whether repeats are later encounters or retries within one is
+    deterministic). 2.5% of student-problem pairs carry more than one log row
+    (up to 86); whether repeats are later encounters or retries within one is
     not recorded, so everything after the first attempt is dropped, not guessed
-    at.
+    at. The export logs no session, assignment or problem-instance id to split
+    them on, and their time gaps and outcomes decay too smoothly to cut at —
+    the workspace README works through the measurements under "What counts as
+    one encounter".
 
     Outcomes keep the platform's own scoring: ``discrete_score`` 1 ->
     ``correct``, 0 -> ``incorrect``. ASSISTments records hint usage
@@ -485,9 +494,10 @@ def main():
     parser.add_argument("--raw_dir", default="data/raw", type=str,
                         help="Raw export root, containing Data/ (default: data/raw)")
     parser.add_argument("--interim_dir", default="data/interim", type=str,
-                        help="Where to write the cleaned tables (default: data/interim)")
+                        help="Where to write the cleaned tables and the minimal student-step file "
+                             "(default: data/interim)")
     parser.add_argument("--output_dir", default="data/processed", type=str,
-                        help="Where to write the question/student-step pair (default: data/processed)")
+                        help="Where to write the question JSONL (default: data/processed)")
     parser.add_argument("--keep_image_problems", action="store_true",
                         help="Keep problems that depend on a figure (dropped by default)")
     parser.add_argument("--keep_unanswerable", action="store_true",
@@ -496,8 +506,9 @@ def main():
                         help="Drop select-all-that-apply problems, leaving fill-in and single-answer MCQs")
     args = parser.parse_args()
 
-    # The cleaned tables are interim: regenerable, and not what the student-step
-    # contract names. Only the pair below is processed/.
+    # The cleaned tables and the minimal student-step file are interim:
+    # regenerable, and inputs rather than results. Only the JSONL below is
+    # processed/, the tier KCluster runs on.
     interim_dir, output_dir = os.path.abspath(args.interim_dir), os.path.abspath(args.output_dir)
     os.makedirs(interim_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
@@ -527,7 +538,7 @@ def main():
     validate_student_step(ss)
     uncovered = check_coverage(questions, ss)
     assert not uncovered, f"{len(uncovered)} question(s) have no student-step rows: {uncovered[:5]}"
-    ss_path = os.path.join(output_dir, f"{DS}_student-step.txt")
+    ss_path = os.path.join(interim_dir, f"{DS}{MINIMAL_SUFFIX}")
     save_student_step(ss, ss_path)
     print(f"** Saved {len(ss)} student-step rows ({ss['Anon Student Id'].nunique()} students, "
           f"{ss['First Attempt'].eq('correct').mean():.1%} correct) to {ss_path} **")

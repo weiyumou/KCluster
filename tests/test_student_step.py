@@ -3,6 +3,7 @@ import pytest
 
 from kcluster.core.question import Question
 from kcluster.io.student_step import (
+    MINIMAL_SUFFIX,
     check_coverage,
     load_student_step,
     save_student_step,
@@ -38,7 +39,7 @@ def _q(qid: str, **extra) -> Question:
 def test_round_trip_keeps_strings_and_empty_cells(tmp_path):
     df = _frame()
     df["KC (CCSS)"] = ["4.OA.A.1~~4.NF.B.4b", None, "4.OA.A.1"]
-    path = str(tmp_path / "toy_student-step.txt")
+    path = str(tmp_path / f"toy{MINIMAL_SUFFIX}")
     save_student_step(df, path)
     loaded = load_student_step(path)
     assert loaded["KC (CCSS)"].tolist() == ["4.OA.A.1~~4.NF.B.4b", "", "4.OA.A.1"]

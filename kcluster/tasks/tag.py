@@ -38,11 +38,40 @@ from kcluster.io.student_step import (
 SINGLE_KC_NAME = "Single-KC"
 UNIQUE_STEP_NAME = "Unique-step"
 
+#: Separates a bank's name from a KC label when parts of one model are merged
+#: (``"EPLA-Physics: Newton's third law"``). Clustering runs per bank, so two
+#: banks' labels are alike only by coincidence — a shared spelling would
+#: otherwise pool their steps into one KC and one set of AFM parameters.
+BANK_KC_SEP = ": "
+
 
 def model_name(kc_path: str) -> str:
     """Model name of a D10 KC file (``<ds>_<model>-kc.csv`` -> ``<model>``)."""
     stem = os.path.splitext(os.path.basename(kc_path))[0]
     return stem.split("_", 1)[-1].removesuffix("-kc")
+
+
+def bank_name(kc_path: str) -> str:
+    """The ``<ds>`` a D10 KC file was built from (``<ds>_<model>-kc.csv`` -> ``<ds>``)."""
+    stem = os.path.splitext(os.path.basename(kc_path))[0]
+    return stem.split("_", 1)[0]
+
+
+def namespace_kc(kc: pd.DataFrame, bank: str) -> pd.DataFrame:
+    """A copy of ``kc`` with every KC label prefixed by ``bank``.
+
+    Multi-KC cells are prefixed label by label, and an empty label stays empty:
+    a model that leaves a question unlabeled must still read as unlabeled to
+    :func:`_join_kc_model`, which is what catches an incomplete model.
+    """
+    def prefixed(cell: str) -> str:
+        labels = str(cell).split(MULTI_KC_SEP)
+        return MULTI_KC_SEP.join(f"{bank}{BANK_KC_SEP}{label}" if label.strip() else label
+                                 for label in labels)
+
+    kc = kc.copy()
+    kc["KC"] = kc["KC"].map(prefixed)
+    return kc
 
 
 def load_kc_csv(path: str) -> pd.DataFrame:

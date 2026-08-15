@@ -17,7 +17,12 @@ pytest.importorskip("bs4")
 from test_oli_html import _question_div, _write_html  # noqa: E402
 
 from kcluster.io.jsonl import load_questions  # noqa: E402
-from kcluster.io.student_step import check_coverage, load_student_step, validate_student_step  # noqa: E402
+from kcluster.io.student_step import (  # noqa: E402
+    MINIMAL_SUFFIX,
+    check_coverage,
+    load_student_step,
+    validate_student_step,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -67,10 +72,20 @@ def _write_export(path, rows, kc_model="expert") -> str:
     return str(path)
 
 
-def _assert_pair_is_consistent(out_dir, ds: str) -> pd.DataFrame:
+@pytest.fixture()
+def tiers(tmp_path):
+    """The two tiers a driver writes into: the JSONL and the minimal file are split."""
+    out_dir, interim_dir = tmp_path / "processed", tmp_path / "interim"
+    out_dir.mkdir()
+    interim_dir.mkdir()
+    return out_dir, interim_dir
+
+
+def _assert_pair_is_consistent(tiers, ds: str) -> pd.DataFrame:
     """The invariant both drivers exist to hold: the two halves agree."""
+    out_dir, interim_dir = tiers
     questions = load_questions(str(out_dir / f"{ds}.jsonl"))
-    ss = load_student_step(str(out_dir / f"{ds}_student-step.txt"))
+    ss = load_student_step(str(interim_dir / f"{ds}{MINIMAL_SUFFIX}"))
     validate_student_step(ss)
     assert check_coverage(questions, ss) == []
     return ss
@@ -78,7 +93,7 @@ def _assert_pair_is_consistent(out_dir, ds: str) -> pd.DataFrame:
 
 # --- 2022 offering (ds5426): steps lead with the OLI step name ---
 
-def test_write_elearning22_pair(driver22, html_dir, tmp_path):
+def test_write_elearning22_pair(driver22, html_dir, tmp_path, tiers):
     # mcq-two's step is untagged by the expert model, so it is outside the
     # universe: its question is dropped and so are its rows.
     export = _write_export(tmp_path / "export.txt", [
@@ -88,21 +103,22 @@ def test_write_elearning22_pair(driver22, html_dir, tmp_path):
         ("mcq-two_p2 Row3", None, "correct"),
     ])
 
-    driver22.write_elearning22(html_dir, export, str(tmp_path), kc_models=("expert",))
+    out_dir, interim_dir = tiers
+    driver22.write_elearning22(html_dir, export, str(out_dir), str(interim_dir), kc_models=("expert",))
 
-    [q] = load_questions(str(tmp_path / "elearning22-mcq.jsonl"))
+    [q] = load_questions(str(out_dir / "elearning22-mcq.jsonl"))
     assert q["step-name"] == ["mcq-one_p1"]
     assert q["skillref"] == ["skill-a"]
     assert q["ds-step-name"] == ["mcq-one_p1 Row1", "mcq-one_p1 Row2"]
 
-    ss = _assert_pair_is_consistent(tmp_path, "elearning22-mcq")
+    ss = _assert_pair_is_consistent(tiers, "elearning22-mcq")
     # the unresolvable row is dropped; Opportunity and extra columns are gone
     assert list(ss.columns) == ["Anon Student Id", "Problem Hierarchy", "Problem Name", "Step Name",
                                 "First Transaction Time", "First Attempt", "KC (expert)"]
     assert ss["Step Name"].tolist() == ["mcq-one_p1 Row1", "mcq-one_p1 Row2", "mcq-one_p1 Row1"]
 
 
-def test_write_elearning22_keeps_rows_the_experts_left_untagged(driver22, html_dir, tmp_path):
+def test_write_elearning22_keeps_rows_the_experts_left_untagged(driver22, html_dir, tmp_path, tiers):
     # A step inside the universe can still carry rows the experts did not tag
     # (elearning22 has 139). They resolve to a question, so they stay — inert
     # under every model, but preserving the student's history.
@@ -110,34 +126,36 @@ def test_write_elearning22_keeps_rows_the_experts_left_untagged(driver22, html_d
         ("mcq-one_p1 Row1", "e1", "correct"),
         ("mcq-one_p1 Row1", None, "correct"),
     ])
-    driver22.write_elearning22(html_dir, export, str(tmp_path), kc_models=("expert",))
+    out_dir, interim_dir = tiers
+    driver22.write_elearning22(html_dir, export, str(out_dir), str(interim_dir), kc_models=("expert",))
 
-    ss = load_student_step(str(tmp_path / "elearning22-mcq_student-step.txt"))
+    ss = load_student_step(str(interim_dir / f"elearning22-mcq{MINIMAL_SUFFIX}"))
     assert len(ss) == 2
     assert ss["KC (expert)"].tolist() == ["e1", ""]
 
 
 # --- 2023 offering (ds5843): the part id sits after a "part" marker ---
 
-def test_write_elearning23_pair(driver23, html_dir, tmp_path):
+def test_write_elearning23_pair(driver23, html_dir, tmp_path, tiers):
     export = _write_export(tmp_path / "export.txt", [
         ("Activity alpha, part p1 Multiple choice submission", "v1", "correct"),
         ("Activity beta, part p1 Multiple choice submission", "v2", "incorrect"),
         ("Activity gamma, part p2 Multiple choice submission", None, "correct"),
     ], kc_model="expert")
 
-    driver23.write_elearning23(html_dir, export, str(tmp_path), kc_models=("expert",))
+    out_dir, interim_dir = tiers
+    driver23.write_elearning23(html_dir, export, str(out_dir), str(interim_dir), kc_models=("expert",))
 
-    [q] = load_questions(str(tmp_path / "elearning23-mcq.jsonl"))
+    [q] = load_questions(str(out_dir / "elearning23-mcq.jsonl"))
     assert q["step-name"] == ["mcq-one_p1"]
     assert q["ds-step-name"] == ["Activity alpha, part p1 Multiple choice submission",
                                  "Activity beta, part p1 Multiple choice submission"]
 
-    ss = _assert_pair_is_consistent(tmp_path, "elearning23-mcq")
+    ss = _assert_pair_is_consistent(tiers, "elearning23-mcq")
     assert ss["KC (expert)"].tolist() == ["v1", "v2"]
 
 
-def test_write_elearning23_ignores_steps_without_a_part_marker(driver23, html_dir, tmp_path):
+def test_write_elearning23_ignores_steps_without_a_part_marker(driver23, html_dir, tmp_path, tiers):
     # ds5843's step names all carry the marker, but a step without one has no
     # key to join on and must be skipped rather than crash the join.
     export = _write_export(tmp_path / "export.txt", [
@@ -145,7 +163,8 @@ def test_write_elearning23_ignores_steps_without_a_part_marker(driver23, html_di
         ("A step with no marker", "v2", "correct"),
     ], kc_model="expert")
 
-    driver23.write_elearning23(html_dir, export, str(tmp_path), kc_models=("expert",))
+    out_dir, interim_dir = tiers
+    driver23.write_elearning23(html_dir, export, str(out_dir), str(interim_dir), kc_models=("expert",))
 
-    ss = _assert_pair_is_consistent(tmp_path, "elearning23-mcq")
+    ss = _assert_pair_is_consistent(tiers, "elearning23-mcq")
     assert ss["Step Name"].tolist() == ["Activity alpha, part p1 Multiple choice submission"]

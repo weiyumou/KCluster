@@ -1,12 +1,20 @@
 """Minimal student-step files: the seam between dataset drivers and KC validation.
 
-A *minimal student-step file* is the artifact a dataset driver writes next to its
-question JSONL (``<ds>.jsonl`` + ``<ds>_student-step.txt``): the dataset's
-interaction log reduced to one first attempt per student-step encounter,
-carrying no generated KC models. The KC tagger joins KC models onto it and
-computes their opportunity counts; the result is a DataShop-style student-step
-file that AFM/PFA packages (and LearnSphere) consume as-is. Only DataShop
-columns appear, so a minimal file is a valid — if sparse — student-step export.
+A *minimal student-step file* is the artifact a dataset driver writes alongside
+its question JSONL (``<ds>.jsonl``): the dataset's interaction log reduced to one
+first attempt per student-step encounter, carrying no generated KC models. The KC
+tagger joins KC models onto it and computes their opportunity counts; the result
+is a DataShop-style student-step file that AFM/PFA packages (and LearnSphere)
+consume as-is. Only DataShop columns appear, so a minimal file is a valid — if
+sparse — student-step export.
+
+The two files are named for the stage they are at, so which one a path holds is
+never a guess: ``<ds>_student-step-minimal.txt`` (:data:`MINIMAL_SUFFIX`) and
+``<ds>_student-step-tagged.txt`` (:data:`TAGGED_SUFFIX`), both under the same
+``<ds>`` as the question JSONL. Where they live follows from what they depend on:
+the minimal file is common to every run of the dataset, so it is a working file
+in its ``interim/``; a tagged file is one run's KC models joined onto it, so it
+lands in that run's result dir — see ``datasets/README.md``.
 
 Schema (tab-delimited, UTF-8, one header row):
 
@@ -76,6 +84,15 @@ from kcluster.core.question import Question
 
 MINIMAL_COLUMNS = ("Anon Student Id", "Problem Name", "Step Name",
                    "First Attempt", "First Transaction Time")
+
+#: Filename of the untagged file a driver writes, after its ``<ds>``. It lives in
+#: the dataset's ``interim/``: a regenerable input to the tagger, one per dataset.
+MINIMAL_SUFFIX = "_student-step-minimal.txt"
+
+#: Filename of the tagged file the tagger writes, after the same ``<ds>``. It
+#: lives in the result dir whose KC models it carries: one per run, not per
+#: dataset, and what an AFM/PFA package is handed.
+TAGGED_SUFFIX = "_student-step-tagged.txt"
 
 #: The DataShop vocabulary for ``First Attempt``; anything else must be mapped
 #: by the driver, not passed through.
