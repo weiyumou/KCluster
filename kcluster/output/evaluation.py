@@ -1,10 +1,11 @@
 """Evaluation of KC models: clustering-alignment metrics against a reference
-model, a shuffled-label null baseline, and parsing of LearnSphere AFM
-cross-validation results."""
+model, and a shuffled-label null baseline.
+
+Reading another tool's fit results is a separate concern and lives with the
+other foreign-format readers: :mod:`kcluster.io.learnsphere`."""
 
 import random
 import re
-from collections import defaultdict
 from typing import Sequence
 
 import numpy as np
@@ -13,53 +14,6 @@ from sklearn import metrics
 from sklearn.preprocessing import LabelEncoder
 
 from kcluster.io.datashop import KC_PAT, load_datashop_temp
-
-
-def read_cv_results(res_path: str, num_cv_runs: int = 10) -> tuple[pd.DataFrame, pd.DataFrame]:
-    # bs4 ships with the optional [datashop] extra; import lazily so the
-    # metric functions below work on a base install
-    from bs4 import BeautifulSoup
-
-    with open(res_path, "r") as f:
-        soup = BeautifulSoup(f, features="html.parser")
-
-    # Extract results
-    results = defaultdict(lambda: defaultdict(list))
-    for model in soup.find_all("model"):
-        name = model.find("name").string
-        if match := re.match(KC_PAT, name):
-            name = match.group("name")
-        else:
-            raise ValueError(f"Unrecognized name: {name}")
-
-        for tag in model.find("name").next_siblings:
-            if tag.name:
-                val = float(tag.string)
-                results[tag.name][name].append(val)
-
-    # Verify there is a correct number of results
-    for metric in results:
-        for model in results[metric]:
-            num_results = len(results[metric][model])
-            assert num_results == num_cv_runs, f"Expected {num_cv_runs} results, got {num_results} for '{model}'"
-
-    # Build a machine-readable result table for further processing
-    res_table = dict()
-    for metric in results:
-        res_table[metric] = pd.DataFrame(results[metric])
-        if metric in {"aic", "bic", "log_likelihood"}:
-            res_table[metric] = res_table[metric].mean(axis=0).to_frame().T
-    res_table = pd.concat(res_table)
-
-    # Build a human-readable result table for use in a paper
-    pub_table = defaultdict(lambda: dict())
-    for metric in results:
-        for model in results[metric]:
-            mean, std = np.mean(results[metric][model]), np.std(results[metric][model])
-            pub_table[metric][model] = f"{mean:.4f} ({std:.4f})"
-    pub_table = pd.DataFrame.from_dict(pub_table, orient="columns")
-
-    return res_table, pub_table
 
 
 def compute_clustering_metrics(true_kcs: Sequence[str], pred_kcs: Sequence[str]) -> dict[str, float]:

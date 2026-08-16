@@ -96,6 +96,17 @@ def pmi_raw_dir(result_dir: str) -> str:
     return os.path.join(result_dir, "mat", "pmi", "raw")
 
 
+def fit_dir(result_dir: str, family: str) -> str:
+    """Student-model scores for one model family (``afm``, ``pfa``).
+
+    Model-major, because a family's tables are the *same* tables computed a
+    different way: ``fit/afm/`` and ``fit/pfa/`` belong beside each other
+    rather than interleaved. Unlike ``kc/`` and ``mat/`` this holds scoring
+    output rather than a KCluster artifact.
+    """
+    return os.path.join(result_dir, "fit", family)
+
+
 def step_dir(step: str, explicit_run_dir: str | None = None) -> str | None:
     """Where a previous ``step`` of this run wrote its output, if discoverable.
 

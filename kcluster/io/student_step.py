@@ -94,6 +94,12 @@ MINIMAL_SUFFIX = "_student-step-minimal.txt"
 #: dataset, and what an AFM/PFA package is handed.
 TAGGED_SUFFIX = "_student-step-tagged.txt"
 
+#: Filename of the tagged file a fitted student model hands back, one
+#: ``Predicted Error Rate (<model>)`` column per KC model (DataShop's
+#: convention). Third stage, same naming rule: it lives beside the fit that
+#: produced it, in ``fit/<family>/``.
+PREDICTIONS_SUFFIX = "_student-step-predictions.txt"
+
 #: The DataShop vocabulary for ``First Attempt``; anything else must be mapped
 #: by the driver, not passed through.
 FIRST_ATTEMPT_VALUES = frozenset({"correct", "incorrect", "hint", "unknown"})

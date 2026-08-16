@@ -25,6 +25,8 @@ COMMANDS = [
      "Add embedding-based cosine KC models to an existing result dir"),
     ("tag", "kcluster.commands.tag",
      "Tag a minimal student-step file with KC models and opportunity counts"),
+    ("fit", "kcluster.commands.fit",
+     "Fit student models (AFM/PFA) to a tagged file, one row per KC model"),
     ("build-datashop-kc", "kcluster.commands.build_datashop_kc",
      "Insert KC models into a DataShop KC template / student-step file"),
     ("refine-datashop-kc", "kcluster.commands.refine_datashop_kc",
