@@ -32,7 +32,7 @@ N_SEEDS = 10
 
 INSTALL_HINT = (
     "Fitting student models needs Leapfit, which is not part of a base install.\n"
-    '  pip install "kcluster[fit]"\n'
+    '  pip install "kcluster[fit]"   (needs Python >= 3.11)\n'
     "Leapfit is released on GitHub rather than PyPI, so the extra carries the "
     "release URL; installing 'leapfit' by name will not find it."
 )

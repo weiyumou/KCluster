@@ -69,10 +69,7 @@ class VertexConfig:
         values = {}
         path = path or os.environ.get(_ENV_PREFIX + "CONFIG")
         if path:
-            try:
-                import tomllib
-            except ModuleNotFoundError:  # Python 3.10
-                import tomli as tomllib
+            import tomllib
             with open(path, "rb") as f:
                 data = tomllib.load(f)
             values.update(data.get("vertex", data))

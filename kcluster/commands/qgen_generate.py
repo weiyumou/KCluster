@@ -27,10 +27,7 @@ def load_generation_configs(path: str) -> dict:
     if path.endswith(".json"):
         with open(path, "r") as f:
             return json.load(f)
-    try:
-        import tomllib
-    except ModuleNotFoundError:  # Python 3.10
-        import tomli as tomllib
+    import tomllib
     with open(path, "rb") as f:
         return tomllib.load(f)
 
