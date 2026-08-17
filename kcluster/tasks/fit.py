@@ -29,6 +29,12 @@ MAX_FUN = 500_000
 SCHEMES = ("student_blocked", "item_blocked")
 N_FOLDS = 3
 N_SEEDS = 10
+# Serial by default, matching Leapfit's own default: `os.cpu_count()` reports
+# the machine rather than a scheduler's allocation, so taking every core is the
+# caller's decision to make (`--jobs`), not one to inherit. Leapfit draws the
+# fold partitions in the parent and collects results in submission order, so
+# this is wall clock only — the tables do not depend on it.
+N_JOBS = 1
 
 INSTALL_HINT = (
     "Fitting student models needs Leapfit, which is not part of a base install.\n"
@@ -63,7 +69,7 @@ def kc_models(export: str) -> list[str]:
 
 def fit_kc_models(export: str, family: str = "afm", *, models=None,
                   schemes=SCHEMES, n_folds: int = N_FOLDS, n_seeds: int = N_SEEDS,
-                  on_model=None) -> dict:
+                  n_jobs: int = N_JOBS, on_model=None) -> dict:
     """Fit ``family`` under every KC model of ``export``.
 
     Returns ``{"comparison", "folds", "identification", "components",
@@ -75,6 +81,12 @@ def fit_kc_models(export: str, family: str = "afm", *, models=None,
 
     ``on_model`` is called with ``(name, row, fit)`` after each model, so a
     command can report progress on a run measured in hours.
+
+    ``n_jobs`` is the worker count Leapfit fits the cross-validation folds in
+    (``-1`` for every core); the run is ``n_seeds`` x ``n_folds`` independent
+    fits per KC model per scheme, and spreading them changes only how long it
+    takes. The single fit behind the comparison row is unaffected — it is one
+    solve, and there is nothing there to spread.
     """
     from leapfit import load_student_step, repeated_cross_validate
 
@@ -111,7 +123,7 @@ def fit_kc_models(export: str, family: str = "afm", *, models=None,
             table = repeated_cross_validate(
                 design, data, seeds=list(range(n_seeds)), scheme=scheme,
                 n_folds=n_folds, convention=CONVENTION, method=METHOD,
-                max_fun=MAX_FUN)
+                max_fun=MAX_FUN, n_jobs=n_jobs)
             row |= {
                 f"cv_rmse_{scheme}": table["rmse"].mean(),
                 f"cv_rmse_sd_{scheme}": table["rmse"].std(ddof=1) if len(table) > 1 else np.nan,

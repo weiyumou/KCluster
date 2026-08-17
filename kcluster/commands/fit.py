@@ -11,6 +11,7 @@ pfa``).
 
     kcluster fit --run_dir results/<run>
     kcluster fit --ss_path <tagged file> --model afm --model pfa --seeds 3
+    kcluster fit --run_dir results/<run> -j -1     # fold fits across every core
 """
 
 import argparse
@@ -19,7 +20,7 @@ import os
 
 from kcluster.io.student_step import PREDICTIONS_NAME, TAGGED_SUFFIX
 from kcluster.paths import fit_dir, prepare_output_dir, run_dir
-from kcluster.tasks.fit import N_FOLDS, N_SEEDS, SCHEMES, fit_kc_models, kc_models
+from kcluster.tasks.fit import N_FOLDS, N_JOBS, N_SEEDS, SCHEMES, fit_kc_models, kc_models
 
 
 def main(args):
@@ -45,7 +46,7 @@ def main(args):
 
         out = fit_kc_models(export, family, models=models, schemes=schemes,
                             n_folds=args.folds, n_seeds=args.seeds,
-                            on_model=report)
+                            n_jobs=args.jobs, on_model=report)
         _write(out, outdir)
         print(f"*** Wrote {len(out['comparison'])} rows to {outdir} ***")
 
@@ -104,6 +105,11 @@ def add_arguments(parser):
                         help=f"Cross-validation folds (default: {N_FOLDS})")
     parser.add_argument("--seeds", default=N_SEEDS, type=int,
                         help=f"Cross-validation repeats, seeds 0..N-1 (default: {N_SEEDS})")
+    parser.add_argument("--jobs", "-j", default=N_JOBS, type=int, metavar="N",
+                        help=f"Worker processes for the cross-validation fits, -1 for every "
+                             f"core (default: {N_JOBS}). Folds are partitioned before any fit "
+                             f"starts and collected in order, so this changes the wall clock "
+                             f"and not the tables.")
 
 
 if __name__ == "__main__":

@@ -51,10 +51,12 @@ datashop = ["beautifulsoup4>=4.12"]
 # `kcluster fit` only. Leapfit is released on GitHub but not on PyPI, so this is
 # a direct reference to the release's own wheel: a fixed artifact rather than
 # "whatever the tag resolves to at install time", needing neither git nor a
-# build step (sha256 46402d850986b3a7b73c99dc58a4c37f37bc80eba3c302dca0a4b5093fab8a7e).
-# Swap it for a plain `leapfit>=0.2` if it reaches PyPI: direct references
+# build step (sha256 d0e6126036c719c52b4d6f8927722c8f890106f4fe63061297e8b8862d968ad6).
+# 0.3.0 is the floor because `kcluster fit --jobs` passes `n_jobs` to Leapfit's
+# cross-validation, which 0.2.0 does not accept.
+# Swap it for a plain `leapfit>=0.3` if it reaches PyPI: direct references
 # cannot appear in metadata uploaded there, so this line changes first.
-fit = ["leapfit @ https://github.com/weiyumou/LeapFit/releases/download/v0.2.0/leapfit-0.2.0-py3-none-any.whl"]
+fit = ["leapfit @ https://github.com/weiyumou/LeapFit/releases/download/v0.3.0/leapfit-0.3.0-py3-none-any.whl"]
 
 [dependency-groups]
 dev = ["pytest>=8.0", "ruff>=0.5", {include-group = "datasets"}, {include-group = "papers"}]
