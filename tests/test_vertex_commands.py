@@ -86,10 +86,10 @@ def test_vertex_build_kc(gcs, config_path, tmp_path):
     assert np.load(course_dir / "mat" / "pmi" / "my-questions_pmi-unnorm.npy").shape == (6, 6)
 
     import pandas as pd
-    concept_kc = pd.read_csv(course_dir / "kc" / "my-questions_concept-kc.csv")
+    concept_kc = pd.read_csv(course_dir / "kc" / "concept" / "my-questions_concept-kc.csv")
     assert concept_kc["KC"].tolist() == CONCEPTS
 
-    kcluster_kc = pd.read_csv(course_dir / "kc" / "my-questions_kcluster-unnorm-kc.csv")
+    kcluster_kc = pd.read_csv(course_dir / "kc" / "kcluster" / "my-questions_kcluster-unnorm-kc.csv")
     # Clusters follow the planted blocks; labels come from exemplar concepts
     assert kcluster_kc["KC"].tolist() == CONCEPTS
     assert kcluster_kc["KC-raw"].str.match(r"KC-\d+").all()

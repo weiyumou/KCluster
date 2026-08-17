@@ -17,7 +17,7 @@ import argparse
 import glob
 import os
 
-from kcluster.io.student_step import PREDICTIONS_SUFFIX, TAGGED_SUFFIX
+from kcluster.io.student_step import PREDICTIONS_NAME, TAGGED_SUFFIX
 from kcluster.paths import fit_dir, prepare_output_dir, run_dir
 from kcluster.tasks.fit import N_FOLDS, N_SEEDS, SCHEMES, fit_kc_models, kc_models
 
@@ -46,11 +46,11 @@ def main(args):
         out = fit_kc_models(export, family, models=models, schemes=schemes,
                             n_folds=args.folds, n_seeds=args.seeds,
                             on_model=report)
-        _write(out, outdir, export)
+        _write(out, outdir)
         print(f"*** Wrote {len(out['comparison'])} rows to {outdir} ***")
 
 
-def _write(out, outdir: str, export: str) -> None:
+def _write(out, outdir: str) -> None:
     """The run's tables, in the layout a reader of one dataset's fit expects."""
     out["comparison"].to_csv(os.path.join(outdir, "model-comparison.csv"), index=False)
     out["folds"].to_csv(os.path.join(outdir, "cv-folds.csv"), index=False)
@@ -66,8 +66,7 @@ def _write(out, outdir: str, export: str) -> None:
         values.to_csv(os.path.join(values_dir, f"{name.replace('/', '_')}.csv"), index=False)
 
     if out["predictions"] is not None:
-        name = os.path.basename(export).replace(TAGGED_SUFFIX, PREDICTIONS_SUFFIX)
-        out["predictions"].to_csv(os.path.join(outdir, name), sep="\t", index=False,
+        out["predictions"].to_csv(os.path.join(outdir, PREDICTIONS_NAME), sep="\t", index=False,
                                   float_format="%.6f", lineterminator="\n")
 
 

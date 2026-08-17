@@ -106,7 +106,7 @@ def test_fit_writes_the_family_tree(run_dir):
 
     assert sorted(os.listdir(os.path.join(outdir, "kc-values"))) == \
         ["coarse.csv", "fine.csv"]
-    predictions = pd.read_csv(os.path.join(outdir, "ds_student-step-predictions.txt"),
+    predictions = pd.read_csv(os.path.join(outdir, "student-step-with-prediction.txt"),
                               sep="\t")
     assert {"Predicted Error Rate (coarse)",
             "Predicted Error Rate (fine)"} <= set(predictions.columns)

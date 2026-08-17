@@ -13,7 +13,7 @@ which step produced them —
 
     <result_dir>/
       args-<step>-<ds>.json     provenance, one per step
-      kc/                       final KC models, dataset-prefixed
+      kc/{concept,kcluster,embed}/  final KC models, dataset-prefixed, by origin
       mat/embed/                question-embedding matrices
       mat/pmi/                  assembled congruity matrices
       mat/pmi/raw/              raw score shards (local engine only)
@@ -26,6 +26,7 @@ dir per course. Steps outside the KC pipeline (classify, qgen, kc-refine)
 keep the older per-step folders via ``default_output_dir``.
 """
 
+import glob
 import os
 import time
 
@@ -76,9 +77,37 @@ def default_result_dir(explicit_run_dir: str | None = None) -> str:
     return run_dir(explicit_run_dir) or os.path.join(results_root(), timestamp())
 
 
-def kc_dir(result_dir: str) -> str:
-    """Final KC models (``<ds>_<model>-kc.csv``)."""
-    return os.path.join(result_dir, "kc")
+#: The three origins a KC model can have, each its own subfolder of ``kc/`` (D15).
+KC_KINDS = ("concept", "kcluster", "embed")
+
+
+def kc_dir(result_dir: str, kind: str | None = None) -> str:
+    """Final KC models (``kc/<kind>/<ds>_<model>-kc.csv``), organized by origin.
+
+    ``kind`` names the family a writer produces: ``concept`` (the concept
+    step, plus concept-cosine — it clusters the concept phrases), ``kcluster``
+    (congruity clustering), or ``embed`` (the question-embedding cosine
+    models). Omit it for the root, which is what readers scan — recursively,
+    so pre-D15 flat dirs keep resolving.
+    """
+    if kind is None:
+        return os.path.join(result_dir, "kc")
+    assert kind in KC_KINDS, f"unknown KC kind {kind!r}"
+    return os.path.join(result_dir, "kc", kind)
+
+
+def concept_kc_path(result_dir: str) -> str:
+    """The result dir's single Concept KC (``<ds>_concept-kc.csv``), or raise.
+
+    Searched recursively under ``kc/``, so the D15 layout (``kc/concept/``)
+    and pre-D15 flat result dirs both resolve.
+    """
+    kc_root = kc_dir(result_dir)
+    match = glob.glob(os.path.join(kc_root, "**", "*_concept-kc.csv"), recursive=True)
+    if len(match) != 1:
+        raise SystemExit(f"Expected exactly one *_concept-kc.csv under {kc_root}, found {len(match)} — "
+                         "run the concept step (or vertex-build-kc) into this result dir first")
+    return match[0]
 
 
 def embed_dir(result_dir: str) -> str:

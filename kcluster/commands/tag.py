@@ -58,10 +58,12 @@ def _run_dir_kc_paths(run: str) -> list[str]:
 
     One level down is where a Vertex work dir keeps them, one result dir per
     bank. The run's own ``kc/`` wins when it has files, so a dataset that really
-    does cluster as a whole is never mixed with per-bank leftovers.
+    does cluster as a whole is never mixed with per-bank leftovers. ``kc/`` is
+    searched recursively: D15 sorts models into ``kc/{concept,kcluster,embed}/``,
+    while pre-D15 result dirs keep them flat.
     """
-    own = sorted(glob.glob(os.path.join(kc_dir(run), "*-kc.csv")))
-    nested = sorted(glob.glob(os.path.join(run, "*", "kc", "*-kc.csv")))
+    own = sorted(glob.glob(os.path.join(kc_dir(run), "**", "*-kc.csv"), recursive=True))
+    nested = sorted(glob.glob(os.path.join(run, "*", "kc", "**", "*-kc.csv"), recursive=True))
     return [os.path.abspath(path) for path in (own or nested)]
 
 
@@ -72,10 +74,22 @@ def load_kc_models(kc_paths) -> dict[str, pd.DataFrame]:
     result dir per course, say): each covers its own questions, and the model is
     their concatenation. Two files that name the same *questions* are a genuine
     collision — two rival models under one name — and raise instead.
+
+    A ``-split`` sibling exists only where a label actually collided (D14), so
+    a bank without one is not a hole in the split model: nothing collided
+    there, and its split model *is* its merged model. Those banks' base parts
+    complete the split model's concatenation.
     """
     by_model: dict[str, list[str]] = {}
     for path in kc_paths:
         by_model.setdefault(model_name(path), []).append(path)
+
+    for name, paths in by_model.items():
+        base = name.removesuffix("-split")
+        if base != name and base in by_model:
+            have = {bank_name(path) for path in paths}
+            paths += [path for path in by_model[base] if bank_name(path) not in have]
+            paths.sort()
 
     kc_models = {}
     for name, paths in by_model.items():

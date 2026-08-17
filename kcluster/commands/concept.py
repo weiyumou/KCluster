@@ -35,7 +35,8 @@ def main(args):
     # kc/ under the standard name — no separate raw copy exists (D10).
     ds = os.path.splitext(os.path.basename(args.data_path))[0].replace(" ", "-")
     res_df = build_res_df(questions, concepts)
-    res_df.to_csv(os.path.join(prepare_output_dir(kc_dir(result_dir)), f"{ds}_concept-kc.csv"), index=False)
+    res_df.to_csv(os.path.join(prepare_output_dir(kc_dir(result_dir, "concept")), f"{ds}_concept-kc.csv"),
+                  index=False)
 
     # Save arguments at the result root; build-kc and embed recover data_path from here
     with open(os.path.join(result_dir, f"args-concept-{ds}.json"), "w") as f:

@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from kcluster.core.question import Question
-from kcluster.tasks.cluster import create_kc, run_ap, sim_from_embeddings
+from kcluster.tasks.cluster import create_kc, run_ap, save_kc_models, sim_from_embeddings, split_collisions
 
 
 def _question(i: int) -> Question:
@@ -75,3 +75,37 @@ def test_create_kc_returns_none_when_ap_never_converges(two_blobs):
     concept_df = pd.DataFrame({"KC": ["alpha"] * 6})
     # max_iter below convergence_iter can never satisfy the convergence check.
     assert create_kc(concept_df, questions, sim, max_iter=2) is None
+
+
+def test_split_collisions_disambiguates_shared_labels_only(two_blobs):
+    # Both exemplars carry the same concept, so the merged model has one KC.
+    questions, sim = two_blobs
+    kc = create_kc(pd.DataFrame({"KC": ["alpha"] * 6}), questions, sim)
+    assert kc["KC"].nunique() == 1 and kc["KC-raw"].nunique() == 2
+
+    split = split_collisions(kc)
+    assert split is not None
+    assert split["KC"].nunique() == split["KC-raw"].nunique() == 2
+    # Each label is the shared concept plus that cluster's id.
+    expected = kc["KC"] + " [" + kc["KC-raw"] + "]"
+    assert split["KC"].tolist() == expected.tolist()
+
+
+def test_split_collisions_is_none_without_shared_labels(two_blobs):
+    questions, sim = two_blobs
+    kc = create_kc(pd.DataFrame({"KC": ["alpha"] * 3 + ["beta"] * 3}), questions, sim)
+    assert split_collisions(kc) is None
+
+
+def test_save_kc_models_writes_the_split_sibling_only_on_collision(tmp_path, two_blobs):
+    questions, sim = two_blobs
+
+    merged = create_kc(pd.DataFrame({"KC": ["alpha"] * 3 + ["beta"] * 3}), questions, sim)
+    save_kc_models(merged, str(tmp_path / "questions_model-kc.csv"))
+    assert (tmp_path / "questions_model-kc.csv").exists()
+    assert not (tmp_path / "questions_model-split-kc.csv").exists()
+
+    collided = create_kc(pd.DataFrame({"KC": ["alpha"] * 6}), questions, sim)
+    save_kc_models(collided, str(tmp_path / "questions_model-kc.csv"))
+    split = pd.read_csv(tmp_path / "questions_model-split-kc.csv")
+    assert split["KC"].nunique() == 2

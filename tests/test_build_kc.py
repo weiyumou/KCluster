@@ -46,11 +46,12 @@ def result_dir(tmp_path):
     # The questions file plus the args-*.json breadcrumb the concept step writes
     data_path = tmp_path / "questions.jsonl"
     dump_questions(questions, str(data_path))
-    (rd / "kc").mkdir(parents=True)
+    (rd / "kc" / "concept").mkdir(parents=True)
     (rd / "args-concept-questions.json").write_text(json.dumps({"data_path": str(data_path)}))
 
-    # The Concept KC (concepts follow the two groups), written straight into kc/
-    build_res_df(questions, GROUPS).to_csv(rd / "kc" / "questions_concept-kc.csv", index=False)
+    # The Concept KC (concepts follow the two groups), written where the
+    # concept step puts it (D15)
+    build_res_df(questions, GROUPS).to_csv(rd / "kc" / "concept" / "questions_concept-kc.csv", index=False)
 
     # Score shards: within-group conditionals 5 nats above the marginal,
     # across-group 5 below — the layout CustomWriter would produce.
@@ -71,9 +72,11 @@ def test_build_kc_end_to_end(result_dir):
     build_kc.main(argparse.Namespace(result_dir=str(result_dir)))
 
     # The clustered model recovers the two groups and carries exemplar concepts
-    kc = pd.read_csv(result_dir / "kc" / "questions_kcluster-unnorm-kc.csv")
+    kc = pd.read_csv(result_dir / "kc" / "kcluster" / "questions_kcluster-unnorm-kc.csv")
     assert kc["KC"].tolist() == GROUPS
     assert kc["KC-raw"].str.fullmatch(r"KC-\d+").all()
+    # Distinct concepts, so there is no collision and no split sibling (D14)
+    assert not (result_dir / "kc" / "kcluster" / "questions_kcluster-unnorm-split-kc.csv").exists()
 
     # The assembled congruity matrix is saved for pairwise analyses
     mat = np.load(result_dir / "mat" / "pmi" / "questions_pmi-unnorm.npy")
@@ -85,12 +88,40 @@ def test_build_kc_end_to_end(result_dir):
     assert breadcrumb["data_path"].endswith("questions.jsonl")
 
 
+def test_build_kc_writes_a_split_model_when_exemplar_concepts_collide(result_dir):
+    """Two clusters whose exemplars share a concept merge under one label (the
+    EDM 2025 behaviour); a -split sibling keeping them apart appears beside the
+    merged model so both flow through tag/fit as rival models (D14)."""
+    build_res_df(_questions(), ["gamma"] * 6).to_csv(
+        result_dir / "kc" / "concept" / "questions_concept-kc.csv", index=False)
+
+    build_kc.main(argparse.Namespace(result_dir=str(result_dir)))
+
+    merged = pd.read_csv(result_dir / "kc" / "kcluster" / "questions_kcluster-unnorm-kc.csv")
+    split = pd.read_csv(result_dir / "kc" / "kcluster" / "questions_kcluster-unnorm-split-kc.csv")
+    assert merged["KC"].nunique() == 1
+    assert split["KC"].nunique() == 2
+    expected = merged["KC"] + " [" + merged["KC-raw"] + "]"
+    assert split["KC"].tolist() == expected.tolist()
+
+
 def test_build_kc_finds_its_inputs_inside_a_run_dir(result_dir, monkeypatch):
     """The pairing win: steps that ran at different times share one result
     folder, so build-kc needs no directory arguments at all."""
     monkeypatch.setenv("KCLUSTER_RUN_DIR", str(result_dir))
     build_kc.main(argparse.Namespace())
-    assert (result_dir / "kc" / "questions_kcluster-unnorm-kc.csv").exists()
+    assert (result_dir / "kc" / "kcluster" / "questions_kcluster-unnorm-kc.csv").exists()
+
+
+def test_build_kc_reads_a_pre_d15_flat_kc_dir(result_dir):
+    """A result dir from before the kc/ subfolders (D15) keeps its Concept KC
+    at the kc/ root; it still resolves, and new models land in kc/kcluster/."""
+    (result_dir / "kc" / "concept" / "questions_concept-kc.csv").rename(
+        result_dir / "kc" / "questions_concept-kc.csv")
+    (result_dir / "kc" / "concept").rmdir()
+
+    build_kc.main(argparse.Namespace(result_dir=str(result_dir)))
+    assert (result_dir / "kc" / "kcluster" / "questions_kcluster-unnorm-kc.csv").exists()
 
 
 def test_build_kc_residualize_full_adds_both_corrected_models(tmp_path, result_dir):
@@ -118,7 +149,7 @@ def test_build_kc_residualize_full_adds_both_corrected_models(tmp_path, result_d
 
     build_kc.main(argparse.Namespace(result_dir=str(result_dir), residualize_full=True))
 
-    kc_dir, mat_dir = result_dir / "kc", result_dir / "mat" / "pmi"
+    kc_dir, mat_dir = result_dir / "kc" / "kcluster", result_dir / "mat" / "pmi"
     assert (kc_dir / "questions_kcluster-unnorm-kc.csv").exists()
     assert (kc_dir / "questions_kcluster-unnorm-resid-kc.csv").exists()
     assert (kc_dir / "questions_kcluster-unnorm-residfull-kc.csv").exists()
@@ -135,7 +166,7 @@ def test_build_kc_skips_the_redundant_mean_only_model_on_one_format(result_dir, 
     constant shift: only the joint model is worth writing (D11 follow-up)."""
     build_kc.main(argparse.Namespace(result_dir=str(result_dir), residualize_full=True))
 
-    kc_dir, mat_dir = result_dir / "kc", result_dir / "mat" / "pmi"
+    kc_dir, mat_dir = result_dir / "kc" / "kcluster", result_dir / "mat" / "pmi"
     assert (kc_dir / "questions_kcluster-unnorm-residfull-kc.csv").exists()
     assert not (kc_dir / "questions_kcluster-unnorm-resid-kc.csv").exists()
     assert not (mat_dir / "questions_pmi-unnorm-resid.npy").exists()
@@ -148,7 +179,7 @@ def test_build_kc_without_shards_builds_no_kcluster_model(result_dir):
     for f in (result_dir / "mat" / "pmi" / "raw").iterdir():
         f.unlink()
     build_kc.main(argparse.Namespace(result_dir=str(result_dir)))
-    assert not (result_dir / "kc" / "questions_kcluster-unnorm-kc.csv").exists()
+    assert not (result_dir / "kc" / "kcluster" / "questions_kcluster-unnorm-kc.csv").exists()
     assert (result_dir / "args-kc-questions.json").exists()
 
 
@@ -163,7 +194,7 @@ def test_build_kc_data_path_overrides_an_unreachable_recorded_path(result_dir, t
         build_kc.main(argparse.Namespace(result_dir=str(result_dir)))
 
     build_kc.main(argparse.Namespace(result_dir=str(result_dir), data_path=str(moved)))
-    assert (result_dir / "kc" / "questions_kcluster-unnorm-kc.csv").exists()
+    assert (result_dir / "kc" / "kcluster" / "questions_kcluster-unnorm-kc.csv").exists()
 
 
 def test_build_kc_requires_a_result_dir_without_a_run_dir(monkeypatch):

@@ -10,7 +10,7 @@ import pandas as pd
 from kcluster.core.pmi import PointwiseMutualInfo
 from kcluster.io.datashop import KC_PAT, get_step_to_kc, merge_student_step_with_kc
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import embed_dir, kc_dir, pmi_raw_dir, prepare_output_dir, run_dir
+from kcluster.paths import concept_kc_path, embed_dir, pmi_raw_dir, prepare_output_dir, run_dir
 from kcluster.tasks.cluster import create_kc, sim_from_embeddings
 
 
@@ -33,9 +33,8 @@ def main(args):
                      usecols=(lambda col: col == f"KC ({kcm})" or not re.match(KC_PAT, col)))
     assert f"KC ({kcm})" in kc, "The KC model to refine is not found in the template file"
 
-    # Load concepts (the concept step writes them straight into kc/)
-    [fname] = glob.glob("*_concept-kc.csv", root_dir=kc_dir(result_dir))
-    concept_df = pd.read_csv(os.path.join(kc_dir(result_dir), fname))
+    # Load concepts (the concept step writes them under kc/)
+    concept_df = pd.read_csv(concept_kc_path(result_dir))
     assert concept_df["KC"].str.strip().all(), "Some concepts are invalid"
 
     # Recover the questions behind the concepts

@@ -17,7 +17,7 @@ from kcluster.core.pmi import PointwiseMutualInfo, correction_variants, residual
 from kcluster.engine.vertex import VertexConfig, collected_inputs, download_concepts, download_pmi
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import kc_dir, pmi_dir, prepare_output_dir
-from kcluster.tasks.cluster import build_res_df, create_kc
+from kcluster.tasks.cluster import build_res_df, create_kc, save_kc_models
 
 
 def buildable_jobs(jobs_path: str, config: VertexConfig) -> list[dict]:
@@ -51,7 +51,8 @@ def main(args):
 
         # Each course gets a full result dir under the work dir (D10)
         result_dir = os.path.join(args.work_dir, data_name)
-        output_dir = prepare_output_dir(kc_dir(result_dir))
+        output_dir = prepare_output_dir(kc_dir(result_dir, "kcluster"))
+        concept_dir = prepare_output_dir(kc_dir(result_dir, "concept"))
         mat_dir = prepare_output_dir(pmi_dir(result_dir))
 
         # Load questions
@@ -78,7 +79,7 @@ def main(args):
         # Create the KCluster KC
         kcluster_df = create_kc(concept_df, questions, sim_mtx)
         if isinstance(kcluster_df, pd.DataFrame):
-            kcluster_df.to_csv(os.path.join(output_dir, f"{data_name}_kcluster-{norm_tag}-kc.csv"), index=False)
+            save_kc_models(kcluster_df, os.path.join(output_dir, f"{data_name}_kcluster-{norm_tag}-kc.csv"))
             print(f"*** KCluster finished with {kcluster_df['KC'].nunique()} KCs ***")
 
         # ... and the same clustering with the question-format nuisance removed
@@ -100,12 +101,11 @@ def main(args):
             np.save(os.path.join(mat_dir, f"{data_name}_pmi-{norm_tag}-{tag}.npy"), adjusted)
             resid_df = create_kc(concept_df, questions, adjusted)
             if isinstance(resid_df, pd.DataFrame):
-                resid_df.to_csv(os.path.join(output_dir, f"{data_name}_kcluster-{norm_tag}-{tag}-kc.csv"),
-                                index=False)
+                save_kc_models(resid_df, os.path.join(output_dir, f"{data_name}_kcluster-{norm_tag}-{tag}-kc.csv"))
                 print(f"*** KCluster ({tag}) finished with {resid_df['KC'].nunique()} KCs ***")
 
         print(f"*** Created {concept_df['KC'].nunique()} Concept KCs ***\n\n")
-        concept_df.to_csv(os.path.join(output_dir, f"{data_name}_concept-kc.csv"), index=False)
+        concept_df.to_csv(os.path.join(concept_dir, f"{data_name}_concept-kc.csv"), index=False)
 
         # Provenance breadcrumb at the course's result root, mirroring the
         # local pipeline; the embed command recovers data_path from here

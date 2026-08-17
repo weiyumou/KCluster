@@ -32,8 +32,8 @@ from sentence_transformers import SentenceTransformer
 
 from kcluster.engine.local import LargeLangModel
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import embed_dir, kc_dir, prepare_output_dir, run_dir
-from kcluster.tasks.cluster import create_kc, sim_from_embeddings
+from kcluster.paths import concept_kc_path, embed_dir, kc_dir, prepare_output_dir, run_dir
+from kcluster.tasks.cluster import create_kc, save_kc_models, sim_from_embeddings
 from kcluster.tasks.concept import extract_question_embeds
 
 
@@ -46,7 +46,7 @@ def _save_and_cluster(name: str, embeds: np.ndarray, ds: str, concept_df, questi
     print(f"*** Building KCs based on {name}, metric='cosine' ***")
     kc = create_kc(concept_df, questions, sim_from_embeddings(embeds, metric="cosine"))
     if isinstance(kc, pd.DataFrame):
-        kc.to_csv(os.path.join(out_kc, f"{ds}_{name}-cosine-kc.csv"), index=False)
+        save_kc_models(kc, os.path.join(out_kc, f"{ds}_{name}-cosine-kc.csv"))
         print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
 
 
@@ -61,14 +61,13 @@ def main(args):
 
     # The Concept KC anchors everything: its rows are the questions, its
     # phrases are what the concept model embeds
-    out_kc = kc_dir(result_dir)
-    match = glob.glob("*_concept-kc.csv", root_dir=out_kc)
-    if len(match) != 1:
-        raise SystemExit(f"Expected exactly one *_concept-kc.csv in {out_kc}, found {len(match)} — "
-                         "run the concept step (or vertex-build-kc) into this result dir first")
-    [fname] = match
-    ds = fname.removesuffix("_concept-kc.csv")
-    concept_df = pd.read_csv(os.path.join(out_kc, fname))
+    concept_path = concept_kc_path(result_dir)
+    ds = os.path.basename(concept_path).removesuffix("_concept-kc.csv")
+    concept_df = pd.read_csv(concept_path)
+    # The two question encoders are embed-family; concept-cosine clusters the
+    # concept phrases, so it files with the concept family (D15).
+    out_embed_kc = prepare_output_dir(kc_dir(result_dir, "embed"))
+    out_concept_kc = prepare_output_dir(kc_dir(result_dir, "concept"))
 
     # Recover the questions; any step's breadcrumb records the data path.
     # --data_path overrides it, because a result dir is often embedded on a
@@ -99,13 +98,13 @@ def main(args):
         with torch.inference_mode():
             q_embeds = _as_numpy(model.encode([str(q) for q in questions]))
             c_embeds = _as_numpy(model.encode(concept_df["KC"].tolist()))
-        _save_and_cluster("sbert", q_embeds, ds, concept_df, questions, out_kc, out_embed)
-        _save_and_cluster("concept", c_embeds, ds, concept_df, questions, out_kc, out_embed)
+        _save_and_cluster("sbert", q_embeds, ds, concept_df, questions, out_embed_kc, out_embed)
+        _save_and_cluster("concept", c_embeds, ds, concept_df, questions, out_concept_kc, out_embed)
 
     if llm_path := getattr(args, "llm_path", None):
         llm = LargeLangModel(llm_path, trust_remote_code=True, torch_dtype=torch.float16)
         q_embeds = _as_numpy(extract_question_embeds(llm, questions, args.batch_size))
-        _save_and_cluster("llm", q_embeds, ds, concept_df, questions, out_kc, out_embed)
+        _save_and_cluster("llm", q_embeds, ds, concept_df, questions, out_embed_kc, out_embed)
 
     # Save arguments
     with open(os.path.join(result_dir, f"args-embed-{ds}.json"), "w") as f:

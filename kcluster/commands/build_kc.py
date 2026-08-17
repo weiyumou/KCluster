@@ -8,8 +8,8 @@ import pandas as pd
 
 from kcluster.core.pmi import PointwiseMutualInfo, correction_variants, residualize
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import kc_dir, pmi_dir, pmi_raw_dir, prepare_output_dir, run_dir
-from kcluster.tasks.cluster import create_kc
+from kcluster.paths import concept_kc_path, kc_dir, pmi_dir, pmi_raw_dir, prepare_output_dir, run_dir
+from kcluster.tasks.cluster import create_kc, save_kc_models
 
 
 def main(args):
@@ -22,15 +22,11 @@ def main(args):
     print(f"*** Writing results to {result_dir} ***")
 
     # Check the Concept KC written by the concept step is correctly filled
-    out_dir = prepare_output_dir(kc_dir(result_dir))
-    match = glob.glob("*_concept-kc.csv", root_dir=out_dir)
-    if len(match) != 1:
-        raise SystemExit(f"Expected exactly one *_concept-kc.csv in {out_dir}, found {len(match)} — "
-                         "run the concept step into this result dir first")
-    [fname] = match
-    ds = fname.removesuffix("_concept-kc.csv")
-    concept_df = pd.read_csv(os.path.join(out_dir, fname))
+    concept_path = concept_kc_path(result_dir)
+    ds = os.path.basename(concept_path).removesuffix("_concept-kc.csv")
+    concept_df = pd.read_csv(concept_path)
     assert concept_df["KC"].str.strip().all(), "Some concepts are invalid"
+    out_dir = prepare_output_dir(kc_dir(result_dir, "kcluster"))
 
     # Recover the questions behind the concepts. --data_path overrides the
     # recorded one, as in the embed command: a result dir is often rebuilt on a
@@ -60,7 +56,7 @@ def main(args):
         print("*** Building KCs for KCluster-PMI ***")
         kc = create_kc(concept_df, questions, pmi.pmi_mat)
         if isinstance(kc, pd.DataFrame):
-            kc.to_csv(os.path.join(out_dir, f"{ds}_kcluster-unnorm-kc.csv"), index=False)
+            save_kc_models(kc, os.path.join(out_dir, f"{ds}_kcluster-unnorm-kc.csv"))
             print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
 
         # Additional KC models with the question-format nuisance removed,
@@ -83,7 +79,7 @@ def main(args):
             np.save(os.path.join(mat_dir, f"{ds}_pmi-unnorm-{tag}.npy"), adjusted)
             kc = create_kc(concept_df, questions, adjusted)
             if isinstance(kc, pd.DataFrame):
-                kc.to_csv(os.path.join(out_dir, f"{ds}_kcluster-unnorm-{tag}-kc.csv"), index=False)
+                save_kc_models(kc, os.path.join(out_dir, f"{ds}_kcluster-unnorm-{tag}-kc.csv"))
                 print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
 
     # Save arguments

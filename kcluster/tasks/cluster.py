@@ -9,6 +9,7 @@ ids into descriptive KC labels.
 """
 
 import itertools
+import os
 import warnings
 from collections.abc import Callable
 from operator import itemgetter
@@ -109,3 +110,39 @@ def create_kc(concept_df: pd.DataFrame, questions: list[Question], sim_mtx: np.n
             return kc
     print("*** Failed to create KCs ***")
     return None
+
+
+def split_collisions(kc: pd.DataFrame) -> pd.DataFrame | None:
+    """The label-collision-free variant of a clustered KC model, or None.
+
+    Keying a model by concept label merges two clusters whose exemplars
+    produced the same concept — behaviour EDM 2025 acknowledges and leaves to
+    the practitioner ("whichever leads to better performance"). This is the
+    other side of that choice: a label shared by several clusters gets each
+    cluster's id appended (``percentages [KC-152]``), keeping one KC per
+    cluster; unshared labels stay as they are. Returns None when no label is
+    shared, where the split model would duplicate the merged one.
+    """
+    counts = kc.groupby("KC")["KC-raw"].nunique()
+    collided = kc["KC"].isin(counts[counts > 1].index)
+    if not collided.any():
+        return None
+    split = kc.copy()
+    split.loc[collided, "KC"] = split.loc[collided, "KC"] + " [" + split.loc[collided, "KC-raw"] + "]"
+    assert split.groupby("KC")["KC-raw"].nunique().eq(1).all(), "splitting left a shared label"
+    return split
+
+
+def save_kc_models(kc: pd.DataFrame, kc_path: str) -> None:
+    """Write a clustered KC model and, when labels collide, its split sibling.
+
+    The sibling swaps ``-kc.csv`` for ``-split-kc.csv`` (D14), so the tagger
+    picks the two up as rival models under one run: merged is the EDM 2025
+    model, split keeps every affinity-propagation cluster its own KC.
+    """
+    kc.to_csv(kc_path, index=False)
+    if (split := split_collisions(kc)) is not None:
+        split_path = kc_path.removesuffix("-kc.csv") + "-split-kc.csv"
+        split.to_csv(split_path, index=False)
+        print(f"*** {split['KC'].nunique() - kc['KC'].nunique()} cluster(s) share another cluster's label: "
+              f"also wrote {os.path.basename(split_path)} with all {split['KC'].nunique()} clusters apart ***")

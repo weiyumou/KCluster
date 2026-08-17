@@ -69,7 +69,7 @@ def real_tagged() -> pd.DataFrame:
     if not (SS_PATH.exists() and KC_DIRS):
         pytest.skip("elearning22 minimal export / result dir not available")
     kc_models = {model_name(str(path)): load_kc_csv(str(path))
-                 for path in sorted(KC_DIRS[0].glob("*-kc.csv"))}
+                 for path in sorted(KC_DIRS[0].glob("**/*-kc.csv"))}
     assert kc_models, f"no KC CSVs in {KC_DIRS[0]}"
     return _tag(load_student_step(str(SS_PATH)), kc_models)
 

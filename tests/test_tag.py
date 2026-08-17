@@ -149,15 +149,16 @@ def _write_kc(path, ids, kcs):
 
 def test_run_dir_falls_back_to_per_bank_result_dirs(tmp_path):
     # A work dir of per-course result dirs (as a Vertex batch writes) has no kc/
-    # of its own; its courses' models are the ones to tag with.
-    _write_kc(tmp_path / "Course-A" / "kc" / "Course-A_concept-kc.csv", ["a1"], ["alpha"])
+    # of its own; its courses' models are the ones to tag with. Course A uses
+    # the D15 subfolders, course B is a pre-D15 flat dir — both must resolve.
+    _write_kc(tmp_path / "Course-A" / "kc" / "concept" / "Course-A_concept-kc.csv", ["a1"], ["alpha"])
     _write_kc(tmp_path / "Course-B" / "kc" / "Course-B_concept-kc.csv", ["b1"], ["beta"])
     assert [os.path.basename(p) for p in _run_dir_kc_paths(str(tmp_path))] == \
         ["Course-A_concept-kc.csv", "Course-B_concept-kc.csv"]
 
     # Once the run has its own kc/, that is the model — per-bank files are not
     # mixed in, which would double every question.
-    _write_kc(tmp_path / "kc" / "ds_concept-kc.csv", ["a1", "b1"], ["alpha", "beta"])
+    _write_kc(tmp_path / "kc" / "concept" / "ds_concept-kc.csv", ["a1", "b1"], ["alpha", "beta"])
     assert [os.path.basename(p) for p in _run_dir_kc_paths(str(tmp_path))] == ["ds_concept-kc.csv"]
 
 
@@ -175,6 +176,23 @@ def test_same_named_kc_files_are_concatenated_into_one_model(tmp_path):
     assert models["concept"]["KC"].tolist() == ["A: alpha", "A: alpha", "B: alpha"]
     # a single-part model is one bank's own, so its labels are left alone
     assert models["llm-cosine"]["KC"].tolist() == ["gamma"]
+
+
+def test_split_model_borrows_base_parts_from_collision_free_banks(tmp_path):
+    # Bank A had a label collision, so it wrote a -split sibling; bank B had
+    # none, so it did not (D14). B's split model IS its merged model, so its
+    # base part completes the concatenation instead of leaving a hole.
+    paths = [_write_kc(tmp_path / "A" / "kc" / "A_llm-cosine-kc.csv", ["a1", "a2"], ["alpha", "alpha"]),
+             _write_kc(tmp_path / "A" / "kc" / "A_llm-cosine-split-kc.csv",
+                       ["a1", "a2"], ["alpha [KC-0]", "alpha [KC-1]"]),
+             _write_kc(tmp_path / "B" / "kc" / "B_llm-cosine-kc.csv", ["b1"], ["beta"])]
+
+    models = load_kc_models(paths)
+
+    assert models["llm-cosine"]["id"].tolist() == ["a1", "a2", "b1"]
+    assert models["llm-cosine-split"]["id"].tolist() == ["a1", "a2", "b1"]
+    assert models["llm-cosine-split"]["KC"].tolist() == \
+        ["A: alpha [KC-0]", "A: alpha [KC-1]", "B: beta"]
 
 
 def test_namespacing_leaves_an_unlabeled_question_unlabeled(tmp_path):

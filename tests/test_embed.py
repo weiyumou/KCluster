@@ -60,15 +60,18 @@ def result_dir(tmp_path):
     rd = tmp_path / "run"
     data_path = tmp_path / "questions.jsonl"
     dump_questions(questions, str(data_path))
-    (rd / "kc").mkdir(parents=True)
+    (rd / "kc" / "concept").mkdir(parents=True)
     (rd / "args-concept-questions.json").write_text(json.dumps({"data_path": str(data_path)}))
-    build_res_df(questions, GROUPS).to_csv(rd / "kc" / "questions_concept-kc.csv", index=False)
+    build_res_df(questions, GROUPS).to_csv(rd / "kc" / "concept" / "questions_concept-kc.csv", index=False)
     return rd
 
 
 def _assert_model(rd, name):
+    # concept-cosine clusters the concept phrases, so it files under concept/;
+    # the two question encoders are embed-family (D15)
+    sub = "concept" if name == "concept" else "embed"
     assert np.load(rd / "mat" / "embed" / f"questions_{name}-embed.npy").shape == (6, 2)
-    kc = pd.read_csv(rd / "kc" / f"questions_{name}-cosine-kc.csv")
+    kc = pd.read_csv(rd / "kc" / sub / f"questions_{name}-cosine-kc.csv")
     assert kc["KC"].tolist() == GROUPS, name
     assert kc["KC-raw"].str.fullmatch(r"KC-\d+").all(), name
 
@@ -92,7 +95,7 @@ def test_embed_llm_builds_the_llm_model(result_dir, monkeypatch):
     embed.main(argparse.Namespace(result_dir=str(result_dir), llm_path="llm-path", batch_size=4))
 
     _assert_model(result_dir, "llm")
-    assert not (result_dir / "kc" / "questions_sbert-cosine-kc.csv").exists()
+    assert not (result_dir / "kc" / "embed" / "questions_sbert-cosine-kc.csv").exists()
 
 
 def test_embed_works_on_a_vertex_course_dir(result_dir, monkeypatch):

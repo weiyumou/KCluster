@@ -96,9 +96,10 @@ TAGGED_SUFFIX = "_student-step-tagged.txt"
 
 #: Filename of the tagged file a fitted student model hands back, one
 #: ``Predicted Error Rate (<model>)`` column per KC model (DataShop's
-#: convention). Third stage, same naming rule: it lives beside the fit that
-#: produced it, in ``fit/<family>/``.
-PREDICTIONS_SUFFIX = "_student-step-predictions.txt"
+#: convention). A fixed name, not a ``<ds>``-prefixed one: it lives beside the
+#: fit that produced it in ``fit/<family>/``, which is already scoped to one
+#: dataset and family, so the prefix said nothing the path does not.
+PREDICTIONS_NAME = "student-step-with-prediction.txt"
 
 #: The DataShop vocabulary for ``First Attempt``; anything else must be mapped
 #: by the driver, not passed through.
