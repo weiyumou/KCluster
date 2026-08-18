@@ -96,9 +96,13 @@ TAGGED_SUFFIX = "_student-step-tagged.txt"
 
 #: Filename of the tagged file a fitted student model hands back, one
 #: ``Predicted Error Rate (<model>)`` column per KC model (DataShop's
-#: convention). A fixed name, not a ``<ds>``-prefixed one: it lives beside the
-#: fit that produced it in ``fit/<family>/``, which is already scoped to one
-#: dataset and family, so the prefix said nothing the path does not.
+#: convention). A fixed name where it lives beside the fit that produced it in
+#: ``fit/<family>/``, which is already scoped to one dataset and family, so the
+#: prefix would say nothing the path does not. A run split over several scopes
+#: writes it once at the run root instead — covering every scope, since the
+#: per-scope slices of one 200 MB-scale table are not worth storing twice — and
+#: there it carries the ``<ds>_<family>-`` prefix, because there the path no
+#: longer says either.
 PREDICTIONS_NAME = "student-step-with-prediction.txt"
 
 #: The DataShop vocabulary for ``First Attempt``; anything else must be mapped

@@ -11,6 +11,7 @@ from kcluster.tasks.tag import (
     UNIQUE_STEP_NAME,
     add_opportunities,
     model_name,
+    row_scope,
     tag_student_step,
 )
 
@@ -64,6 +65,96 @@ def test_default_models_are_added_and_masked():
     unique = tagged[f"KC ({UNIQUE_STEP_NAME})"]
     assert unique.tolist() == ["KC-1", "KC-2", "KC-2", "KC-2", ""]
     assert tagged[f"Opportunity ({UNIQUE_STEP_NAME})"].tolist() == ["1", "1", "1", "2", ""]
+
+
+# --------------------------------------------------------------------------
+# Scoping: independent sub-datasets bundled in one file
+# --------------------------------------------------------------------------
+
+def _two_course_frame() -> pd.DataFrame:
+    """Two courses sharing student A and no steps — the bundled-export shape.
+
+    A sits in both courses, which is the only thing that would otherwise tie
+    them into one AFM block; B and C sit in one each.
+    """
+    return pd.DataFrame({
+        "Anon Student Id": ["A", "B", "A", "C"],
+        "Problem Hierarchy": ["Course Bio", "Course Bio", "Course Chem", "Course Chem"],
+        "Problem Name": ["b1", "b1", "c1", "c1"],
+        "Step Name": ["b1", "b1", "c1", "c1"],
+        "First Attempt": ["correct", "incorrect", "correct", "correct"],
+        "First Transaction Time": ["2024-01-01 10:00:00", "2024-01-01 10:01:00",
+                                   "2024-01-01 10:02:00", "2024-01-01 10:03:00"],
+    })
+
+
+def test_students_and_the_constant_baseline_are_scoped_by_course():
+    tagged = tag_student_step(_two_course_frame(), {})
+    # A is two subjects, one per course; the baseline is one KC per course
+    assert tagged["Anon Student Id"].tolist() == [
+        "Course Bio: A", "Course Bio: B", "Course Chem: A", "Course Chem: C"]
+    assert tagged[f"KC ({SINGLE_KC_NAME})"].tolist() == [
+        "Course Bio: Single-KC", "Course Bio: Single-KC",
+        "Course Chem: Single-KC", "Course Chem: Single-KC"]
+
+
+def test_scoping_restarts_the_constant_baseline_opportunity_count_per_course():
+    # unscoped, A's second course would be its opportunity 2 under one shared KC
+    tagged = tag_student_step(_two_course_frame(), {})
+    assert tagged[f"Opportunity ({SINGLE_KC_NAME})"].tolist() == ["1", "1", "1", "1"]
+    pooled = tag_student_step(_two_course_frame(), {}, scope_column=None)
+    assert pooled[f"Opportunity ({SINGLE_KC_NAME})"].tolist() == ["1", "1", "2", "1"]
+
+
+def test_scoping_can_be_switched_off():
+    pooled = tag_student_step(_two_course_frame(), {}, scope_column=None)
+    assert pooled["Anon Student Id"].tolist() == ["A", "B", "A", "C"]
+    assert pooled[f"KC ({SINGLE_KC_NAME})"].unique().tolist() == ["Single-KC"]
+
+
+def test_a_file_without_a_hierarchy_column_is_left_alone():
+    assert row_scope(_frame()) is None
+    tagged = tag_student_step(_frame(), {})
+    assert tagged["Anon Student Id"].tolist() == ["A", "A", "B", "A", "A"]
+
+
+def test_one_course_is_left_alone():
+    """The single-course export: a hierarchy with levels, but one top level."""
+    frame = _two_course_frame()
+    frame["Problem Hierarchy"] = ["sequence S, unit U1", "sequence S, unit U1",
+                                  "sequence S, unit U2", "sequence S, unit U2"]
+    assert row_scope(frame) is None
+    assert tag_student_step(frame, {})["Anon Student Id"].tolist() == ["A", "B", "A", "C"]
+
+
+def test_a_step_under_two_scopes_raises():
+    """A scope that does not partition the material is not a scope."""
+    frame = _two_course_frame()
+    frame["Step Name"] = ["shared", "shared", "shared", "shared"]
+    frame["Problem Name"] = ["shared"] * 4
+    with pytest.raises(ValueError, match="more than one 'Problem Hierarchy' scope"):
+        tag_student_step(frame, {})
+
+
+def test_a_partly_filled_scope_column_raises():
+    frame = _two_course_frame()
+    frame["Problem Hierarchy"] = ["Course Bio", "Course Bio", "", ""]
+    with pytest.raises(ValueError, match="carry no 'Problem Hierarchy' value"):
+        tag_student_step(frame, {})
+
+
+def test_an_entirely_absent_scope_column_is_left_alone():
+    frame = _two_course_frame()
+    frame["Problem Hierarchy"] = ""
+    assert row_scope(frame) is None
+
+
+def test_scope_column_is_choosable():
+    frame = _two_course_frame().assign(**{"Problem Hierarchy": "Course One"})
+    frame["Section"] = ["s1", "s1", "s2", "s2"]
+    assert row_scope(frame) is None
+    tagged = tag_student_step(frame, {}, scope_column="Section")
+    assert tagged["Anon Student Id"].tolist() == ["s1: A", "s1: B", "s2: A", "s2: C"]
 
 
 def test_every_kc_column_gets_an_adjacent_opportunity_column():

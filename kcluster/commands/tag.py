@@ -34,7 +34,15 @@ from kcluster.io.student_step import (
     save_student_step,
 )
 from kcluster.paths import kc_dir, run_dir
-from kcluster.tasks.tag import bank_name, load_kc_csv, model_name, namespace_kc, tag_student_step
+from kcluster.tasks.tag import (
+    SCOPE_COLUMN,
+    SINGLE_KC_NAME,
+    bank_name,
+    load_kc_csv,
+    model_name,
+    namespace_kc,
+    tag_student_step,
+)
 
 
 def main(args):
@@ -45,12 +53,32 @@ def main(args):
     kc_models = load_kc_models(dict.fromkeys(kc_paths))
 
     ss = load_student_step(args.ss_path)
-    tagged = tag_student_step(ss, kc_models)
+    scope_column = None if args.no_scope else args.scope_column
+    tagged = tag_student_step(ss, kc_models, scope_column=scope_column)
+    _report_scope(ss, tagged, scope_column)
 
     output = args.output or _default_output(args.ss_path, run)
     save_student_step(tagged, output)
     n_models = sum(1 for col in tagged.columns if KC_COLUMN.match(col))
     print(f"*** Wrote {len(tagged):,} rows x {n_models} KC models to {output} ***")
+
+
+def _report_scope(ss: pd.DataFrame, tagged: pd.DataFrame, scope_column: str | None) -> None:
+    """Say what scoping did, since it changes who the fitted subjects are.
+
+    Silence would be the wrong default here: the ids in the output are not the
+    ids in the input, and a reader comparing this run to an unscoped one needs
+    to see that from the log rather than by diffing the file.
+    """
+    before, after = ss["Anon Student Id"].nunique(), tagged["Anon Student Id"].nunique()
+    single = tagged[f"KC ({SINGLE_KC_NAME})"]
+    groups = single[single.ne("")].nunique()
+    if groups < 2:
+        why = "scoping off" if scope_column is None else f"nothing to split on {scope_column!r}"
+        print(f"*** Scope: one group ({why}); {before:,} student id(s) unchanged ***")
+        return
+    print(f"*** Scope {scope_column!r}: {groups} group(s); "
+          f"{before:,} student id(s) -> {after:,} subject(s) ***")
 
 
 def _run_dir_kc_paths(run: str) -> list[str]:
@@ -143,6 +171,16 @@ def add_arguments(parser):
     parser.add_argument("--run_dir", default=None, type=str,
                         help="A result dir whose kc/*-kc.csv models are all added — or, for a work dir "
                              "of per-bank result dirs, each of their kc/*-kc.csv")
+    parser.add_argument("--scope_column", default=SCOPE_COLUMN, type=str,
+                        help="Column whose coarsest level separates the file's independent "
+                             f"sub-datasets (default: {SCOPE_COLUMN!r}). Its student ids and "
+                             "Single-KC labels are scoped to their group, so a fit is the several "
+                             "models the export holds rather than one pooled over them. No effect "
+                             "on a file with one group.")
+    parser.add_argument("--no_scope", action="store_true",
+                        help="Keep one student intercept per id and one Single-KC across the whole "
+                             "file. For a dataset whose groups really do share subjects — a "
+                             "curriculum sequence one cohort moves through.")
     parser.add_argument("--output", default=None, type=str,
                         help="Output path (default: <ds>_student-step-tagged.txt in --run_dir, which is "
                              "where a tagged file belongs; else beside the input)")

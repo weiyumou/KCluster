@@ -84,6 +84,13 @@ def test_unknown_family_is_rejected():
         fit_task.family_callables("bkt")
 
 
+def test_a_base_install_is_told_what_to_install(run_dir, monkeypatch):
+    """The hint is only worth having if it beats ModuleNotFoundError to it."""
+    monkeypatch.setitem(sys.modules, "leapfit", None)
+    with pytest.raises(SystemExit, match=r'pip install "kcluster\[fit\]"'):
+        cli_main(["fit", "--run_dir", str(run_dir)])
+
+
 # --------------------------------------------------------------------------
 # End to end
 # --------------------------------------------------------------------------
@@ -138,6 +145,105 @@ def test_disjoint_cohorts_get_a_component_map(tmp_path):
                                        "identification.csv"))
     reference = aliased[aliased["reason"].str.startswith("reference level")]
     assert (reference["kc_model"] == "fine").sum() == 2, "one per cohort"
+
+
+# --------------------------------------------------------------------------
+# One result dir per scope
+# --------------------------------------------------------------------------
+
+def _scoped_dir(tmp_path, cohorts=2, **names):
+    """A run dir holding a tagged file whose cohorts are named courses."""
+    frame = _tagged_frame(cohorts=cohorts)
+    cohort = frame["Anon Student Id"].str.extract(r"^c(\d+)s")[0]
+    frame.insert(1, "Problem Hierarchy", "Course " + cohort.map(lambda c: names.get(c, f"C{c}")))
+    path = tmp_path / "ds_student-step-tagged.txt"
+    frame.to_csv(path, sep="\t", index=False, lineterminator="\n")
+    return tmp_path
+
+
+def test_each_scope_writes_its_own_result_dir(tmp_path):
+    pytest.importorskip("leapfit")
+    run = _scoped_dir(tmp_path)
+    cli_main(["fit", "--run_dir", str(run), "--folds", "2", "--seeds", "1",
+              "--scheme", "item_blocked"])
+
+    # a fit dir per course, and none at the root; with no dir to reuse, the
+    # scope keeps its own name rather than having its level type guessed away
+    assert not os.path.exists(os.path.join(run, "fit"))
+    for course in ("Course-C0", "Course-C1"):
+        comparison = pd.read_csv(os.path.join(fit_dir(os.path.join(run, course), "afm"),
+                                              "model-comparison.csv"))
+        assert comparison["kc_model"].tolist() == ["coarse", "fine"]
+        # one course is one block, so nothing to warn about across components
+        assert not os.path.exists(os.path.join(fit_dir(os.path.join(run, course), "afm"),
+                                               "kc-components.csv"))
+
+
+def test_the_root_holds_only_the_two_cross_scope_files(tmp_path):
+    pytest.importorskip("leapfit")
+    run = _scoped_dir(tmp_path)
+    cli_main(["fit", "--run_dir", str(run), "--folds", "2", "--seeds", "1",
+              "--scheme", "item_blocked"])
+
+    by_scope = pd.read_csv(run / "ds_afm-model-comparison-by-scope.csv")
+    assert by_scope.columns[0] == "scope"
+    assert sorted(by_scope["scope"].unique()) == ["Course C0", "Course C1"]
+    assert len(by_scope) == 4, "two KC models x two scopes"
+
+    predictions = pd.read_csv(run / "ds_afm-student-step-with-prediction.txt", sep="\t")
+    source = pd.read_csv(run / "ds_student-step-tagged.txt", sep="\t")
+    assert len(predictions) == len(source), "every scope's rows, in the file's order"
+    assert predictions["Anon Student Id"].tolist() == source["Anon Student Id"].tolist()
+    assert {"Predicted Error Rate (coarse)",
+            "Predicted Error Rate (fine)"} <= set(predictions.columns)
+    # the 200 MB-scale table is written once, not once per scope
+    for course in ("Course-C0", "Course-C1"):
+        assert not os.path.exists(os.path.join(fit_dir(os.path.join(run, course), "afm"),
+                                               "student-step-with-prediction.txt"))
+
+
+def test_a_scope_reuses_the_result_dir_its_kc_models_came_from(tmp_path):
+    """``"Course C0"`` writes into an existing ``C0/``, not a new ``Course-C0/``."""
+    pytest.importorskip("leapfit")
+    run = _scoped_dir(tmp_path)
+    os.makedirs(run / "C0" / "kc")
+    cli_main(["fit", "--run_dir", str(run), "--folds", "2", "--seeds", "1",
+              "--scheme", "item_blocked"])
+
+    assert os.path.exists(os.path.join(fit_dir(str(run / "C0"), "afm"), "model-comparison.csv"))
+    assert not os.path.exists(run / "Course-C0")
+    # C1 has no dir to reuse, so it keeps the scope's own name untouched
+    assert os.path.exists(os.path.join(fit_dir(str(run / "Course-C1"), "afm"),
+                                       "model-comparison.csv"))
+
+
+def test_no_scope_fits_the_export_as_one_model(tmp_path):
+    pytest.importorskip("leapfit")
+    run = _scoped_dir(tmp_path)
+    cli_main(["fit", "--run_dir", str(run), "--no_scope", "--folds", "2", "--seeds", "1",
+              "--scheme", "item_blocked"])
+
+    outdir = fit_dir(str(run), "afm")
+    assert pd.read_csv(os.path.join(outdir, "model-comparison.csv"))["kc_model"].tolist() == \
+        ["coarse", "fine"]
+    assert os.path.exists(os.path.join(outdir, "student-step-with-prediction.txt"))
+    assert not list(run.glob("*model-comparison-by-scope.csv"))
+    assert not os.path.exists(run / "C0")
+
+
+def test_an_unscoped_export_is_unchanged(run_dir):
+    """No hierarchy column: the run dir is the one scope's result dir."""
+    pytest.importorskip("leapfit")
+    cli_main(["fit", "--run_dir", str(run_dir), "--folds", "2", "--seeds", "1",
+              "--scheme", "item_blocked"])
+    assert os.path.exists(os.path.join(fit_dir(str(run_dir), "afm"), "model-comparison.csv"))
+    assert not list(run_dir.glob("*model-comparison-by-scope.csv"))
+
+
+def test_scopes_colliding_on_one_dir_name_raise(tmp_path):
+    run = _scoped_dir(tmp_path, **{"0": "A B", "1": "A-B"})
+    with pytest.raises(SystemExit, match="same result dir name"):
+        cli_main(["fit", "--run_dir", str(run), "--folds", "2", "--seeds", "1"])
 
 
 def test_several_families_write_side_by_side(run_dir):

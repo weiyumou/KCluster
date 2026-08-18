@@ -44,13 +44,25 @@ INSTALL_HINT = (
 )
 
 
-def family_callables(family: str):
-    """``(build_design, fit)`` for a model family, or raise with what to install."""
+def leapfit_module():
+    """The Leapfit module, or exit with what to install.
+
+    Every entry point here reaches Leapfit through this rather than importing it
+    directly. The hint above is only worth writing if it is what a base install
+    actually sees, and one bare ``import leapfit`` anywhere earlier on the path
+    shows a ``ModuleNotFoundError`` instead — which is what used to happen, since
+    listing an export's KC models is the first thing ``kcluster fit`` does.
+    """
     try:
         import leapfit
     except ImportError as exc:
         raise SystemExit(INSTALL_HINT) from exc
+    return leapfit
 
+
+def family_callables(family: str):
+    """``(build_design, fit)`` for a model family, or raise with what to install."""
+    leapfit = leapfit_module()
     families = {
         "afm": (leapfit.build_afm_design, leapfit.fit_afm),
         "pfa": (leapfit.build_pfa_design, leapfit.fit_pfa),
@@ -62,15 +74,13 @@ def family_callables(family: str):
 
 def kc_models(export: str) -> list[str]:
     """The KC models a tagged student-step file carries."""
-    from leapfit import list_kc_models
-
-    return list_kc_models(export)
+    return leapfit_module().list_kc_models(export)
 
 
-def fit_kc_models(export: str, family: str = "afm", *, models=None,
+def fit_kc_models(ss: pd.DataFrame, family: str = "afm", *, models=None,
                   schemes=SCHEMES, n_folds: int = N_FOLDS, n_seeds: int = N_SEEDS,
                   n_jobs: int = N_JOBS, on_model=None) -> dict:
-    """Fit ``family`` under every KC model of ``export``.
+    """Fit ``family`` under every KC model of the tagged frame ``ss``.
 
     Returns ``{"comparison", "folds", "identification", "components",
     "kc_values", "predictions"}`` — the comparison table one row per KC model,
@@ -87,17 +97,25 @@ def fit_kc_models(export: str, family: str = "afm", *, models=None,
     fits per KC model per scheme, and spreading them changes only how long it
     takes. The single fit behind the comparison row is unaffected — it is one
     solve, and there is nothing there to spread.
+
+    A frame rather than a path because a caller may be fitting one *part* of a
+    tagged file — an export that bundles several courses holds one model per
+    course, not one model (:func:`kcluster.tasks.tag.row_scope`) — and because
+    the file is parsed once here instead of once per KC model. ``ss`` keeps its
+    index, so ``predictions`` carries the caller's row labels back out and
+    parts can be reassembled in the file's own order.
     """
-    from leapfit import load_student_step, repeated_cross_validate
+    leapfit = leapfit_module()
+    from_frame, repeated_cross_validate = leapfit.from_frame, leapfit.repeated_cross_validate
 
     build_design, fit_model = family_callables(family)
-    models = list(models or kc_models(export))
+    models = list(models)
 
     rows, fold_frames, aliased, components = [], [], [], []
     kc_values, predictions = {}, None
 
     for name in models:
-        data = load_student_step(export, kc_model=name)
+        data = from_frame(ss, kc_model=name)
         # Identification is the expensive half (a dense rank check), so build
         # once unidentified and identify that: the raw design is what the
         # component map has to be read off anyway, since identification drops
