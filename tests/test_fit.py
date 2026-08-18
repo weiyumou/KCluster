@@ -84,6 +84,32 @@ def test_unknown_family_is_rejected():
         fit_task.family_callables("bkt")
 
 
+def test_pairing_changes_the_contrasts_not_the_summaries(run_dir):
+    """The point of pairing: same fits, same folds, same summary columns — new evidence."""
+    pytest.importorskip("leapfit")
+    args = ["fit", "--run_dir", str(run_dir), "--folds", "2", "--seeds", "2",
+            "--scheme", "item_blocked"]
+    cli_main(args)
+    paired = pd.read_csv(os.path.join(fit_dir(str(run_dir), "afm"), "model-comparison.csv"))
+    cli_main([*args, "--unpaired"])
+    unpaired = pd.read_csv(os.path.join(fit_dir(str(run_dir), "afm"), "model-comparison.csv"))
+
+    for column in ("cv_rmse_item_blocked", "cv_rmse_sd_item_blocked",
+                   "cv_unseen_item_blocked", "cv_converged_item_blocked"):
+        pd.testing.assert_series_equal(paired[column], unpaired[column])
+    assert not os.path.exists(os.path.join(fit_dir(str(run_dir), "afm"),
+                                           "paired-contrasts.csv"))
+
+
+def test_a_single_kc_model_has_no_baseline_to_contrast_against(run_dir):
+    pytest.importorskip("leapfit")
+    cli_main(["fit", "--run_dir", str(run_dir), "--kc_model", "fine",
+              "--folds", "2", "--seeds", "1", "--scheme", "item_blocked"])
+    outdir = fit_dir(str(run_dir), "afm")
+    assert pd.read_csv(os.path.join(outdir, "model-comparison.csv"))["kc_model"].tolist() == ["fine"]
+    assert not os.path.exists(os.path.join(outdir, "paired-contrasts.csv"))
+
+
 def test_a_base_install_is_told_what_to_install(run_dir, monkeypatch):
     """The hint is only worth having if it beats ModuleNotFoundError to it."""
     monkeypatch.setitem(sys.modules, "leapfit", None)
@@ -106,7 +132,14 @@ def test_fit_writes_the_family_tree(run_dir):
     assert {"cv_rmse_student_blocked", "cv_rmse_item_blocked"} <= set(comparison.columns)
 
     folds = pd.read_csv(os.path.join(outdir, "cv-folds.csv"))
-    assert len(folds) == 2 * 2 * 2, "two KC models x two schemes x two seeds"
+    assert len(folds) == 2 * 2 * 2 * 2, "two KC models x two schemes x two seeds x two folds"
+    # every model scored on the same partitions, which is what makes it paired
+    assert (folds.groupby(["scheme", "seed", "fold"])["kc_model"].nunique() == 2).all()
+
+    contrasts = pd.read_csv(os.path.join(outdir, "paired-contrasts.csv"))
+    assert set(contrasts["baseline"]) == {"coarse"}, "no Single-KC here, so the first by name"
+    assert set(contrasts["kc_model"]) == {"fine"}
+    assert {"mean_diff", "sd_diff", "folds_better"} <= set(contrasts.columns)
 
     aliased = pd.read_csv(os.path.join(outdir, "identification.csv"))
     assert aliased["reason"].str.contains("reference level").any()

@@ -1405,7 +1405,7 @@ requires-dist = [
     { name = "google-cloud-aiplatform", extras = ["prediction"], marker = "extra == 'vertex'", specifier = ">=1.96,<2" },
     { name = "google-cloud-storage", marker = "extra == 'vertex'", specifier = ">=2.14" },
     { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=1.0" },
-    { name = "leapfit", marker = "extra == 'fit'", url = "https://github.com/weiyumou/LeapFit/releases/download/v0.3.0/leapfit-0.3.0-py3-none-any.whl" },
+    { name = "leapfit", marker = "extra == 'fit'", url = "https://github.com/weiyumou/LeapFit/releases/download/v0.4.0/leapfit-0.4.0-py3-none-any.whl" },
     { name = "lightning", marker = "extra == 'local'", specifier = ">=2.4" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pandas", specifier = ">=2.0" },
@@ -1546,8 +1546,8 @@ wheels = [
 
 [[package]]
 name = "leapfit"
-version = "0.3.0"
-source = { url = "https://github.com/weiyumou/LeapFit/releases/download/v0.3.0/leapfit-0.3.0-py3-none-any.whl" }
+version = "0.4.0"
+source = { url = "https://github.com/weiyumou/LeapFit/releases/download/v0.4.0/leapfit-0.4.0-py3-none-any.whl" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -1556,7 +1556,7 @@ dependencies = [
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 wheels = [
-    { url = "https://github.com/weiyumou/LeapFit/releases/download/v0.3.0/leapfit-0.3.0-py3-none-any.whl", hash = "sha256:d0e6126036c719c52b4d6f8927722c8f890106f4fe63061297e8b8862d968ad6" },
+    { url = "https://github.com/weiyumou/LeapFit/releases/download/v0.4.0/leapfit-0.4.0-py3-none-any.whl", hash = "sha256:4266a627ee19fed6c24c00e4cb09f6550ebd8030a8e3fc27d792e5538a786950" },
 ]
 
 [package.metadata]

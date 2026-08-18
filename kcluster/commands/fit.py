@@ -29,6 +29,7 @@ dir, so its tables stay at ``<run>/fit/<family>/`` and no root files are written
 """
 
 import argparse
+import contextlib
 import glob
 import os
 import re
@@ -75,12 +76,12 @@ def main(args):
 
             def report(model, row, fit, label=label):
                 print(f"  {label}{model}: n_params={row['n_params']:,} bic={row['bic']:,.1f}"
-                      + "".join(f" {s}={row[f'cv_rmse_{s}']:.4f}" for s in schemes)
                       + ("" if row["is_optimal"] else "  [NOT optimal]"))
 
             out = fit_kc_models(ss.loc[rows], family, models=models, schemes=schemes,
-                                n_folds=args.folds, n_seeds=args.seeds,
-                                n_jobs=args.jobs, on_model=report)
+                                n_folds=args.folds, n_seeds=args.seeds, n_jobs=args.jobs,
+                                paired=not args.unpaired, on_model=report)
+            _report_cv(out, schemes, label)
             # Predictions are one 200 MB-scale table per family; a scoped run
             # writes the whole of it once at the root instead of a slice of it
             # into each scope, which would store the same rows twice.
@@ -93,6 +94,25 @@ def main(args):
 
         if comparisons:
             _write_root(comparisons, predictions, root, export, family)
+
+
+def _report_cv(out, schemes, label: str) -> None:
+    """The cross-validation verdict, once the folds are in.
+
+    Under pairing this cannot be reported per model as it is fitted — no model
+    has a score until every design has been scored on the shared partitions — so
+    it lands here, as the one line per scheme that a reader is actually after.
+    """
+    comparison, contrasts = out["comparison"], out["contrasts"]
+    for scheme in schemes:
+        best = comparison.loc[comparison[f"cv_rmse_{scheme}"].idxmin()]
+        line = (f"  {label}{scheme}: best {best['kc_model']} "
+                f"rmse={best[f'cv_rmse_{scheme}']:.4f} (sd {best[f'cv_rmse_sd_{scheme}']:.4f})")
+        if not contrasts.empty:
+            won = contrasts[(contrasts["scheme"] == scheme) & (contrasts["mean_diff"] < 0)]
+            line += (f" | {len(won)} of {len(contrasts[contrasts['scheme'] == scheme])} "
+                     f"beat {contrasts['baseline'].iloc[0]}")
+        print(line)
 
 
 def _write_root(comparisons, predictions, root: str, export: str, family: str) -> None:
@@ -194,10 +214,19 @@ def _write(out, outdir: str, *, with_predictions: bool = True) -> None:
     out["folds"].to_csv(os.path.join(outdir, "cv-folds.csv"), index=False)
     out["identification"].to_csv(os.path.join(outdir, "identification.csv"), index=False)
 
-    # Only written when the export holds several cohorts, since on one cohort
-    # the file would say the same thing about every KC.
-    if not out["components"].empty:
-        out["components"].to_csv(os.path.join(outdir, "kc-components.csv"), index=False)
+    # Two tables this run may have nothing to say in: a contrast needs a paired
+    # run over more than one KC model, and the component map says the same thing
+    # about every KC unless the export holds several cohorts. Where there is
+    # nothing to write, any file a previous run left is deleted rather than left
+    # to be read beside a comparison table it no longer describes.
+    for name, table in (("paired-contrasts.csv", out["contrasts"]),
+                        ("kc-components.csv", out["components"])):
+        path = os.path.join(outdir, name)
+        if table.empty:
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(path)
+        else:
+            table.to_csv(path, index=False)
 
     values_dir = prepare_output_dir(os.path.join(outdir, "kc-values"))
     for name, values in out["kc_values"].items():
@@ -242,6 +271,13 @@ def add_arguments(parser):
                         help=f"Cross-validation folds (default: {N_FOLDS})")
     parser.add_argument("--seeds", default=N_SEEDS, type=int,
                         help=f"Cross-validation repeats, seeds 0..N-1 (default: {N_SEEDS})")
+    parser.add_argument("--unpaired", action="store_true",
+                        help="Cross-validate each KC model on its own partitions instead of "
+                             "scoring them all on shared folds. Same cost, the same per-model "
+                             "means and diagnostics, but no contrasts table: the comparison is "
+                             "no longer paired, so a small gap cannot be told from fold-to-fold "
+                             "noise. Holds one design in memory at a time where the paired run "
+                             "holds all of them, which matters on a million-row export.")
     parser.add_argument("--scope_column", default=SCOPE_COLUMN, type=str,
                         help="Column whose coarsest level separates the export's independent "
                              f"sub-datasets (default: {SCOPE_COLUMN!r}). Each is fitted on its own "

@@ -79,18 +79,35 @@ def kc_models(export: str) -> list[str]:
 
 def fit_kc_models(ss: pd.DataFrame, family: str = "afm", *, models=None,
                   schemes=SCHEMES, n_folds: int = N_FOLDS, n_seeds: int = N_SEEDS,
-                  n_jobs: int = N_JOBS, on_model=None) -> dict:
+                  n_jobs: int = N_JOBS, on_model=None, paired: bool = True) -> dict:
     """Fit ``family`` under every KC model of the tagged frame ``ss``.
 
-    Returns ``{"comparison", "folds", "identification", "components",
-    "kc_values", "predictions"}`` — the comparison table one row per KC model,
-    the per-seed cross-validation detail behind its means, every aliased column
-    with the reason it was dropped, the KC-to-component map (see
-    :func:`_component_rows`), per-KC parameters in DataShop's layout, and the
-    export with one predicted-error-rate column per model.
+    Returns ``{"comparison", "folds", "contrasts", "identification",
+    "components", "kc_values", "predictions"}`` — the comparison table one row
+    per KC model, the cross-validation detail behind its means, each model's
+    paired margin over the baseline, every aliased column with the reason it was
+    dropped, the KC-to-component map (see :func:`_component_rows`), per-KC
+    parameters in DataShop's layout, and the export with one predicted-error-rate
+    column per model.
 
-    ``on_model`` is called with ``(name, row, fit)`` after each model, so a
-    command can report progress on a run measured in hours.
+    **Paired folds by default.** Every KC model of one file covers the same rows,
+    so seed *s* can draw one partition and score all of them on it. Doing that
+    turns the comparison into a paired one — each fold contributes one difference
+    per pair of models — instead of two independently resampled means whose
+    spread is dominated by which fold split they happened to get. It costs
+    nothing: ``seeds x folds x models`` fits either way, the same fits, and the
+    per-model summaries come out identical because the partitions are the ones
+    the unpaired path would have drawn — both are collapsed to per-(model, seed)
+    scores (Leapfit's ``paired_scores`` does the paired side, asserted equal to
+    ``repeated_cross_validate`` upstream) and summarized by one code path here.
+    What it buys is the ability to say whether a gap of 0.002 RMSE is a result.
+    ``paired=False`` keeps the per-model resampling protocol of runs made before
+    pairing existed, and holds one design in memory at a time instead of all of
+    them at once.
+
+    ``on_model`` is called with ``(name, row, fit)`` after each model's single
+    fit — before cross-validation, which under pairing cannot start until every
+    design exists — so a command can report progress on a run measured in hours.
 
     ``n_jobs`` is the worker count Leapfit fits the cross-validation folds in
     (``-1`` for every core); the run is ``n_seeds`` x ``n_folds`` independent
@@ -106,16 +123,15 @@ def fit_kc_models(ss: pd.DataFrame, family: str = "afm", *, models=None,
     parts can be reassembled in the file's own order.
     """
     leapfit = leapfit_module()
-    from_frame, repeated_cross_validate = leapfit.from_frame, leapfit.repeated_cross_validate
-
     build_design, fit_model = family_callables(family)
     models = list(models)
 
-    rows, fold_frames, aliased, components = [], [], [], []
-    kc_values, predictions = {}, None
+    rows, aliased, components = [], [], []
+    kc_values, predictions, designs = {}, None, {}
+    folds = None  # the StepData the fold labels come from; shared by every model
 
     for name in models:
-        data = from_frame(ss, kc_model=name)
+        data = leapfit.from_frame(ss, kc_model=name)
         # Identification is the expensive half (a dense rank check), so build
         # once unidentified and identify that: the raw design is what the
         # component map has to be read off anyway, since identification drops
@@ -137,20 +153,9 @@ def fit_kc_models(ss: pd.DataFrame, family: str = "afm", *, models=None,
             "bic": fit.bic,
             "is_optimal": fit.is_optimal,
         }
-        for scheme in schemes:
-            table = repeated_cross_validate(
-                design, data, seeds=list(range(n_seeds)), scheme=scheme,
-                n_folds=n_folds, convention=CONVENTION, method=METHOD,
-                max_fun=MAX_FUN, n_jobs=n_jobs)
-            row |= {
-                f"cv_rmse_{scheme}": table["rmse"].mean(),
-                f"cv_rmse_sd_{scheme}": table["rmse"].std(ddof=1) if len(table) > 1 else np.nan,
-                f"cv_unseen_{scheme}": table["unseen_column_fraction"].mean(),
-                f"cv_converged_{scheme}": bool(table["all_converged"].all()),
-            }
-            table.insert(0, "kc_model", name)
-            fold_frames.append(table)
         rows.append(row)
+        designs[name] = design
+        folds = folds or data
 
         aliased += [{"kc_model": name, "column": column, "reason": reason}
                     for column, reason in zip(design.aliased.columns,
@@ -162,14 +167,95 @@ def fit_kc_models(ss: pd.DataFrame, family: str = "afm", *, models=None,
         if on_model is not None:
             on_model(name, row, fit)
 
+    cross_validate = _paired_folds if paired else _per_model_folds
+    fold_frames, contrast_frames = [], []
+    summaries: dict[str, dict] = {name: {} for name in models}
+    for scheme in schemes:
+        table = cross_validate(leapfit, designs, folds, scheme=scheme, n_folds=n_folds,
+                               n_seeds=n_seeds, n_jobs=n_jobs)
+        scores = (leapfit.paired_scores(table.rename(columns={"kc_model": "model"}),
+                                        CONVENTION).rename(columns={"model": "kc_model"})
+                  if paired else table)
+        for name, summary in _summarize(scores, scheme).items():
+            summaries[name] |= summary
+        fold_frames.append(table)
+        # A contrast needs something to contrast against: a run over a single
+        # KC model has folds and a summary, but no margin over a baseline.
+        if paired and len(models) > 1:
+            # paired_contrasts pivots on Leapfit's own "model" column; the fold
+            # table carries the "kc_model" every other output here is keyed on.
+            contrasts = leapfit.paired_contrasts(
+                table.rename(columns={"kc_model": "model"}), _baseline(models))
+            contrast_frames.append(
+                contrasts.rename(columns={"model": "kc_model"}).assign(scheme=scheme))
+
+    comparison = pd.DataFrame(rows)
+    for column in [c for name in models for c in summaries[name]]:
+        comparison[column] = comparison["kc_model"].map(
+            {name: summaries[name].get(column) for name in models})
+
     return {
-        "comparison": pd.DataFrame(rows),
+        "comparison": comparison,
         "folds": pd.concat(fold_frames, ignore_index=True) if fold_frames else pd.DataFrame(),
+        "contrasts": (pd.concat(contrast_frames, ignore_index=True)
+                      if contrast_frames else pd.DataFrame()),
         "identification": pd.DataFrame(aliased, columns=["kc_model", "column", "reason"]),
         "components": pd.DataFrame(components, columns=["kc_model", "KC Name", "component"]),
         "kc_values": kc_values,
         "predictions": predictions,
     }
+
+
+def _baseline(models: list[str]) -> str:
+    """The model paired margins are measured against.
+
+    ``Single-KC`` where the file carries it: "everything here is one skill" is
+    the null a KC model has to beat to have found anything, and it is the one
+    model every tagged file has. Otherwise the first by name, so a run over a
+    hand-picked subset still produces contrasts rather than raising.
+    """
+    return "Single-KC" if "Single-KC" in models else sorted(models)[0]
+
+
+def _paired_folds(leapfit, designs: dict, data, *, scheme: str, n_folds: int,
+                  n_seeds: int, n_jobs: int) -> pd.DataFrame:
+    """Every model scored on one partition per seed: one row per (seed, fold, model)."""
+    table = leapfit.paired_cross_validate(
+        designs, data, scheme=scheme, n_folds=n_folds, seeds=list(range(n_seeds)),
+        convention=CONVENTION, method=METHOD, max_fun=MAX_FUN, n_jobs=n_jobs)
+    return table.rename(columns={"model": "kc_model"}).assign(scheme=scheme)
+
+
+def _per_model_folds(leapfit, designs: dict, data, *, scheme: str, n_folds: int,
+                     n_seeds: int, n_jobs: int) -> pd.DataFrame:
+    """Each model resampled on its own partitions: one row per (seed, model)."""
+    frames = []
+    for name, design in designs.items():
+        table = leapfit.repeated_cross_validate(
+            design, data, seeds=list(range(n_seeds)), scheme=scheme, n_folds=n_folds,
+            convention=CONVENTION, method=METHOD, max_fun=MAX_FUN, n_jobs=n_jobs)
+        frames.append(table.assign(kc_model=name))
+    return pd.concat(frames, ignore_index=True)
+
+
+def _summarize(scores: pd.DataFrame, scheme: str) -> dict[str, dict]:
+    """The comparison table's ``cv_*`` columns for one scheme, per KC model.
+
+    ``scores`` is one row per (model, seed) whichever protocol produced it:
+    ``repeated_cross_validate`` returns that shape directly, and Leapfit's
+    ``paired_scores`` collapses a paired fold table to it under
+    :data:`CONVENTION` — so the columns here mean the same thing in both runs
+    and a paired table can be read next to a pre-pairing one.
+    """
+    out = {}
+    for name, group in scores.groupby("kc_model", sort=False):
+        out[name] = {
+            f"cv_rmse_{scheme}": group["rmse"].mean(),
+            f"cv_rmse_sd_{scheme}": group["rmse"].std(ddof=1) if len(group) > 1 else np.nan,
+            f"cv_unseen_{scheme}": group["unseen_column_fraction"].mean(),
+            f"cv_converged_{scheme}": bool(group["all_converged"].all()),
+        }
+    return out
 
 
 def _component_rows(name: str, design, kc_names) -> list[dict]:
