@@ -19,6 +19,7 @@ import logging
 import math
 import os
 import time
+import tomllib
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -69,7 +70,6 @@ class VertexConfig:
         values = {}
         path = path or os.environ.get(_ENV_PREFIX + "CONFIG")
         if path:
-            import tomllib
             with open(path, "rb") as f:
                 data = tomllib.load(f)
             values.update(data.get("vertex", data))

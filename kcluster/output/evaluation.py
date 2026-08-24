@@ -6,7 +6,7 @@ other foreign-format readers: :mod:`kcluster.io.learnsphere`."""
 
 import random
 import re
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd

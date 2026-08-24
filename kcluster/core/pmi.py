@@ -11,8 +11,7 @@ conditioning variable. All derived matrices keep that orientation:
 Square matrices (contexts and items are the same question set, i.e. question
 congruity) support the joint-based ``normalize`` estimator and symmetrization.
 Rectangular matrices (e.g. learning objectives x questions) support only the
-raw estimator — ``log P(Q | L) - log P(Q)``, the Relevance measure of the
-LAK 2026 paper.
+raw estimator, such as ``log P(Q | L) - log P(Q)``.
 """
 
 import itertools
