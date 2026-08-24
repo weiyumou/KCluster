@@ -1,1 +1,4 @@
-__version__ = "0.2.0.dev0"
+from importlib.metadata import version
+
+#: Read from the installed distribution so ``pyproject.toml`` is the single source.
+__version__ = version("kcluster")

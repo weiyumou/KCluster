@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.11.2,<0.12.0"]
+build-backend = "uv_build"
 
 [project]
 name = "kcluster"
@@ -8,7 +8,8 @@ version = "0.2.0.dev0"
 description = "LLM-based knowledge component discovery and question generation for education"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Yumou Wei", email = "yumouw@andrew.cmu.edu" }]
 keywords = [
     "knowledge components",
@@ -21,7 +22,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -71,8 +71,9 @@ kcluster = "kcluster.cli:main"
 Repository = "https://github.com/weiyumou/KCluster"
 "KCluster paper (EDM 2025)" = "https://doi.org/10.5281/zenodo.15870197"
 
-[tool.setuptools.packages.find]
-include = ["kcluster*"]
+[tool.uv.build-backend]
+# Flat layout: the `kcluster` package sits at the repo root, not under src/
+module-root = ""
 
 [tool.ruff]
 line-length = 120
