@@ -21,7 +21,7 @@ from google.cloud import aiplatform
 from handler import Phi2PredictionHandler
 from predictor import Phi2Predictor
 
-BASE_IMAGE = "pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime"
+BASE_IMAGE = "pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime"
 
 
 def main(args):

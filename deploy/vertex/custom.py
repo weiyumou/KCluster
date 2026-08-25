@@ -95,6 +95,10 @@ def make_dockerfile(
 
         # Keeps Python from generating .pyc files in the container
         ENV PYTHONDONTWRITEBYTECODE=1
+
+        # pytorch/pytorch >= 2.10 images run Ubuntu 24.04's system Python, whose
+        # PEP 668 EXTERNALLY-MANAGED marker makes pip refuse to install into it
+        ENV PIP_BREAK_SYSTEM_PACKAGES=1
         """.format(
             base_image=base_image,
         )
