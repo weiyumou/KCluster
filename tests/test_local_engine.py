@@ -9,30 +9,13 @@ import pytest
 
 pytest.importorskip("torch")
 
-from kcluster.engine.local import LargeLangModel, LogProbScorer, batched  # noqa: E402
+from kcluster.engine.local import LargeLangModel, LogProbScorer  # noqa: E402
 
 
 def test_log_prob_scorer_is_a_lightning_module():
     import lightning as L
 
     assert issubclass(LogProbScorer, L.LightningModule)
-
-
-def test_batched_splits_with_remainder():
-    assert list(batched("ABCDEFG", 3)) == [("A", "B", "C"), ("D", "E", "F"), ("G",)]
-
-
-def test_batched_exact_multiple():
-    assert list(batched([1, 2, 3, 4], 2)) == [(1, 2), (3, 4)]
-
-
-def test_batched_empty_iterable_yields_nothing():
-    assert list(batched([], 5)) == []
-
-
-def test_batched_rejects_nonpositive_n():
-    with pytest.raises(ValueError):
-        list(batched("ABC", 0))
 
 
 def test_model_wrapper_exposes_the_engine_surface():

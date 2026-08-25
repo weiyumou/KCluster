@@ -19,7 +19,7 @@ from transformers import set_seed
 from transformers.utils import logging
 
 from kcluster.core.question import Question
-from kcluster.engine.local import LargeLangModel, batched
+from kcluster.engine.local import LargeLangModel
 from kcluster.io.jsonl import dump_questions, load_questions
 from kcluster.tasks.qgen.validate import shuffle_choices
 
@@ -64,7 +64,7 @@ def validate_mcq(llm: LargeLangModel, questions: dict[str, list[Question]],
         syntactic_valid_questions.extend(copy.deepcopy(questions[lo]))
 
         # Then check if any choice has high enough probability
-        for batch in batched(questions[lo], batch_size):
+        for batch in itertools.batched(questions[lo], batch_size):
             prompts = []
             for q in batch:
                 q["question"]["choices"].append({"label": choices[-1].strip(), "text": "None of the above"})

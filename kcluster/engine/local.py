@@ -11,16 +11,6 @@ from lightning.pytorch.callbacks import BasePredictionWriter
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# Only available for Python >= 3.12
-def batched(iterable, n):
-    # batched('ABCDEFG', 3) --> ABC DEF G
-    if n < 1:
-        raise ValueError('n must be at least one')
-    it = iter(iterable)
-    while batch := tuple(itertools.islice(it, n)):
-        yield batch
-
-
 class LargeLangModel:
     """Encapsulates a downloaded LLM and its tokenizer"""
 
@@ -73,7 +63,7 @@ class LargeLangModel:
 
         token_ids = torch.topk(logits, top_k, dim=-1).indices
         next_tokens = self.tokenizer.batch_decode(token_ids.reshape(-1, 1), skip_special_tokens=True)
-        return list(batched(next_tokens, top_k))
+        return list(itertools.batched(next_tokens, top_k))
 
     def complete_prompts(self, prompts: list[str], stop_tokens: list[str] = None, max_new_tokens: int = 200,
                          pad_to_multiple_of: int = None, **kwargs) -> list[str]:

@@ -20,7 +20,7 @@ from tqdm import tqdm
 
 from kcluster.core import prompts as prompt_registry
 from kcluster.core.question import Question
-from kcluster.engine.local import LargeLangModel, batched
+from kcluster.engine.local import LargeLangModel
 
 
 @torch.inference_mode()
@@ -126,7 +126,7 @@ def generate_mcq_from_std(llm: LargeLangModel,
     header = prompt_registry.QGEN_MCQ_HEADER.format(num_choices=num_choices)
 
     all_questions, all_prompts = [], []
-    for std_batch in tqdm(batched(standards, stds_per_batch), desc="Standards", leave=False):
+    for std_batch in tqdm(itertools.batched(standards, stds_per_batch), desc="Standards", leave=False):
         # Prepare the seeding prompts
         seed_prompts = create_seed_prompts(std_batch, std_type, header)
 

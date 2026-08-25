@@ -8,12 +8,14 @@ first period or comma. Clustering later propagates these concept labels from
 cluster exemplars to their members.
 """
 
+from itertools import batched
+
 import torch
 from tqdm import tqdm
 
 from kcluster.core.prompts import concept_prompt, congruity_marginal_context
 from kcluster.core.question import Question
-from kcluster.engine.local import LargeLangModel, batched
+from kcluster.engine.local import LargeLangModel
 
 
 @torch.inference_mode()

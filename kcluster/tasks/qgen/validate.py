@@ -18,7 +18,7 @@ from operator import itemgetter
 import torch
 
 from kcluster.core.question import Question
-from kcluster.engine.local import LargeLangModel, batched
+from kcluster.engine.local import LargeLangModel
 
 
 def shuffle_choices(questions: list[Question]) -> None:
@@ -87,7 +87,7 @@ def validate_mcq(llm: LargeLangModel, questions: dict[str, list[Question]], batc
             col_inds = torch.stack(col_inds, dim=0).to(llm.device)  # (P, C)
 
             log_probs = []
-            for batch in batched(prompts, batch_size):
+            for batch in itertools.batched(prompts, batch_size):
                 log_probs.append(torch.log_softmax(llm.next_logits(list(batch))[:, chc_ids], dim=-1))
             log_probs = torch.cat(log_probs, dim=0)  # (P, C)
             log_probs = log_probs[row_inds, col_inds]  # (P, C)
@@ -133,7 +133,7 @@ def sort_questions(llm: LargeLangModel,
     # Compute PPL for each question
     for lo in questions:
         all_ppl = []
-        for batch in batched(zip(questions[lo], prompts[lo], strict=True), batch_size):
+        for batch in itertools.batched(zip(questions[lo], prompts[lo], strict=True), batch_size):
             qs, ps = list(zip(*batch))
             # Extract the seeding prompts
             ps = [re.match(r"(?s:.)+?(?=1\.)", p).group(0).strip() + f"\n1.{Question.SPACE}" for p in ps]
