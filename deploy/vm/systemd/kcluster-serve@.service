@@ -1,0 +1,17 @@
+[Unit]
+Description=kcluster serve (local engine over HTTP on localhost)
+After=network.target
+
+[Service]
+# Instance name = the login that owns the checkout: kcluster-serve@<user>
+User=%i
+Environment=HOME=/home/%i
+Environment=KCLUSTER_REPO=/home/%i/kcluster
+Environment=LLM_PATH=/opt/models/phi-2
+Environment=SERVE_FLAGS=--trust_remote_code
+ExecStart=/bin/bash -lc 'cd "$KCLUSTER_REPO" && exec uv run --no-sync kcluster serve --llm_path "$LLM_PATH" --host 127.0.0.1 --port 8080 $SERVE_FLAGS'
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

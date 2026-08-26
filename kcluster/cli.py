@@ -43,6 +43,8 @@ COMMANDS = [
      "Generate MCQs incrementally from course standards"),
     ("qgen-validate", "kcluster.commands.qgen_validate",
      "Filter generated MCQs by completeness and answer confidence"),
+    ("serve", "kcluster.commands.serve",
+     "Serve a local model over HTTP for interactive experiments"),
 ]
 
 _MODULES = {name: module for name, module, _ in COMMANDS}

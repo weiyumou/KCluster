@@ -1,0 +1,7 @@
+[Unit]
+Description=Power the VM off when kcluster serve has been idle (GCE records a stopped instance)
+
+[Service]
+Type=oneshot
+Environment=IDLE_MINUTES=60
+ExecStart=/bin/bash -c 'idle=$(curl -sf localhost:8080/health | python3 -c "import json,sys; print(int(json.load(sys.stdin)[\"idle_seconds\"]))") || exit 0; [ "$idle" -ge $((IDLE_MINUTES * 60)) ] && systemctl poweroff || true'
