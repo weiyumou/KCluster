@@ -100,6 +100,37 @@ def test_vertex_build_kc(gcs, config_path, tmp_path):
     assert breadcrumb["data_path"].endswith("my questions.jsonl")
 
 
+def test_vertex_build_kc_normalize_is_additive_like_build_kc(gcs, config_path, tmp_path):
+    """--normalize adds the `norm` estimator's models beside the `unnorm` ones
+    (never in place of them), each with its format corrections — the same
+    flags, builder and filenames as the local build-kc command."""
+    from kcluster.commands.vertex_build_kc import main
+
+    data_path = tmp_path / "qs.jsonl"
+    dump_questions(_questions(), str(data_path))
+    work_dir = tmp_path / "run"
+    work_dir.mkdir()
+    (work_dir / "launched_jobs.jsonl").write_text(
+        json.dumps({"job_id": "job1", "data_path": str(data_path), "resource_name": "jobs/1"}) + "\n")
+    _store_collected(gcs.bucket("my-bucket").store, "job1")
+
+    main(argparse.Namespace(work_dir=str(work_dir), normalize=True, residualize_full=True,
+                            config=config_path))
+
+    import pandas as pd
+    kc_dir, mat_dir = work_dir / "qs" / "kc" / "kcluster", work_dir / "qs" / "mat" / "pmi"
+    for tag in ("unnorm", "norm"):
+        assert (kc_dir / f"qs_kcluster-{tag}-kc.csv").exists()
+        assert (kc_dir / f"qs_kcluster-{tag}-residfull-kc.csv").exists()
+        assert (mat_dir / f"qs_pmi-{tag}.npy").exists()
+        assert (mat_dir / f"qs_pmi-{tag}-residfull.npy").exists()
+    # single-format bank: the mean-only correction is skipped under both estimators
+    assert not list(kc_dir.glob("*-resid-kc.csv"))
+    unnorm, norm = np.load(mat_dir / "qs_pmi-unnorm.npy"), np.load(mat_dir / "qs_pmi-norm.npy")
+    assert not np.allclose(unnorm, norm)
+    assert pd.read_csv(kc_dir / "qs_kcluster-norm-kc.csv")["KC"].tolist() == CONCEPTS
+
+
 def test_vertex_build_kc_requires_collected_results(gcs, config_path, tmp_path):
     from kcluster.commands.vertex_build_kc import main
 

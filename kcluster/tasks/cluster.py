@@ -20,6 +20,8 @@ from sklearn.cluster import affinity_propagation
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.metrics import pairwise_distances
 
+from kcluster.core.pmi import correction_variants
+from kcluster.core.pmi import residualize as residualize_congruity
 from kcluster.core.question import Question
 
 
@@ -146,3 +148,70 @@ def save_kc_models(kc: pd.DataFrame, kc_path: str) -> None:
         split.to_csv(split_path, index=False)
         print(f"*** {split['KC'].nunique() - kc['KC'].nunique()} cluster(s) share another cluster's label: "
               f"also wrote {os.path.basename(split_path)} with all {split['KC'].nunique()} clusters apart ***")
+
+
+#: The congruity estimators a bank can be clustered under, by artifact tag.
+#: ``unnorm`` is the raw ``log P(j|i) - log P(j)`` with the model's own
+#: marginals (the published KCluster model); ``norm`` renormalizes the
+#: symmetrized joint over the bank and takes its marginals from that
+#: (``PointwiseMutualInfo(normalize=True)``).
+CONGRUITY_ESTIMATORS = (("unnorm", False), ("norm", True))
+
+
+def build_kcluster_models(concept_df: pd.DataFrame, questions: list[Question],
+                          congruity: Callable[[bool], np.ndarray], *, ds: str,
+                          kc_out_dir: str, mat_out_dir: str, normalize: bool = False,
+                          residualize: bool = False, residualize_full: bool = False) -> dict[str, pd.DataFrame]:
+    """Write one bank's KCluster KC models: every estimator x every correction.
+
+    The one builder behind both engines (local ``build-kc`` from score shards,
+    ``vertex-build-kc`` from a downloaded array), so the flags mean the same
+    thing everywhere:
+
+    - ``normalize`` selects *estimators*: ``unnorm`` always, plus ``norm`` when
+      set. Additive — the ``norm`` set is written beside the ``unnorm`` set,
+      never in place of it.
+    - ``residualize`` / ``residualize_full`` select *corrections* of the
+      question-format nuisance (D9/D11: mean-only ``resid``, joint item +
+      format ``residfull``; the latter implies the former). Also additive, and
+      applied to **each** estimator's matrix as the last operation, so whatever
+      format offset an estimator preserves is removed from the final matrix.
+      A single-format bank gets no ``resid`` model: with one stratum the
+      correction is a constant shift affinity propagation ignores.
+
+    ``congruity(normalize)`` returns the square similarity matrix of the bank
+    under that estimator; it is called once per estimator built. Artifacts are
+    ``<ds>_pmi-<estimator>[-<correction>].npy`` in ``mat_out_dir`` and
+    ``<ds>_kcluster-<estimator>[-<correction>]-kc.csv`` (plus any ``-split``
+    sibling, D14) in ``kc_out_dir``.
+
+    :return: the models written, ``{"kcluster-<tag>": frame}``
+    """
+    groups = [q.q_type for q in questions]
+    want_mean = residualize_full or residualize
+    variants = correction_variants(groups, mean_only=want_mean, joint=residualize_full)
+    if want_mean and not any(tag == "resid" for tag, _ in variants):
+        print("*** Single-format bank: skipping the mean-only model, which would duplicate "
+              "the uncorrected one (with one stratum it is a constant shift) ***")
+
+    models = {}
+    for estimator, normalized in CONGRUITY_ESTIMATORS:
+        if normalized and not normalize:
+            continue
+        sim_mtx = congruity(normalized)
+        assert sim_mtx.shape == (len(questions), len(questions)), "Inconsistent similarity matrix shape"
+
+        corrections = [(estimator, None)] + [(f"{estimator}-{tag}", kwargs) for tag, kwargs in variants]
+        for tag, kwargs in corrections:
+            print(f"*** Building KCs for KCluster-PMI ({tag}) ***")
+            matrix = sim_mtx if kwargs is None else residualize_congruity(sim_mtx, groups, **kwargs)
+            # The matrix is what a pairwise analysis of these questions should
+            # read, so it is saved beside the model rather than left recoverable
+            # only by redoing the estimator and strata by hand.
+            np.save(os.path.join(mat_out_dir, f"{ds}_pmi-{tag}.npy"), matrix)
+            kc = create_kc(concept_df, questions, matrix)
+            if isinstance(kc, pd.DataFrame):
+                save_kc_models(kc, os.path.join(kc_out_dir, f"{ds}_kcluster-{tag}-kc.csv"))
+                print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
+                models[f"kcluster-{tag}"] = kc
+    return models
