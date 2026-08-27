@@ -1250,6 +1250,10 @@ local = [
     { name = "torch" },
     { name = "transformers" },
 ]
+serve = [
+    { name = "fastapi" },
+    { name = "uvicorn" },
+]
 vertex = [
     { name = "google-cloud-aiplatform", extra = ["prediction"] },
     { name = "google-cloud-storage" },
@@ -1263,6 +1267,7 @@ datasets = [
 ]
 dev = [
     { name = "beautifulsoup4" },
+    { name = "httpx" },
     { name = "pillow" },
     { name = "pytest" },
     { name = "requests" },
@@ -1279,6 +1284,7 @@ papers = [
 requires-dist = [
     { name = "accelerate", marker = "extra == 'local'", specifier = ">=1.0" },
     { name = "beautifulsoup4", marker = "extra == 'datashop'", specifier = ">=4.12" },
+    { name = "fastapi", marker = "extra == 'serve'", specifier = ">=0.110" },
     { name = "google-cloud-aiplatform", extras = ["prediction"], marker = "extra == 'vertex'", specifier = ">=1.96,<2" },
     { name = "google-cloud-storage", marker = "extra == 'vertex'", specifier = ">=2.14" },
     { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=1.0" },
@@ -1292,8 +1298,9 @@ requires-dist = [
     { name = "torch", marker = "extra == 'local'", specifier = ">=2.4" },
     { name = "tqdm", specifier = ">=4.66" },
     { name = "transformers", marker = "extra == 'local'", specifier = ">=4.45" },
+    { name = "uvicorn", marker = "extra == 'serve'", specifier = ">=0.30" },
 ]
-provides-extras = ["local", "vertex", "gemini", "datashop", "fit"]
+provides-extras = ["local", "vertex", "gemini", "datashop", "fit", "serve"]
 
 [package.metadata.requires-dev]
 datasets = [
@@ -1303,6 +1310,7 @@ datasets = [
 ]
 dev = [
     { name = "beautifulsoup4", specifier = ">=4.12" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "pillow", specifier = ">=10" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "requests", specifier = ">=2.31" },
