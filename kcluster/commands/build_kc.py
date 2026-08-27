@@ -6,10 +6,10 @@ import os
 import numpy as np
 import pandas as pd
 
-from kcluster.core.pmi import PointwiseMutualInfo, correction_variants, residualize
+from kcluster.core.pmi import PointwiseMutualInfo
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import concept_kc_path, kc_dir, pmi_dir, pmi_raw_dir, prepare_output_dir, run_dir
-from kcluster.tasks.cluster import create_kc, save_kc_models
+from kcluster.tasks.cluster import build_kcluster_models
 
 
 def main(args):
@@ -41,46 +41,23 @@ def main(args):
                          "reachable copy of this dataset's questions")
     questions = load_questions(args.data_path)
 
-    # Create KC for KCluster-PMI from the raw score shards
+    # The KCluster KC models from the raw score shards: every congruity
+    # estimator x format correction the flags ask for (tasks.cluster).
     raw_dir = getattr(args, "pmi_dir", None) or pmi_raw_dir(result_dir)
     if os.path.isdir(raw_dir) and glob.glob("predictions_*.pt", root_dir=raw_dir):
         num_questions = len(questions)
-        pmi = PointwiseMutualInfo.from_shards(raw_dir, num_questions, num_questions,
-                                              normalize=False, symmetric=True)
-        # The assembled congruity matrix is what a pairwise analysis of these
-        # questions should read, so it is saved beside the models rather than
-        # left recoverable only by re-reading the shards (parity with vertex).
         mat_dir = prepare_output_dir(pmi_dir(result_dir))
-        np.save(os.path.join(mat_dir, f"{ds}_pmi-unnorm.npy"), pmi.pmi_mat)
 
-        print("*** Building KCs for KCluster-PMI ***")
-        kc = create_kc(concept_df, questions, pmi.pmi_mat)
-        if isinstance(kc, pd.DataFrame):
-            save_kc_models(kc, os.path.join(out_dir, f"{ds}_kcluster-unnorm-kc.csv"))
-            print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
+        def congruity(normalize: bool) -> np.ndarray:
+            # Reassembled per estimator: the shards are small, and the object
+            # has nothing else to give once its matrix is out.
+            return PointwiseMutualInfo.from_shards(raw_dir, num_questions, num_questions,
+                                                   normalize=normalize, symmetric=True).pmi_mat
 
-        # Additional KC models with the question-format nuisance removed,
-        # written alongside the plain one rather than replacing it: whether the
-        # correction helps is an empirical question per dataset.
-        # --residualize subtracts the per-format-pair means (D11: mean-only, no
-        # longer z-scored); --residualize_full removes the joint item + format
-        # model, the recommended correction for mixed-format banks, and implies
-        # --residualize so downstream comparisons get both variants.
-        groups = [q.q_type for q in questions]
-        want_full = getattr(args, "residualize_full", False)
-        want_mean = want_full or getattr(args, "residualize", False)
-        variants = correction_variants(groups, mean_only=want_mean, joint=want_full)
-        if want_mean and not any(tag == "resid" for tag, _ in variants):
-            print("*** Single-format bank: skipping the mean-only model, which would duplicate "
-                  "the uncorrected one (with one stratum it is a constant shift) ***")
-        for tag, kwargs in variants:
-            print(f"*** Building KCs for KCluster-PMI, format-corrected congruity ({tag}) ***")
-            adjusted = residualize(pmi.pmi_mat, groups, **kwargs)
-            np.save(os.path.join(mat_dir, f"{ds}_pmi-unnorm-{tag}.npy"), adjusted)
-            kc = create_kc(concept_df, questions, adjusted)
-            if isinstance(kc, pd.DataFrame):
-                save_kc_models(kc, os.path.join(out_dir, f"{ds}_kcluster-unnorm-{tag}-kc.csv"))
-                print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
+        build_kcluster_models(concept_df, questions, congruity, ds=ds, kc_out_dir=out_dir, mat_out_dir=mat_dir,
+                              normalize=getattr(args, "normalize", False),
+                              residualize=getattr(args, "residualize", False),
+                              residualize_full=getattr(args, "residualize_full", False))
 
     # Save arguments
     with open(os.path.join(result_dir, f"args-kc-{ds}.json"), "w") as f:
@@ -94,6 +71,10 @@ def add_arguments(parser):
                         help="Directory of raw score shards (default: <result_dir>/mat/pmi/raw)")
     parser.add_argument("--data_path", default=argparse.SUPPRESS, type=str,
                         help="Question file (default: the path recorded in args-concept-*.json)")
+    parser.add_argument("--normalize", action="store_true",
+                        help="Also build the KC models from the joint-normalized congruity "
+                             "(kcluster-norm, plus its format corrections) beside the raw-estimator "
+                             "kcluster-unnorm ones")
     parser.add_argument("--residualize", action="store_true",
                         help="Also build a KC model from congruity with the per-format-pair means "
                              "subtracted, which stops a mixed-format bank from clustering by format")

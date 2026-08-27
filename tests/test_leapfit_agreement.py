@@ -28,9 +28,14 @@ ROOT = Path(__file__).resolve().parents[1]
 # The pair the pipeline produces today: the driver's minimal file, tagged with
 # the KC models of a run over the same question bank. Both are git-ignored, so
 # these are the paths on a machine that has run elearning22 — the newest run
-# dir is picked, since a run's KC models and the bank must agree.
-SS_PATH = ROOT / "datasets/elearning22/data/interim/elearning22-mcq_student-step-minimal.txt"
-KC_DIRS = sorted(ROOT.glob("results/elearning22-*/kc"), reverse=True)
+# dir holding models of this export's bank is picked, since a run's KC models
+# and the bank must agree. Models are matched by the ``<ds>_`` prefix: another
+# bank's run (elearning22-norm, say) shares the results/elearning22-* prefix
+# but not the export's steps, and tagging with it fails coverage.
+DS = "elearning22-mcq"
+SS_PATH = ROOT / f"datasets/elearning22/data/interim/{DS}_student-step-minimal.txt"
+KC_DIRS = [d for d in sorted(ROOT.glob("results/elearning22-*/kc"), reverse=True)
+           if any(d.glob(f"**/{DS}_*-kc.csv"))]
 # DataShop's own export of the same steps, carrying its expert opportunity
 # columns — the cross-check in test_expert_opportunities_match_datashop_export.
 VALIDATION_PATH = ROOT / "datasets/elearning22/data/interim/ds5426_ss_validation.txt"
@@ -69,7 +74,7 @@ def real_tagged() -> pd.DataFrame:
     if not (SS_PATH.exists() and KC_DIRS):
         pytest.skip("elearning22 minimal export / result dir not available")
     kc_models = {model_name(str(path)): load_kc_csv(str(path))
-                 for path in sorted(KC_DIRS[0].glob("**/*-kc.csv"))}
+                 for path in sorted(KC_DIRS[0].glob(f"**/{DS}_*-kc.csv"))}
     assert kc_models, f"no KC CSVs in {KC_DIRS[0]}"
     return _tag(load_student_step(str(SS_PATH)), kc_models)
 

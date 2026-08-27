@@ -11,13 +11,12 @@ import logging
 import os
 
 import numpy as np
-import pandas as pd
 
-from kcluster.core.pmi import PointwiseMutualInfo, correction_variants, residualize
+from kcluster.core.pmi import PointwiseMutualInfo
 from kcluster.engine.vertex import VertexConfig, collected_inputs, download_concepts, download_pmi
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import kc_dir, pmi_dir, prepare_output_dir
-from kcluster.tasks.cluster import build_res_df, create_kc, save_kc_models
+from kcluster.tasks.cluster import build_kcluster_models, build_res_df
 
 
 def buildable_jobs(jobs_path: str, config: VertexConfig) -> list[dict]:
@@ -64,45 +63,22 @@ def main(args):
         mtx = download_pmi(job_id, config)
         assert mtx is not None, \
             f"No collected pmi.npy for job '{job_id}' — run vertex-retrieve (or wait for collection) first"
-        sim_mtx = PointwiseMutualInfo.from_array(mtx, symmetric=True, normalize=args.normalize).pmi_mat
-        assert sim_mtx.shape == (num_qs, num_qs), "Inconsistent similarity matrix shape"
-
-        # Save the retrieved PMI similarity matrix used for clustering
-        norm_tag = "norm" if args.normalize else "unnorm"
-        np.save(os.path.join(mat_dir, f"{data_name}_pmi-{norm_tag}.npy"), sim_mtx)
 
         # Create the Concept KC from the collected concepts
         concepts = download_concepts(job_id, config)
         assert concepts is not None, f"No collected concepts.jsonl for job '{job_id}'"
         concept_df = build_res_df(questions, concepts)
 
-        # Create the KCluster KC
-        kcluster_df = create_kc(concept_df, questions, sim_mtx)
-        if isinstance(kcluster_df, pd.DataFrame):
-            save_kc_models(kcluster_df, os.path.join(output_dir, f"{data_name}_kcluster-{norm_tag}-kc.csv"))
-            print(f"*** KCluster finished with {kcluster_df['KC'].nunique()} KCs ***")
+        # The KCluster KC models: every congruity estimator x format correction
+        # the flags ask for — the same builder, flags and filenames as the
+        # local build-kc command (tasks.cluster).
+        def congruity(normalize: bool, mtx=mtx) -> np.ndarray:
+            return PointwiseMutualInfo.from_array(mtx, symmetric=True, normalize=normalize).pmi_mat
 
-        # ... and the same clustering with the question-format nuisance removed
-        # (D9, amended by D11: --residualize is mean-only, --residualize_full
-        # the joint item + format model and implies --residualize). Written
-        # alongside rather than replacing it, as in build-kc.
-        groups = [q.q_type for q in questions]
-        want_full = getattr(args, "residualize_full", False)
-        want_mean = want_full or getattr(args, "residualize", False)
-        variants = correction_variants(groups, mean_only=want_mean, joint=want_full)
-        if want_mean and not any(tag == "resid" for tag, _ in variants):
-            print("*** Single-format bank: skipping the mean-only model, which would duplicate "
-                  "the uncorrected one (with one stratum it is a constant shift) ***")
-        for tag, kwargs in variants:
-            adjusted = residualize(sim_mtx, groups, **kwargs)
-            # Saved beside the raw matrix, not just clustered: the corrected
-            # congruity is what a pairwise analysis of these questions should
-            # read, and recovering it otherwise means redoing the strata by hand.
-            np.save(os.path.join(mat_dir, f"{data_name}_pmi-{norm_tag}-{tag}.npy"), adjusted)
-            resid_df = create_kc(concept_df, questions, adjusted)
-            if isinstance(resid_df, pd.DataFrame):
-                save_kc_models(resid_df, os.path.join(output_dir, f"{data_name}_kcluster-{norm_tag}-{tag}-kc.csv"))
-                print(f"*** KCluster ({tag}) finished with {resid_df['KC'].nunique()} KCs ***")
+        build_kcluster_models(concept_df, questions, congruity, ds=data_name, kc_out_dir=output_dir,
+                              mat_out_dir=mat_dir, normalize=getattr(args, "normalize", False),
+                              residualize=getattr(args, "residualize", False),
+                              residualize_full=getattr(args, "residualize_full", False))
 
         print(f"*** Created {concept_df['KC'].nunique()} Concept KCs ***\n\n")
         concept_df.to_csv(os.path.join(concept_dir, f"{data_name}_concept-kc.csv"), index=False)
@@ -117,7 +93,10 @@ def main(args):
 def add_arguments(parser):
     parser.add_argument("--work_dir", required=True, type=str,
                         help="Path to the working directory containing launched_jobs.jsonl")
-    parser.add_argument("--normalize", action="store_true", help="Whether to normalize the PMI")
+    parser.add_argument("--normalize", action="store_true",
+                        help="Also build the KC models from the joint-normalized congruity "
+                             "(kcluster-norm, plus its format corrections) beside the raw-estimator "
+                             "kcluster-unnorm ones")
     parser.add_argument("--residualize", action="store_true",
                         help="Also build a KC model from congruity with the per-format-pair means "
                              "subtracted, which stops a mixed-format bank from clustering by format")

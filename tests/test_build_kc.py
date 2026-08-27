@@ -201,3 +201,29 @@ def test_build_kc_requires_a_result_dir_without_a_run_dir(monkeypatch):
     monkeypatch.delenv("KCLUSTER_RUN_DIR", raising=False)
     with pytest.raises(SystemExit, match="--result_dir is required"):
         build_kc.main(argparse.Namespace())
+
+
+def test_build_kc_normalize_adds_the_joint_normalized_models_beside_the_raw_ones(result_dir):
+    """--normalize is additive: the `norm` estimator's model and matrix (and its
+    format corrections) land beside the `unnorm` set, never in place of it."""
+    build_kc.main(argparse.Namespace(result_dir=str(result_dir), normalize=True, residualize_full=True))
+
+    kc_dir, mat_dir = result_dir / "kc" / "kcluster", result_dir / "mat" / "pmi"
+    for tag in ("unnorm", "norm"):
+        assert (kc_dir / f"questions_kcluster-{tag}-kc.csv").exists()
+        assert (kc_dir / f"questions_kcluster-{tag}-residfull-kc.csv").exists()
+        assert (mat_dir / f"questions_pmi-{tag}.npy").exists()
+        assert (mat_dir / f"questions_pmi-{tag}-residfull.npy").exists()
+    unnorm, norm = np.load(mat_dir / "questions_pmi-unnorm.npy"), np.load(mat_dir / "questions_pmi-norm.npy")
+    assert unnorm.shape == norm.shape
+    assert np.allclose(norm, norm.T)
+    assert not np.allclose(unnorm, norm)   # a different estimator, not a relabelling
+    # ... that still separates the planted groups
+    kc = pd.read_csv(kc_dir / "questions_kcluster-norm-kc.csv")
+    assert kc.groupby("KC-raw")["id"].apply(set).map(len).tolist() == [3, 3]
+
+
+def test_build_kc_without_normalize_writes_no_norm_models(result_dir):
+    build_kc.main(argparse.Namespace(result_dir=str(result_dir)))
+    assert not list((result_dir / "kc" / "kcluster").glob("*-norm-*"))
+    assert not list((result_dir / "mat" / "pmi").glob("*_pmi-norm*"))

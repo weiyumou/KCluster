@@ -274,6 +274,7 @@ def test_an_unscoped_export_is_unchanged(run_dir):
 
 
 def test_scopes_colliding_on_one_dir_name_raise(tmp_path):
+    pytest.importorskip("leapfit")  # KC-model discovery runs first and goes through Leapfit
     run = _scoped_dir(tmp_path, **{"0": "A B", "1": "A-B"})
     with pytest.raises(SystemExit, match="same result dir name"):
         cli_main(["fit", "--run_dir", str(run), "--folds", "2", "--seeds", "1"])
