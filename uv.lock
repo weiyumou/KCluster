@@ -1260,17 +1260,9 @@ vertex = [
 ]
 
 [package.dev-dependencies]
-datasets = [
-    { name = "beautifulsoup4" },
-    { name = "pillow" },
-    { name = "requests" },
-]
 dev = [
-    { name = "beautifulsoup4" },
     { name = "httpx" },
-    { name = "pillow" },
     { name = "pytest" },
-    { name = "requests" },
     { name = "ruff" },
     { name = "seaborn" },
     { name = "statsmodels" },
@@ -1303,17 +1295,9 @@ requires-dist = [
 provides-extras = ["local", "vertex", "gemini", "datashop", "fit", "serve"]
 
 [package.metadata.requires-dev]
-datasets = [
-    { name = "beautifulsoup4", specifier = ">=4.12" },
-    { name = "pillow", specifier = ">=10" },
-    { name = "requests", specifier = ">=2.31" },
-]
 dev = [
-    { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "pillow", specifier = ">=10" },
     { name = "pytest", specifier = ">=8.0" },
-    { name = "requests", specifier = ">=2.31" },
     { name = "ruff", specifier = ">=0.5" },
     { name = "seaborn", specifier = ">=0.13" },
     { name = "statsmodels", specifier = ">=0.14" },
