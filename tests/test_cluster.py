@@ -2,26 +2,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from kcluster.core.question import Question
 from kcluster.tasks.cluster import create_kc, run_ap, save_kc_models, sim_from_embeddings, split_collisions
 
 
-def _question(i: int) -> Question:
-    return Question(
-        {
-            "id": f"q-{i}",
-            "type": "Multiple Choice",
-            "question": {"stem": f"Stem {i}?", "choices": [{"label": "a", "text": "x"}]},
-            "answerKey": "a",
-            "images": [f"{i}.png"],
-        }
-    )
-
-
 @pytest.fixture
-def two_blobs():
+def two_blobs(make_questions):
     # Six questions whose embeddings form two well-separated groups.
-    questions = [_question(i) for i in range(6)]
+    questions = make_questions(extra=lambda i: {"images": [f"{i}.png"]})
     embeds = np.array(
         [[0.0, 0.1], [0.1, 0.0], [0.0, -0.1],
          [10.0, 10.0], [10.1, 10.0], [10.0, 10.1]]

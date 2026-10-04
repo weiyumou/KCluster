@@ -11,34 +11,18 @@ import numpy as np
 import pandas as pd
 import pytest
 
-torch = pytest.importorskip("torch")
+pytest.importorskip("torch")
 
-from kcluster.commands.refine_datashop_kc import main  # noqa: E402
-from kcluster.core.question import Question  # noqa: E402
-from kcluster.io.jsonl import dump_questions  # noqa: E402
-from kcluster.tasks.cluster import build_res_df  # noqa: E402
+from kcluster.commands.refine_datashop_kc import main
+from kcluster.io.jsonl import dump_questions
+from kcluster.tasks.cluster import build_res_df
 
 CONCEPTS = ["alpha", "alpha", "beta", "beta", "gamma", "gamma"]
 GROUPS = [0, 0, 1, 1, 2, 2]
 
 
-def _questions() -> list[Question]:
-    return [
-        Question(
-            {
-                "id": f"q-{i}",
-                "type": "Multiple Choice",
-                "question": {"stem": f"Stem {i}?", "choices": [{"label": "a", "text": "x"}]},
-                "answerKey": "a",
-                "ds-step-name": [f"s{i}"],
-            }
-        )
-        for i in range(6)
-    ]
-
-
-def test_refine_datashop_kc_end_to_end(tmp_path):
-    questions = _questions()
+def test_refine_datashop_kc_end_to_end(tmp_path, make_questions, planted_scores, write_shards):
+    questions = make_questions(extra=lambda i: {"ds-step-name": [f"s{i}"]})
 
     # A result dir as the concept, embed, and pmi steps leave it (D10 layout)
     data_path = tmp_path / "questions.jsonl"
@@ -55,14 +39,7 @@ def test_refine_datashop_kc_end_to_end(tmp_path):
     np.save(embed_dir / "questions_llm-embed.npy", embeds)
 
     # The pmi step's shards: within-group above the marginal, across below
-    raw_dir = result_dir / "mat" / "pmi" / "raw"
-    raw_dir.mkdir(parents=True)
-    marginals = np.full(6, -50.0)
-    same = np.array([[g1 == g2 for g2 in GROUPS] for g1 in GROUPS])
-    conds = np.where(same, -45.0, -55.0)
-    flat = np.concatenate([marginals, conds.ravel()])
-    torch.save([[torch.arange(len(flat))]], raw_dir / "batch_indices_0.pt")
-    torch.save([torch.tensor(flat, dtype=torch.float32)], raw_dir / "predictions_0.pt")
+    write_shards(result_dir / "mat" / "pmi" / "raw", planted_scores(GROUPS))
 
     # The expert model: one problematic four-step KC, one healthy KC
     kc_path = tmp_path / "expert-kc.txt"

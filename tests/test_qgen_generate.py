@@ -11,7 +11,7 @@ import pytest
 
 pytest.importorskip("torch")
 
-from kcluster.tasks.qgen.generate import (  # noqa: E402
+from kcluster.tasks.qgen.generate import (
     create_seed_prompts,
     generate_mcq,
     generate_mcq_from_std,

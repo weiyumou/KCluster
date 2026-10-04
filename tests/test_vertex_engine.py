@@ -1,7 +1,6 @@
 """Offline tests for the Vertex AI engine: config loading, job preparation,
-and prediction collection against an in-memory GCS fake."""
+and prediction collection against the in-memory GCS fake (conftest's ``gcs``)."""
 
-import contextlib
 import io
 import json
 from types import SimpleNamespace
@@ -11,9 +10,8 @@ import pytest
 
 pytest.importorskip("google.cloud.aiplatform")
 
-from kcluster.core.question import Question  # noqa: E402
-from kcluster.engine import vertex  # noqa: E402
-from kcluster.engine.vertex import (  # noqa: E402
+from kcluster.engine import vertex
+from kcluster.engine.vertex import (
     VertexConfig,
     collect_predictions,
     launch_batch_job,
@@ -22,69 +20,7 @@ from kcluster.engine.vertex import (  # noqa: E402
     prepare_pmi_jobs,
 )
 
-
-def _questions(n=2) -> list[Question]:
-    return [
-        Question(
-            {
-                "id": f"q-{i}",
-                "type": "Multiple Choice",
-                "question": {"stem": f"What is {i} + {i}?",
-                             "choices": [{"label": "a", "text": str(2 * i)}, {"label": "b", "text": "0"}]},
-                "answerKey": "a",
-            }
-        )
-        for i in range(n)
-    ]
-
-
 CONFIG = VertexConfig(project="my-project", bucket="my-bucket", model_id="123")
-
-
-# --- an in-memory stand-in for google.cloud.storage ---
-
-class FakeBlob:
-    def __init__(self, bucket, name):
-        self.bucket, self.name = bucket, name
-
-    @contextlib.contextmanager
-    def open(self, mode="r"):
-        if "w" in mode:
-            buf = io.BytesIO() if "b" in mode else io.StringIO()
-            yield buf
-            self.bucket.store[self.name] = buf.getvalue()
-        else:
-            data = self.bucket.store[self.name]
-            yield io.BytesIO(data) if "b" in mode else io.StringIO(data)
-
-    def exists(self):
-        return self.name in self.bucket.store
-
-
-class FakeBucket:
-    def __init__(self, name):
-        self.name, self.store = name, {}
-
-    def blob(self, name):
-        return FakeBlob(self, name)
-
-
-class FakeStorageClient:
-    _buckets = {}
-
-    def bucket(self, name):
-        return self._buckets.setdefault(name, FakeBucket(name))
-
-    def list_blobs(self, name, prefix=""):
-        bucket = self.bucket(name)
-        return [bucket.blob(key) for key in sorted(bucket.store) if key.startswith(prefix)]
-
-
-@pytest.fixture()
-def gcs(monkeypatch):
-    FakeStorageClient._buckets = {}
-    monkeypatch.setattr(vertex.storage, "Client", FakeStorageClient)
-    return FakeStorageClient()
 
 
 # --- VertexConfig ---
@@ -123,8 +59,8 @@ def test_config_rejects_unknown_keys(tmp_path):
 
 # --- job preparation ---
 
-def test_prepare_concept_jobs_prompt_and_parameters():
-    [q] = _questions(1)
+def test_prepare_concept_jobs_prompt_and_parameters(make_questions):
+    [q] = make_questions(1)
     jobs = prepare_concept_jobs([q])
 
     [instance] = jobs["instances"]
@@ -144,8 +80,8 @@ def test_prepare_concept_jobs_prompt_and_parameters():
     assert overridden["parameters"]["complete_prompts"]["max_new_tokens"] == 10
 
 
-def test_prepare_pmi_jobs_uses_the_canonical_grid():
-    questions = _questions(2)
+def test_prepare_pmi_jobs_uses_the_canonical_grid(make_questions):
+    questions = make_questions(2)
     jobs = prepare_pmi_jobs(questions)
 
     instances = jobs["instances"]
@@ -163,8 +99,8 @@ def test_prepare_pmi_jobs_uses_the_canonical_grid():
     assert all(item["purpose"] == "log_prob" for item in instances)
 
 
-def test_prepare_inputs_uploads_instances_and_questions(gcs):
-    questions = _questions(2)
+def test_prepare_inputs_uploads_instances_and_questions(gcs, make_questions):
+    questions = make_questions(2)
     instances, parameters = prepare_inputs(questions, "job1", CONFIG)
 
     store = gcs.bucket("my-bucket").store
@@ -223,7 +159,7 @@ def test_collect_predictions_rejects_incomplete_results(gcs):
 
 # --- job launch ---
 
-def test_launch_batch_job(gcs, monkeypatch):
+def test_launch_batch_job(gcs, monkeypatch, make_questions):
     captured = {}
 
     class FakeJob:
@@ -241,7 +177,7 @@ def test_launch_batch_job(gcs, monkeypatch):
     monkeypatch.setattr(vertex.aiplatform, "init", lambda **kw: captured.update(init=kw))
     monkeypatch.setattr(vertex.aiplatform, "Model", FakeModel)
 
-    job, job_id = launch_batch_job(_questions(1), CONFIG, job_id="job1", batch_size=1,
+    job, job_id = launch_batch_job(make_questions(1), CONFIG, job_id="job1", batch_size=1,
                                    completion_time_in_mins=1, secs_per_batch=30)
 
     assert job_id == "job1"

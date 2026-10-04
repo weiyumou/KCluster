@@ -8,7 +8,7 @@ import pytest
 pytest.importorskip("torch")
 pytest.importorskip("google.genai")
 
-from kcluster.core.question import Question  # noqa: E402
+from kcluster.core.question import Question
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "papers" / "lak2026" / "scripts"
 

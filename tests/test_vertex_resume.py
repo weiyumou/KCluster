@@ -12,9 +12,9 @@ import pytest
 
 pytest.importorskip("google.cloud.aiplatform")
 
-import kcluster.engine.vertex as vertex  # noqa: E402
-from kcluster.commands import vertex_build_kc, vertex_launch  # noqa: E402
-from kcluster.engine.vertex import job_rate  # noqa: E402
+import kcluster.engine.vertex as vertex
+from kcluster.commands import vertex_build_kc, vertex_launch
+from kcluster.engine.vertex import job_rate
 
 
 def _jobs_file(tmp_path, entries):

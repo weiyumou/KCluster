@@ -14,14 +14,9 @@ from kcluster.io.datashop import (
 )
 
 
-def _write_tsv(df: pd.DataFrame, path) -> str:
-    df.to_csv(path, sep="\t", index=False)
-    return str(path)
-
-
 @pytest.fixture
-def template(tmp_path) -> str:
-    return _write_tsv(
+def template(tmp_path, write_tsv) -> str:
+    return write_tsv(
         pd.DataFrame(
             {
                 "Step ID": [1, 2, 3],
@@ -67,8 +62,8 @@ def test_create_datashop_kc_explodes_tilde_joined_steps(template):
     assert out["KC (MyModel)"].tolist() == ["alpha", "alpha", "beta"]
 
 
-def test_create_datashop_kc_match_other_kc_masks_uncovered_steps(tmp_path):
-    template = _write_tsv(
+def test_create_datashop_kc_match_other_kc_masks_uncovered_steps(tmp_path, write_tsv):
+    template = write_tsv(
         pd.DataFrame(
             {
                 "Problem Hierarchy": ["Unit A", "Unit A", "Unit B"],
@@ -100,7 +95,7 @@ def test_create_kc_from_questions_promotes_question_fields(tmp_path, template):
 
 
 @pytest.fixture
-def filled_kc_and_ss(tmp_path):
+def filled_kc_and_ss(tmp_path, write_tsv):
     kc = pd.DataFrame(
         {
             "Problem Hierarchy": ["(Unit A)", "(Unit A)", "(Unit B)"],
@@ -109,7 +104,7 @@ def filled_kc_and_ss(tmp_path):
             "KC (m)": ["alpha", "alpha", "beta"],
         }
     )
-    ss = _write_tsv(
+    ss = write_tsv(
         pd.DataFrame(
             {
                 "Anon Student Id": ["ST1", "ST1", "ST1", "ST2"],

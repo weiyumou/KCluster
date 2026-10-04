@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("torch")
 
-from kcluster.engine.local import LargeLangModel, LogProbScorer  # noqa: E402
+from kcluster.engine.local import LargeLangModel, LogProbScorer
 
 
 def test_log_prob_scorer_is_a_lightning_module():

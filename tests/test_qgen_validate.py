@@ -8,8 +8,8 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from kcluster.core.question import Question  # noqa: E402
-from kcluster.tasks.qgen.validate import shuffle_choices, sort_questions, validate_mcq  # noqa: E402
+from kcluster.core.question import Question
+from kcluster.tasks.qgen.validate import shuffle_choices, sort_questions, validate_mcq
 
 
 class StubTokenizer:

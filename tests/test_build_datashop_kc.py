@@ -7,14 +7,9 @@ import pandas as pd
 from kcluster.commands.build_datashop_kc import main
 
 
-def _write_tsv(df: pd.DataFrame, path) -> str:
-    df.to_csv(path, sep="\t", index=False)
-    return str(path)
-
-
-def test_build_datashop_kc_end_to_end(tmp_path):
+def test_build_datashop_kc_end_to_end(tmp_path, write_tsv):
     # Template: four steps; the expert model does not cover s4
-    template = _write_tsv(
+    template = write_tsv(
         pd.DataFrame(
             {
                 "Problem Hierarchy": ["U"] * 4,
@@ -26,7 +21,7 @@ def test_build_datashop_kc_end_to_end(tmp_path):
         tmp_path / "template.txt",
     )
     # The system unique-step model excludes s3
-    step_kc = _write_tsv(
+    step_kc = write_tsv(
         pd.DataFrame(
             {
                 "Problem Hierarchy": ["U"] * 4,
@@ -44,7 +39,7 @@ def test_build_datashop_kc_end_to_end(tmp_path):
     pd.DataFrame({"ds-step-name": ["s1~s2", "s3", "s4"], "KC": ["alpha", "beta", "gamma"]}).to_csv(
         kc_dir / "questions_kcluster-unnorm-kc.csv", index=False
     )
-    ss_path = _write_tsv(
+    ss_path = write_tsv(
         pd.DataFrame(
             {
                 "Anon Student Id": ["ST1"] * 4,

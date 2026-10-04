@@ -10,8 +10,8 @@ import pytest
 
 pytest.importorskip("torch")
 
-from kcluster.core.question import Question  # noqa: E402
-from kcluster.tasks.congruity import PairQuestion  # noqa: E402
+from kcluster.core.question import Question
+from kcluster.tasks.congruity import PairQuestion
 
 
 def _mcq(stem: str, choices: list[str], answer: str) -> Question:

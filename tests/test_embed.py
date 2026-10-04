@@ -16,10 +16,8 @@ import pytest
 torch = pytest.importorskip("torch")
 pytest.importorskip("sentence_transformers")
 
-from kcluster.commands import embed  # noqa: E402
-from kcluster.core.question import Question  # noqa: E402
-from kcluster.io.jsonl import dump_questions  # noqa: E402
-from kcluster.tasks.cluster import build_res_df  # noqa: E402
+from kcluster.commands import embed
+from kcluster.io.jsonl import dump_questions
 
 GROUPS = ["alpha"] * 3 + ["beta"] * 3
 
@@ -28,20 +26,6 @@ PLANTED = np.array(
     [[1.0, 0.01], [1.0, 0.02], [1.0, 0.03],
      [0.01, 1.0], [0.02, 1.0], [0.03, 1.0]]
 )
-
-
-def _questions() -> list[Question]:
-    return [
-        Question(
-            {
-                "id": f"q-{i}",
-                "type": "Multiple Choice",
-                "question": {"stem": f"Stem {i}?", "choices": [{"label": "a", "text": "x"}]},
-                "answerKey": "a",
-            }
-        )
-        for i in range(6)
-    ]
 
 
 class FakeSentenceTransformer:
@@ -54,16 +38,9 @@ class FakeSentenceTransformer:
 
 
 @pytest.fixture
-def result_dir(tmp_path):
+def result_dir(make_questions, make_result_dir):
     """A result dir as the concept step (or vertex-build-kc) leaves it."""
-    questions = _questions()
-    rd = tmp_path / "run"
-    data_path = tmp_path / "questions.jsonl"
-    dump_questions(questions, str(data_path))
-    (rd / "kc" / "concept").mkdir(parents=True)
-    (rd / "args-concept-questions.json").write_text(json.dumps({"data_path": str(data_path)}))
-    build_res_df(questions, GROUPS).to_csv(rd / "kc" / "concept" / "questions_concept-kc.csv", index=False)
-    return rd
+    return make_result_dir(make_questions(), GROUPS)
 
 
 def _assert_model(rd, name):
@@ -124,9 +101,9 @@ def test_embed_data_path_overrides_an_unreachable_recorded_path(result_dir, tmp_
     _assert_model(result_dir, "sbert")
 
 
-def test_embed_rejects_a_question_file_of_the_wrong_size(result_dir, tmp_path, monkeypatch):
+def test_embed_rejects_a_question_file_of_the_wrong_size(result_dir, tmp_path, monkeypatch, make_questions):
     wrong = tmp_path / "short.jsonl"
-    dump_questions(_questions()[:4], str(wrong))
+    dump_questions(make_questions(4), str(wrong))
     monkeypatch.setattr(embed, "SentenceTransformer", FakeSentenceTransformer)
     with pytest.raises(SystemExit, match="wrong question file"):
         embed.main(argparse.Namespace(result_dir=str(result_dir), sent_path="st-path",
