@@ -7,7 +7,7 @@ from transformers.utils import logging
 from kcluster.engine.local import LargeLangModel, LogProbScorer, score_pairs
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import dataset_name, default_output_dir, prepare_output_dir, save_args
-from kcluster.tasks.classify import QuestionLO, classify_from_pmi
+from kcluster.tasks.classify import QuestionLO, classify_from_pmi, distinct_los
 
 
 def main(args):
@@ -26,7 +26,7 @@ def main(args):
 
     # Read all questions and collect their LOs
     all_questions = load_questions(args.data_path)
-    all_los = list(set(q["lo"] for q in all_questions))
+    all_los = distinct_los(all_questions)
 
     # Compute PMI for questions and LOs
     score_pairs(model, tokenizer, QuestionLO(all_questions, all_los, args.lo_type), args.output_dir,

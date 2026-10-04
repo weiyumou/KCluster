@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("torch")
 
 from kcluster.io.jsonl import dump_questions, load_questions
-from kcluster.tasks.classify import QuestionLO, classify_from_pmi
+from kcluster.tasks.classify import QuestionLO, classify_from_pmi, distinct_los
 
 LOS = ["Explain how levers work.", "Identify the states of matter."]
 
@@ -19,6 +19,15 @@ LOS = ["Explain how levers work.", "Identify the states of matter."]
 def lo_questions(make_questions):
     """Factory for a bank whose q-0/q-1 belong to lo 0 and q-2 to lo 1."""
     return lambda n=3: make_questions(n, extra=lambda i: {"lo": LOS[0] if i < 2 else LOS[1]})
+
+
+def test_distinct_los_keeps_the_order_of_first_appearance(make_questions):
+    # Eight objectives, each on two questions, in an order that is neither
+    # sorted nor likely to fall out of a set: the order is the contract, since
+    # every GPU rank rebuilds the scoring grid from it
+    order = [5, 2, 7, 0, 3, 6, 1, 4]
+    questions = make_questions(16, extra=lambda i: {"lo": f"objective {order[i % 8]}"})
+    assert distinct_los(questions) == [f"objective {k}" for k in order]
 
 
 def test_question_lo_actions_grid(lo_questions):

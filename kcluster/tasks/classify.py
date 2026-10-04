@@ -27,6 +27,18 @@ from kcluster.core.question import Question
 from kcluster.io.jsonl import dump_questions, load_questions
 
 
+def distinct_los(questions: list[Question]) -> list[str]:
+    """The questions' learning objectives, once each, in order of first appearance.
+
+    Every rank of a multi-GPU run is its own process and rebuilds the scoring
+    grid from this list, while only rank 0's copy is saved for
+    ``classify_from_pmi`` to read the scores back with. So the order has to be
+    the same in every process, which a set's is not: it follows the string
+    hashes, and those are salted per process.
+    """
+    return list(dict.fromkeys(q["lo"] for q in questions))
+
+
 class QuestionLO:
     HEADERS = {"actions": prompts.LO_ACTIONS_HEADER, "facts": prompts.LO_FACTS_HEADER}
 
