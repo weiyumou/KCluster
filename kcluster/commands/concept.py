@@ -1,5 +1,4 @@
 import argparse
-import json
 import os
 
 import torch
@@ -7,7 +6,7 @@ from transformers.utils import logging
 
 from kcluster.engine.local import LargeLangModel
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import default_result_dir, kc_dir, prepare_output_dir
+from kcluster.paths import dataset_name, default_result_dir, kc_dir, prepare_output_dir, save_args
 from kcluster.tasks.cluster import build_res_df
 from kcluster.tasks.concept import extract_concepts
 
@@ -33,14 +32,13 @@ def main(args):
 
     # The concept table *is* the Concept KC model, so it goes straight into
     # kc/ under the standard name — no separate raw copy exists (D10).
-    ds = os.path.splitext(os.path.basename(args.data_path))[0].replace(" ", "-")
+    ds = dataset_name(args.data_path)
     res_df = build_res_df(questions, concepts)
     res_df.to_csv(os.path.join(prepare_output_dir(kc_dir(result_dir, "concept")), f"{ds}_concept-kc.csv"),
                   index=False)
 
-    # Save arguments at the result root; build-kc and embed recover data_path from here
-    with open(os.path.join(result_dir, f"args-concept-{ds}.json"), "w") as f:
-        json.dump(vars(args), f, indent=2)
+    # build-kc and embed recover data_path from this breadcrumb
+    save_args(result_dir, "concept", ds, vars(args))
 
 
 def add_arguments(parser):
@@ -55,9 +53,3 @@ def add_arguments(parser):
     parser.add_argument("--num_beams", type=int, default=5, help="Number of beams employed in beam search")
     parser.add_argument("--length_penalty", type=float, default=-0.1, help="Length penalty for beam search")
     parser.add_argument("--pad_to_multiple_of", type=int, default=None, help="Pad to multiple of")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

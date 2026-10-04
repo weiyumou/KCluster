@@ -94,9 +94,3 @@ def add_arguments(parser):
     parser.add_argument("--output_dir", default=argparse.SUPPRESS, type=str, help="Path to the output directory")
     parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
                         help="Shared run folder; each step writes to <run_dir>/<step> (env: KCLUSTER_RUN_DIR)")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

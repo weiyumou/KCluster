@@ -28,7 +28,6 @@ dir, so its tables stay at ``<run>/fit/<family>/`` and no root files are written
     kcluster fit --run_dir results/<run> --no_scope   # one pooled fit, as before
 """
 
-import argparse
 import contextlib
 import glob
 import os
@@ -290,9 +289,3 @@ def add_arguments(parser):
                              f"core (default: {N_JOBS}). Folds are partitioned before any fit "
                              f"starts and collected in order, so this changes the wall clock "
                              f"and not the tables.")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

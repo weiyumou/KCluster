@@ -1,4 +1,3 @@
-import argparse
 import glob
 import os
 from collections import defaultdict
@@ -72,9 +71,3 @@ def add_arguments(parser):
     parser.add_argument("--batch_size", default=16, type=int, help="Number of questions to validate in a batch")
     parser.add_argument("--prob_thd", default=0.9, type=float,
                         help="The minimal probability a choice must have for the question to be valid")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

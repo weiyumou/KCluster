@@ -27,6 +27,7 @@ keep the older per-step folders via ``default_output_dir``.
 """
 
 import glob
+import json
 import os
 import time
 
@@ -77,6 +78,24 @@ def default_result_dir(explicit_run_dir: str | None = None) -> str:
     return run_dir(explicit_run_dir) or os.path.join(results_root(), timestamp())
 
 
+def required_result_dir(explicit: str | None = None, explicit_run_dir: str | None = None) -> str:
+    """The result dir a command reads from, as an absolute path, or raise.
+
+    Resolution order: the ``--result_dir`` flag, then the run folder. Unlike
+    :func:`default_result_dir` nothing is minted: a command that needs an
+    earlier step's output has nothing to find in a fresh folder.
+    """
+    result_dir = explicit or run_dir(explicit_run_dir)
+    if not result_dir:
+        raise SystemExit("--result_dir is required unless --run_dir (or KCLUSTER_RUN_DIR) is set")
+    return os.path.abspath(result_dir)
+
+
+def dataset_name(data_path: str) -> str:
+    """The ``<ds>`` a question file's artifacts are prefixed with: its stem, spaces hyphenated."""
+    return os.path.splitext(os.path.basename(data_path))[0].replace(" ", "-")
+
+
 #: The three origins a KC model can have, each its own subfolder of ``kc/`` (D15).
 KC_KINDS = ("concept", "kcluster", "embed")
 
@@ -110,6 +129,44 @@ def concept_kc_path(result_dir: str) -> str:
     return match[0]
 
 
+def result_dataset(result_dir: str) -> str:
+    """The ``<ds>`` of a result dir, read off its Concept KC's filename."""
+    return os.path.basename(concept_kc_path(result_dir)).removesuffix("_concept-kc.csv")
+
+
+def save_args(result_dir: str, step: str, ds: str, values: dict) -> None:
+    """Write a step's provenance breadcrumb (``args-<step>-<ds>.json``) at the result root."""
+    with open(os.path.join(result_dir, f"args-{step}-{ds}.json"), "w") as f:
+        json.dump(values, f, indent=2)
+
+
+def _recorded_data_path(result_dir: str, ds: str) -> str | None:
+    for fname in sorted(glob.glob(f"args-*-{ds}.json", root_dir=result_dir)):
+        with open(os.path.join(result_dir, fname)) as f:
+            if recorded := json.load(f).get("data_path"):
+                return recorded
+    return None
+
+
+def question_path(result_dir: str, ds: str, explicit: str | None = None) -> str:
+    """The question file behind a result dir: ``--data_path``, else the recorded one.
+
+    Any step's breadcrumb records it — ``args-concept`` in a local run,
+    ``args-kc`` in a Vertex course dir — so the first that does is used. The
+    flag overrides it because a result dir is often read on a different machine
+    than it was written on: a cluster run pulled back to a laptop, or a Vertex
+    run launched from one, records a path that does not exist where it is now.
+    """
+    path = explicit or _recorded_data_path(result_dir, ds)
+    if not path:
+        raise SystemExit(f"No data_path recorded in args-*-{ds}.json under {result_dir} — "
+                         "pass --data_path with the question file")
+    if not os.path.isfile(path):
+        raise SystemExit(f"Question file not found: {path} — pass --data_path with a "
+                         "reachable copy of this dataset's questions")
+    return path
+
+
 def embed_dir(result_dir: str) -> str:
     """Question-embedding matrices (``<ds>_{sbert,llm}-embed.npy``)."""
     return os.path.join(result_dir, "mat", "embed")
@@ -134,17 +191,6 @@ def fit_dir(result_dir: str, family: str) -> str:
     output rather than a KCluster artifact.
     """
     return os.path.join(result_dir, "fit", family)
-
-
-def step_dir(step: str, explicit_run_dir: str | None = None) -> str | None:
-    """Where a previous ``step`` of this run wrote its output, if discoverable.
-
-    Returns None when no run folder is in play, so callers can fall back to
-    requiring an explicit path.
-    """
-    if run := run_dir(explicit_run_dir):
-        return os.path.join(run, step)
-    return None
 
 
 def prepare_output_dir(output_dir: str, *, exist_ok: bool = True) -> str:

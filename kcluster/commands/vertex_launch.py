@@ -19,7 +19,7 @@ from kcluster.engine.vertex import (
     wait_for_job_completion,
 )
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import default_result_dir, prepare_output_dir, timestamp
+from kcluster.paths import dataset_name, default_result_dir, prepare_output_dir, timestamp
 
 
 def main(args):
@@ -44,7 +44,7 @@ def main(args):
         logging.info(f"Loaded {len(questions)} questions from {data_path}")
 
         # Create Job ID based on the data file name and current time
-        job_id = os.path.splitext(os.path.basename(data_path))[0].replace(" ", "-") + "_" + timestamp()
+        job_id = dataset_name(data_path) + "_" + timestamp()
 
         logging.info(f"Launching job '{job_id}'...")
         job, _ = launch_batch_job(questions, config, job_id=job_id, batch_size=args.batch_size,
@@ -85,9 +85,3 @@ def add_arguments(parser):
                         help="Work directory shared with vertex-build-kc (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--config", default=argparse.SUPPRESS, type=str,
                         help="Path to a vertex TOML config (default: KCLUSTER_VERTEX_* environment)")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

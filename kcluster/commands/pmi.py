@@ -1,6 +1,4 @@
 import argparse
-import json
-import os
 from functools import partial
 
 import lightning as L
@@ -10,7 +8,7 @@ from transformers.utils import logging
 
 from kcluster.engine.local import CustomWriter, LargeLangModel, LogProbScorer, collate_pair
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import default_result_dir, pmi_raw_dir, prepare_output_dir
+from kcluster.paths import dataset_name, default_result_dir, pmi_raw_dir, prepare_output_dir, save_args
 from kcluster.tasks.congruity import PairQuestion
 
 
@@ -40,10 +38,7 @@ def main(args):
     trainer = L.Trainer(accelerator="gpu", strategy="ddp", devices=-1, callbacks=[pred_writer], logger=False)
     trainer.predict(model, dataloaders=dl, return_predictions=False)
 
-    # Save arguments at the result root
-    ds = os.path.splitext(os.path.basename(args.data_path))[0].replace(" ", "-")
-    with open(os.path.join(result_dir, f"args-pmi-{ds}.json"), "w") as f:
-        json.dump(vars(args), f, indent=2)
+    save_args(result_dir, "pmi", dataset_name(args.data_path), vars(args))
 
 
 def add_arguments(parser):
@@ -56,9 +51,3 @@ def add_arguments(parser):
                         help="Result folder shared by every step of this run (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--num_workers", type=int, default=0, help="Number of workers for DataLoader")
     parser.add_argument("--pad_to_multiple_of", type=int, default=None, help="Pad to multiple of")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

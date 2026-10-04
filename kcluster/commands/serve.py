@@ -13,7 +13,6 @@ paired encoding cannot separate context from text, since ``log_prob`` and
 ``encode`` depend on that.
 """
 
-import argparse
 import os
 
 import torch
@@ -66,9 +65,3 @@ def add_arguments(parser):
     parser.add_argument("--model_id", default=None, type=str,
                         help="Name reported in every response (default: the last path component of --llm_path)")
     parser.add_argument("--log_level", default="info", type=str, help="uvicorn log level")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

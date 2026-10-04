@@ -1,6 +1,5 @@
 import argparse
 import glob
-import json
 import os
 import re
 
@@ -10,16 +9,21 @@ import pandas as pd
 from kcluster.core.pmi import PointwiseMutualInfo
 from kcluster.io.datashop import KC_PAT, get_step_to_kc, merge_student_step_with_kc
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import concept_kc_path, embed_dir, pmi_raw_dir, prepare_output_dir, run_dir
+from kcluster.paths import (
+    concept_kc_path,
+    embed_dir,
+    pmi_raw_dir,
+    prepare_output_dir,
+    question_path,
+    required_result_dir,
+    result_dataset,
+)
 from kcluster.tasks.cluster import create_kc, sim_from_embeddings
 
 
 def main(args):
     # The result dir (D10 layout) holds the concept KC, embeddings, and shards
-    result_dir = getattr(args, "result_dir", None) or run_dir(getattr(args, "run_dir", None))
-    if not result_dir:
-        raise SystemExit("--result_dir is required unless --run_dir (or KCLUSTER_RUN_DIR) is set")
-    result_dir = os.path.abspath(result_dir)
+    result_dir = required_result_dir(getattr(args, "result_dir", None), getattr(args, "run_dir", None))
     output_dir = prepare_output_dir(os.path.join(result_dir, "kc-refine"), exist_ok=False)
     print(f"*** Writing results to {output_dir} ***")
 
@@ -37,10 +41,9 @@ def main(args):
     concept_df = pd.read_csv(concept_kc_path(result_dir))
     assert concept_df["KC"].str.strip().all(), "Some concepts are invalid"
 
-    # Recover the questions behind the concepts
-    [fname] = glob.glob("args-concept-*.json", root_dir=result_dir)
-    with open(os.path.join(result_dir, fname), "r") as f:
-        questions = load_questions(json.load(f)["data_path"])
+    # Recover the questions behind the concepts (--data_path overrides the recorded path)
+    questions = load_questions(question_path(result_dir, result_dataset(result_dir),
+                                             getattr(args, "data_path", None)))
 
     # Build the two similarity matrices once
     [fname] = glob.glob("*_llm-embed.npy", root_dir=embed_dir(result_dir))
@@ -113,6 +116,8 @@ def add_arguments(parser):
                              "(default: --run_dir)")
     parser.add_argument("--pmi_dir", default=argparse.SUPPRESS, type=str,
                         help="Directory of raw score shards (default: <result_dir>/mat/pmi/raw)")
+    parser.add_argument("--data_path", default=argparse.SUPPRESS, type=str,
+                        help="Question file (default: the path recorded in args-*.json)")
     parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
                         help="Result folder shared by every step of this run (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--ss_path", default=argparse.SUPPRESS, type=str, help="Path to a DataShop student-step file")
@@ -120,9 +125,3 @@ def add_arguments(parser):
                         help="Whether to minimize the merged student-step file")
     parser.add_argument("--multiplier", default=argparse.SUPPRESS, type=int,
                         help="Number of times to duplicate each KC model for cross-validation")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

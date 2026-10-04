@@ -101,9 +101,3 @@ def add_arguments(parser):
                         help="Whether to minimize the merged student-step file")
     parser.add_argument("--multiplier", default=argparse.SUPPRESS, type=int,
                         help="Number of times to duplicate each KC model for cross-validation")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

@@ -10,7 +10,7 @@ from transformers.utils import logging
 
 from kcluster.engine.local import CustomWriter, LargeLangModel, LogProbScorer, collate_pair
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import default_output_dir, prepare_output_dir
+from kcluster.paths import dataset_name, default_output_dir, prepare_output_dir, save_args
 from kcluster.tasks.classify import QuestionLO, classify_from_pmi
 
 
@@ -41,14 +41,12 @@ def main(args):
     trainer = L.Trainer(accelerator="gpu", devices=-1, callbacks=[pred_writer], logger=False)
     trainer.predict(model, dataloaders=dl, return_predictions=False)
 
-    fname = os.path.splitext(os.path.basename(args.data_path))[0]
+    ds = dataset_name(args.data_path)
     # Save LOs
-    with open(os.path.join(args.output_dir, f"los-{fname}.json"), "w") as f:
+    with open(os.path.join(args.output_dir, f"los-{ds}.json"), "w") as f:
         json.dump(all_los, f)
 
-    # Save arguments
-    with open(os.path.join(args.output_dir, f"args-pmi-{fname}.json"), "w") as f:
-        json.dump(vars(args), f, indent=2)
+    save_args(args.output_dir, "pmi", ds, vars(args))
 
     # Aggregate into top-k predictions per question
     classify_from_pmi(args.output_dir, topk=args.topk)
@@ -67,9 +65,3 @@ def add_arguments(parser):
                         help="Shared run folder; each step writes to <run_dir>/<step> (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--num_workers", type=int, default=2, help="Number of workers for DataLoader")
     parser.add_argument("--pad_to_multiple_of", type=int, default=8, help="Pad to multiple of")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

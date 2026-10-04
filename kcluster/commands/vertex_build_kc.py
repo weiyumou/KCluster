@@ -15,7 +15,7 @@ import numpy as np
 from kcluster.core.pmi import PointwiseMutualInfo
 from kcluster.engine.vertex import VertexConfig, collected_inputs, download_concepts, download_pmi
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import kc_dir, pmi_dir, prepare_output_dir
+from kcluster.paths import dataset_name, kc_dir, pmi_dir, prepare_output_dir, save_args
 from kcluster.tasks.cluster import build_kcluster_models, build_res_df
 
 
@@ -46,7 +46,7 @@ def main(args):
 
     for item in launched_jobs:
         job_id, data_path = item["job_id"], item["data_path"]
-        data_name = os.path.splitext(os.path.basename(data_path))[0].replace(" ", "-")
+        data_name = dataset_name(data_path)
 
         # Each course gets a full result dir under the work dir (D10)
         result_dir = os.path.join(args.work_dir, data_name)
@@ -85,9 +85,7 @@ def main(args):
 
         # Provenance breadcrumb at the course's result root, mirroring the
         # local pipeline; the embed command recovers data_path from here
-        breadcrumb = dict(vars(args), job_id=job_id, data_path=data_path)
-        with open(os.path.join(result_dir, f"args-kc-{data_name}.json"), "w") as f:
-            json.dump(breadcrumb, f, indent=2)
+        save_args(result_dir, "kc", data_name, dict(vars(args), job_id=job_id, data_path=data_path))
 
 
 def add_arguments(parser):
@@ -106,9 +104,3 @@ def add_arguments(parser):
                              "implies --residualize")
     parser.add_argument("--config", default=argparse.SUPPRESS, type=str,
                         help="Path to a vertex TOML config (default: KCLUSTER_VERTEX_* environment)")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

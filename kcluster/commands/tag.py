@@ -20,7 +20,6 @@ Each part's labels are namespaced by its bank on the way in, keeping the banks'
 KC spaces disjoint (``kcluster.tasks.tag.namespace_kc``).
 """
 
-import argparse
 import glob
 import os
 
@@ -184,9 +183,3 @@ def add_arguments(parser):
     parser.add_argument("--output", default=None, type=str,
                         help="Output path (default: <ds>_student-step-tagged.txt in --run_dir, which is "
                              "where a tagged file belongs; else beside the input)")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

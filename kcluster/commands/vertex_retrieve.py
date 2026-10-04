@@ -81,9 +81,3 @@ def add_arguments(parser):
                         help="Normalize the PMI over the question set (default: disabled)")
     parser.add_argument("--config", default=argparse.SUPPRESS, type=str,
                         help="Path to a vertex TOML config (default: KCLUSTER_VERTEX_* environment)")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())
