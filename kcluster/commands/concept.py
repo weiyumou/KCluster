@@ -1,4 +1,3 @@
-import argparse
 import os
 
 import torch
@@ -15,7 +14,7 @@ def main(args):
     logging.set_verbosity(logging.ERROR)  # Suppress warnings from transformers
 
     # Resolve the per-dataset result folder (D10 layout)
-    result_dir = getattr(args, "output_dir", None) or default_result_dir(getattr(args, "run_dir", None))
+    result_dir = args.output_dir or default_result_dir(args.run_dir)
     args.output_dir = result_dir = prepare_output_dir(result_dir)
     print(f"*** Writing results to {result_dir} ***")
 
@@ -44,9 +43,9 @@ def main(args):
 def add_arguments(parser):
     parser.add_argument("--llm_path", required=True, type=str, help="Path to a downloaded LLM")
     parser.add_argument("--data_path", required=True, type=str, help="Path to a jsonl file of questions")
-    parser.add_argument("--output_dir", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--output_dir", default=None, type=str,
                         help="The result directory (default: --run_dir or a fresh timestamped folder)")
-    parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--run_dir", default=None, type=str,
                         help="Result folder shared by every step of this run (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--verbal", action="store_true", help="Whether the concept should start with a verb")
     parser.add_argument("--batch_size", type=int, default=16, help="Number of questions to process in a batch")

@@ -1,7 +1,6 @@
 """Offline end-to-end tests of the vertex-launch / vertex-retrieve /
 vertex-build-kc commands, against the in-memory GCS fake (conftest's ``gcs``)."""
 
-import argparse
 import io
 import json
 import re
@@ -14,6 +13,7 @@ pytest.importorskip("google.cloud.aiplatform")
 
 from google.cloud.aiplatform_v1 import JobState
 
+from kcluster.cli import main as cli_main
 from kcluster.engine import vertex
 from kcluster.io.jsonl import dump_questions
 
@@ -42,8 +42,6 @@ def store_collected(gcs, planted_scores):
 
 
 def test_vertex_build_kc(store_collected, config_path, tmp_path, make_questions):
-    from kcluster.commands.vertex_build_kc import main
-
     questions = make_questions()
     data_path = tmp_path / "my questions.jsonl"
     dump_questions(questions, str(data_path))
@@ -54,7 +52,7 @@ def test_vertex_build_kc(store_collected, config_path, tmp_path, make_questions)
         json.dumps({"job_id": "job1", "data_path": str(data_path), "resource_name": "jobs/1"}) + "\n")
     store_collected("job1")
 
-    main(argparse.Namespace(work_dir=str(work_dir), normalize=False, config=config_path))
+    cli_main(["vertex-build-kc", "--work_dir", str(work_dir), "--config", config_path])
 
     # One full result dir per course under the work dir (D10 layout)
     course_dir = work_dir / "my-questions"
@@ -80,8 +78,6 @@ def test_vertex_build_kc_normalize_is_additive_like_build_kc(store_collected, co
     """--normalize adds the `norm` estimator's models beside the `unnorm` ones
     (never in place of them), each with its format corrections — the same
     flags, builder and filenames as the local build-kc command."""
-    from kcluster.commands.vertex_build_kc import main
-
     data_path = tmp_path / "qs.jsonl"
     dump_questions(make_questions(), str(data_path))
     work_dir = tmp_path / "run"
@@ -90,8 +86,8 @@ def test_vertex_build_kc_normalize_is_additive_like_build_kc(store_collected, co
         json.dumps({"job_id": "job1", "data_path": str(data_path), "resource_name": "jobs/1"}) + "\n")
     store_collected("job1")
 
-    main(argparse.Namespace(work_dir=str(work_dir), normalize=True, residualize_full=True,
-                            config=config_path))
+    cli_main(["vertex-build-kc", "--work_dir", str(work_dir), "--normalize", "--residualize_full",
+              "--config", config_path])
 
     import pandas as pd
     kc_dir, mat_dir = work_dir / "qs" / "kc" / "kcluster", work_dir / "qs" / "mat" / "pmi"
@@ -108,8 +104,6 @@ def test_vertex_build_kc_normalize_is_additive_like_build_kc(store_collected, co
 
 
 def test_vertex_build_kc_requires_collected_results(gcs, config_path, tmp_path, make_questions):
-    from kcluster.commands.vertex_build_kc import main
-
     data_path = tmp_path / "qs.jsonl"
     dump_questions(make_questions(), str(data_path))
     work_dir = tmp_path / "run"
@@ -121,12 +115,10 @@ def test_vertex_build_kc_requires_collected_results(gcs, config_path, tmp_path, 
     # course leaves dead ones behind), but a log with nothing to build at all
     # must still fail loudly instead of writing an empty kc/ directory.
     with pytest.raises(SystemExit, match="vertex-retrieve"):
-        main(argparse.Namespace(work_dir=str(work_dir), normalize=False, config=config_path))
+        cli_main(["vertex-build-kc", "--work_dir", str(work_dir), "--config", config_path])
 
 
 def test_vertex_retrieve(store_collected, config_path, tmp_path, monkeypatch, make_questions):
-    from kcluster.commands.vertex_retrieve import main
-
     data_path = tmp_path / "qs.jsonl"
     dump_questions(make_questions(), str(data_path))
 
@@ -143,8 +135,8 @@ def test_vertex_retrieve(store_collected, config_path, tmp_path, monkeypatch, ma
                         lambda name: SimpleNamespace(state=JobState.JOB_STATE_FAILED))
 
     out_dir = tmp_path / "pmi"
-    main(argparse.Namespace(jobs_path=str(jobs_path), output_dir=str(out_dir),
-                            symmetric=True, normalize=False, config=config_path))
+    cli_main(["vertex-retrieve", "--jobs_path", str(jobs_path), "--output_dir", str(out_dir),
+              "--config", config_path])
 
     [saved] = sorted(out_dir.iterdir())
     assert saved.name == "job1_pmi-sym-unnorm.npy"
@@ -155,8 +147,6 @@ def test_vertex_retrieve(store_collected, config_path, tmp_path, monkeypatch, ma
 
 
 def test_vertex_launch(gcs, config_path, tmp_path, monkeypatch, make_questions):
-    from kcluster.commands.vertex_launch import main
-
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     dump_questions(make_questions(2), str(data_dir / "course a.jsonl"))
@@ -183,8 +173,7 @@ def test_vertex_launch(gcs, config_path, tmp_path, monkeypatch, make_questions):
     monkeypatch.setattr(vertex.time, "sleep", lambda s: None)
     monkeypatch.setenv("KCLUSTER_RESULTS_DIR", str(tmp_path / "results"))
 
-    main(argparse.Namespace(data_path=str(data_dir), completion_time=60.0,
-                            secs_per_batch=0.1, batch_size=16, config=config_path))
+    cli_main(["vertex-launch", "--data_path", str(data_dir), "--config", config_path])
 
     # The job log records the launched job with a data-derived, timestamped id
     [run] = list((tmp_path / "results").iterdir())  # the work dir; job log at its root (D10)
@@ -199,9 +188,7 @@ def test_vertex_launch(gcs, config_path, tmp_path, monkeypatch, make_questions):
 
 
 def test_cli_lists_vertex_commands(capsys):
-    from kcluster.cli import main
-
-    main(["--help"])
+    cli_main(["--help"])
     out = capsys.readouterr().out
     for command in ("vertex-launch", "vertex-retrieve", "vertex-build-kc"):
         assert command in out

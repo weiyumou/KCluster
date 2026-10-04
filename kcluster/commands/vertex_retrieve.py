@@ -30,7 +30,7 @@ def count_questions(data_path: str) -> int:
 
 def main(args):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-    config = VertexConfig.load(getattr(args, "config", None))
+    config = VertexConfig.load(args.config)
     init(config)
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -79,5 +79,5 @@ def add_arguments(parser):
                         help="Symmetrize the PMI matrix (default: enabled; use --no-symmetric to disable)")
     parser.add_argument("--normalize", action=argparse.BooleanOptionalAction, default=False,
                         help="Normalize the PMI over the question set (default: disabled)")
-    parser.add_argument("--config", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--config", default=None, type=str,
                         help="Path to a vertex TOML config (default: KCLUSTER_VERTEX_* environment)")

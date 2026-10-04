@@ -5,7 +5,6 @@ each collected job, downloads the concepts and PMI values from GCS and runs
 the same clustering as the local ``build-kc`` command.
 """
 
-import argparse
 import json
 import logging
 import os
@@ -37,7 +36,7 @@ def buildable_jobs(jobs_path: str, config: VertexConfig) -> list[dict]:
 
 def main(args):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-    config = VertexConfig.load(getattr(args, "config", None))
+    config = VertexConfig.load(args.config)
 
     jobs_path = os.path.join(args.work_dir, "launched_jobs.jsonl")
     launched_jobs = buildable_jobs(jobs_path, config)
@@ -76,9 +75,8 @@ def main(args):
             return PointwiseMutualInfo.from_array(mtx, symmetric=True, normalize=normalize).pmi_mat
 
         build_kcluster_models(concept_df, questions, congruity, ds=data_name, kc_out_dir=output_dir,
-                              mat_out_dir=mat_dir, normalize=getattr(args, "normalize", False),
-                              residualize=getattr(args, "residualize", False),
-                              residualize_full=getattr(args, "residualize_full", False))
+                              mat_out_dir=mat_dir, normalize=args.normalize, residualize=args.residualize,
+                              residualize_full=args.residualize_full)
 
         print(f"*** Created {concept_df['KC'].nunique()} Concept KCs ***\n\n")
         concept_df.to_csv(os.path.join(concept_dir, f"{data_name}_concept-kc.csv"), index=False)
@@ -102,5 +100,5 @@ def add_arguments(parser):
                         help="Also build a KC model from congruity with the joint item + format "
                              "correction removed — the recommended variant for mixed-format banks; "
                              "implies --residualize")
-    parser.add_argument("--config", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--config", default=None, type=str,
                         help="Path to a vertex TOML config (default: KCLUSTER_VERTEX_* environment)")

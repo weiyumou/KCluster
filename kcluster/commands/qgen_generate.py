@@ -1,4 +1,3 @@
-import argparse
 import glob
 import json
 import os
@@ -37,7 +36,7 @@ def main(args):
     logging.set_verbosity(logging.ERROR)  # Suppress warnings from transformers
 
     # Create a folder to store results
-    output_dir = getattr(args, "output_dir", None) or default_output_dir("qgen", getattr(args, "run_dir", None))
+    output_dir = args.output_dir or default_output_dir("qgen", args.run_dir)
     args.output_dir = prepare_output_dir(output_dir)
     print(f"*** Writing results to {args.output_dir} ***")
 
@@ -46,8 +45,8 @@ def main(args):
 
     # Load configurations
     configs = dict()
-    if c_path := getattr(args, "config_path", None):
-        configs.update(load_generation_configs(c_path))
+    if args.config_path:
+        configs.update(load_generation_configs(args.config_path))
     configs.setdefault("stem", {}).update(guidance_scale=args.guidance_scale)
 
     # Load standards and generate MCQs
@@ -63,7 +62,7 @@ def main(args):
             standards = read_standards(os.path.join(args.std_dir, fname), std_type)
 
             # Generate MCQs
-            stds_per_batch = getattr(args, "stds_per_batch", len(standards))
+            stds_per_batch = args.stds_per_batch or len(standards)
             all_questions, all_prompts = generate_mcq_from_std(llm, standards, std_type, stds_per_batch,
                                                                args.qs_per_std, configs, args.num_choices)
 
@@ -85,12 +84,12 @@ def add_arguments(parser):
     parser.add_argument("--llm_path", required=True, type=str, help="Path to a downloaded LLM")
     parser.add_argument("--std_dir", required=True, type=str,
                         help="Path to a directory containing standards (facts/*.txt, actions/*.txt)")
-    parser.add_argument("--config_path", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--config_path", default=None, type=str,
                         help="Path to a TOML/JSON file of generation configs")
     parser.add_argument("--num_choices", default=4, type=int, help="Number of choices in an MCQ")
     parser.add_argument("--qs_per_std", default=1, type=int, help="Number of questions to generate per standard")
     parser.add_argument("--guidance_scale", default=1.0, type=float, help="Guidance scale for CFG")
-    parser.add_argument("--stds_per_batch", default=argparse.SUPPRESS, type=int, help="Number of standards in a batch")
-    parser.add_argument("--output_dir", default=argparse.SUPPRESS, type=str, help="Path to the output directory")
-    parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--stds_per_batch", default=None, type=int, help="Number of standards in a batch")
+    parser.add_argument("--output_dir", default=None, type=str, help="Path to the output directory")
+    parser.add_argument("--run_dir", default=None, type=str,
                         help="Shared run folder; each step writes to <run_dir>/<step> (env: KCLUSTER_RUN_DIR)")

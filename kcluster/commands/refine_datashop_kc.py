@@ -1,4 +1,3 @@
-import argparse
 import glob
 import os
 import re
@@ -23,7 +22,7 @@ from kcluster.tasks.cluster import create_kc, sim_from_embeddings
 
 def main(args):
     # The result dir (D10 layout) holds the concept KC, embeddings, and shards
-    result_dir = required_result_dir(getattr(args, "result_dir", None), getattr(args, "run_dir", None))
+    result_dir = required_result_dir(args.result_dir, args.run_dir)
     output_dir = prepare_output_dir(os.path.join(result_dir, "kc-refine"), exist_ok=False)
     print(f"*** Writing results to {output_dir} ***")
 
@@ -42,8 +41,7 @@ def main(args):
     assert concept_df["KC"].str.strip().all(), "Some concepts are invalid"
 
     # Recover the questions behind the concepts (--data_path overrides the recorded path)
-    questions = load_questions(question_path(result_dir, result_dataset(result_dir),
-                                             getattr(args, "data_path", None)))
+    questions = load_questions(question_path(result_dir, result_dataset(result_dir), args.data_path))
 
     # Build the two similarity matrices once
     [fname] = glob.glob("*_llm-embed.npy", root_dir=embed_dir(result_dir))
@@ -52,7 +50,7 @@ def main(args):
         f"Expected {len(questions)} questions, got {embeds.shape[0]} embeddings"
     q_cos_sim = sim_from_embeddings(embeds, metric="cosine")
 
-    raw_dir = getattr(args, "pmi_dir", None) or pmi_raw_dir(result_dir)
+    raw_dir = args.pmi_dir or pmi_raw_dir(result_dir)
     pmi = PointwiseMutualInfo.from_shards(raw_dir, len(questions), len(questions),
                                           normalize=True, symmetric=True)
     pmi_sim = pmi.pmi_mat
@@ -98,30 +96,27 @@ def main(args):
     kc.to_csv(kc_path, sep="\t", index=False)
 
     # Merge KCs into student step (for cross-validation) if a path is present
-    if ss_path := getattr(args, "ss_path", None):
-        multiplier = getattr(args, "multiplier", 1)
-        minimal = getattr(args, "minimal", False)
+    if args.ss_path:
         print("*** Merging KCs with student steps ***")
-        ss = merge_student_step_with_kc(ss_path, kc, minimal=minimal, multiplier=multiplier)
+        ss = merge_student_step_with_kc(args.ss_path, kc, minimal=args.minimal, multiplier=args.multiplier)
         fname = os.path.splitext(os.path.basename(kc_path))[0]
-        fname = f"{fname}-merged-minimal={minimal}-multiplier={multiplier}.txt"
+        fname = f"{fname}-merged-minimal={args.minimal}-multiplier={args.multiplier}.txt"
         ss.to_csv(os.path.join(output_dir, fname), sep="\t", index=False)
 
 
 def add_arguments(parser):
     parser.add_argument("--kc_path", required=True, type=str, help="Path to a DataShop KC template file")
     parser.add_argument("--kc_val_path", required=True, type=str, help="Path to a CSV file containing KC values")
-    parser.add_argument("--result_dir", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--result_dir", default=None, type=str,
                         help="The result directory holding the concept KC, embeddings, and score shards "
                              "(default: --run_dir)")
-    parser.add_argument("--pmi_dir", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--pmi_dir", default=None, type=str,
                         help="Directory of raw score shards (default: <result_dir>/mat/pmi/raw)")
-    parser.add_argument("--data_path", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--data_path", default=None, type=str,
                         help="Question file (default: the path recorded in args-*.json)")
-    parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--run_dir", default=None, type=str,
                         help="Result folder shared by every step of this run (env: KCLUSTER_RUN_DIR)")
-    parser.add_argument("--ss_path", default=argparse.SUPPRESS, type=str, help="Path to a DataShop student-step file")
-    parser.add_argument("--minimal", default=argparse.SUPPRESS, action="store_true",
-                        help="Whether to minimize the merged student-step file")
-    parser.add_argument("--multiplier", default=argparse.SUPPRESS, type=int,
+    parser.add_argument("--ss_path", default=None, type=str, help="Path to a DataShop student-step file")
+    parser.add_argument("--minimal", action="store_true", help="Whether to minimize the merged student-step file")
+    parser.add_argument("--multiplier", default=1, type=int,
                         help="Number of times to duplicate each KC model for cross-validation")

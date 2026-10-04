@@ -4,7 +4,6 @@ A four-step "big-kc" with no learning (slope 0, mid-range intercept) is split
 by all three refinement strategies; the two-step healthy KC is left alone.
 """
 
-import argparse
 import json
 
 import numpy as np
@@ -13,7 +12,7 @@ import pytest
 
 pytest.importorskip("torch")
 
-from kcluster.commands.refine_datashop_kc import main
+from kcluster.cli import main as cli_main
 from kcluster.io.jsonl import dump_questions
 from kcluster.tasks.cluster import build_res_df
 
@@ -61,8 +60,8 @@ def test_refine_datashop_kc_end_to_end(tmp_path, make_questions, planted_scores,
         }
     ).to_csv(kc_val_path, index=False)
 
-    main(argparse.Namespace(kc_path=str(kc_path), kc_val_path=str(kc_val_path),
-                            result_dir=str(result_dir)))
+    cli_main(["refine-datashop-kc", "--kc_path", str(kc_path), "--kc_val_path", str(kc_val_path),
+              "--result_dir", str(result_dir)])
 
     refined = pd.read_csv(result_dir / "kc-refine" / "refined-kc.txt", sep="\t")
     for prefix in ("cpt", "qcos", "pmi"):

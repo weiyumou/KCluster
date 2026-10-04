@@ -1,6 +1,11 @@
+import argparse
+import ast
+import importlib
+import inspect
+
 import pytest
 
-from kcluster.cli import main
+from kcluster.cli import COMMANDS, main
 
 
 def test_help_lists_all_commands(capsys):
@@ -36,3 +41,21 @@ def test_subcommand_help_via_lazy_dispatch(capsys):
         main(["build-kc", "--help"])
     assert excinfo.value.code == 0
     assert "--result_dir" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("name, module_path", [(name, module_path) for name, module_path, _ in COMMANDS])
+def test_a_command_reads_only_the_options_its_parser_defines(name, module_path):
+    """Commands read ``args.<option>`` directly, so an option the parser does
+    not define is an AttributeError at run time — and for the commands that
+    need a GPU, no offline test would reach it."""
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as e:
+        pytest.skip(f"{name} needs an optional extra: {e}")
+
+    parser = argparse.ArgumentParser()
+    module.add_arguments(parser)
+    defined = {action.dest for action in parser._actions}
+    read = {node.attr for node in ast.walk(ast.parse(inspect.getsource(module)))
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "args"}
+    assert read <= defined

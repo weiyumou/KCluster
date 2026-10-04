@@ -20,7 +20,6 @@ Both question encoders embed the same rendering, so their KC models differ
 only in the encoder.
 """
 
-import argparse
 import os
 
 import numpy as np
@@ -58,9 +57,8 @@ def _save_and_cluster(name: str, embeds: np.ndarray, ds: str, concept_df, questi
 
 
 def main(args):
-    args.result_dir = result_dir = required_result_dir(getattr(args, "result_dir", None),
-                                                        getattr(args, "run_dir", None))
-    if not getattr(args, "sent_path", None) and not getattr(args, "llm_path", None):
+    args.result_dir = result_dir = required_result_dir(args.result_dir, args.run_dir)
+    if not args.sent_path and not args.llm_path:
         raise SystemExit("Nothing to do: pass --sent_path and/or --llm_path")
     print(f"*** Writing results to {result_dir} ***")
 
@@ -74,7 +72,7 @@ def main(args):
     out_concept_kc = prepare_output_dir(kc_dir(result_dir, "concept"))
 
     # Recover the questions (--data_path overrides the recorded path)
-    args.data_path = question_path(result_dir, ds, getattr(args, "data_path", None))
+    args.data_path = question_path(result_dir, ds, args.data_path)
     questions = load_questions(args.data_path)
     # Row i of the Concept KC is question i, and that is what makes the
     # embeddings joinable to it; a different bank would silently mislabel.
@@ -84,16 +82,16 @@ def main(args):
 
     out_embed = prepare_output_dir(embed_dir(result_dir))
 
-    if sent_path := getattr(args, "sent_path", None):
-        model = SentenceTransformer(sent_path, local_files_only=True)
+    if args.sent_path:
+        model = SentenceTransformer(args.sent_path, local_files_only=True)
         with torch.inference_mode():
             q_embeds = _as_numpy(model.encode([str(q) for q in questions]))
             c_embeds = _as_numpy(model.encode(concept_df["KC"].tolist()))
         _save_and_cluster("sbert", q_embeds, ds, concept_df, questions, out_embed_kc, out_embed)
         _save_and_cluster("concept", c_embeds, ds, concept_df, questions, out_concept_kc, out_embed)
 
-    if llm_path := getattr(args, "llm_path", None):
-        llm = LargeLangModel(llm_path, trust_remote_code=True, torch_dtype=torch.float16)
+    if args.llm_path:
+        llm = LargeLangModel(args.llm_path, trust_remote_code=True, torch_dtype=torch.float16)
         q_embeds = _as_numpy(extract_question_embeds(llm, questions, args.batch_size))
         _save_and_cluster("llm", q_embeds, ds, concept_df, questions, out_embed_kc, out_embed)
 
@@ -101,16 +99,16 @@ def main(args):
 
 
 def add_arguments(parser):
-    parser.add_argument("--result_dir", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--result_dir", default=None, type=str,
                         help="The result directory holding the Concept KC (default: --run_dir)")
-    parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--run_dir", default=None, type=str,
                         help="Result folder shared by every step of this run (env: KCLUSTER_RUN_DIR)")
-    parser.add_argument("--sent_path", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--sent_path", default=None, type=str,
                         help="Path to a SentenceTransformer; builds the sbert-cosine and "
                              "concept-cosine models (CPU is fine)")
-    parser.add_argument("--llm_path", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--llm_path", default=None, type=str,
                         help="Path to a downloaded LLM; builds the llm-cosine model (needs a GPU)")
-    parser.add_argument("--data_path", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--data_path", default=None, type=str,
                         help="Question file for this result dir (default: the path recorded in "
                              "args-*.json, which may not exist on this machine)")
     parser.add_argument("--batch_size", type=int, default=16, help="Number of questions to process in a batch")

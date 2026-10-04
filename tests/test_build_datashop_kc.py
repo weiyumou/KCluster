@@ -1,10 +1,8 @@
 """Offline end-to-end test of the build-datashop-kc command."""
 
-import argparse
-
 import pandas as pd
 
-from kcluster.commands.build_datashop_kc import main
+from kcluster.cli import main as cli_main
 
 
 def test_build_datashop_kc_end_to_end(tmp_path, write_tsv):
@@ -53,8 +51,8 @@ def test_build_datashop_kc_end_to_end(tmp_path, write_tsv):
         tmp_path / "ss.txt",
     )
 
-    main(argparse.Namespace(kc_dir=str(kc_dir), kc_temp=template, step_kc=step_kc,
-                            ss_path=ss_path, multiplier=2))
+    cli_main(["build-datashop-kc", "--kc_dir", str(kc_dir), "--kc_temp", template, "--step_kc", step_kc,
+              "--ss_path", ss_path, "--multiplier", "2"])
 
     [out_dir] = [p for p in kc_dir.iterdir() if p.is_dir()]
     all_kc = pd.read_csv(out_dir / "all-kc.txt", sep="\t")
