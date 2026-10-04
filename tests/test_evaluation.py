@@ -4,6 +4,7 @@ import pytest
 from kcluster.output.evaluation import (
     compute_clustering_metrics,
     eval_datashop_kc,
+    evaluate_kc,
     evaluate_random_kc,
 )
 
@@ -47,3 +48,21 @@ def test_eval_datashop_kc_scores_every_model_against_the_truth():
     assert "partial (2 KCs)" in res.index  # NaN rows masked, not crashed
     assert "good-rand (2 KCs)" in res.index  # the shuffled baseline rows
     assert res.shape[1] == 8
+
+
+def test_evaluate_kc_scores_kc_files_against_a_question_field(tmp_path):
+    # A result dir's kc/ sorts its models into subfolders; both must be found,
+    # and a CSV that is not a KC file must be left alone
+    truth = ["s1", "s1", "s2", "s2"]
+    for folder, model, labels in (("kcluster", "kcluster-unnorm", ["k1", "k1", "k2", "k2"]),
+                                  ("concept", "concept", ["c1", "c2", "c3", "c4"])):
+        (tmp_path / folder).mkdir()
+        pd.DataFrame({"skill": truth, "KC": labels}).to_csv(tmp_path / folder / f"sciqa_{model}-kc.csv", index=False)
+    pd.DataFrame({"x": [1]}).to_csv(tmp_path / "kcluster" / "notes.csv", index=False)
+
+    res = evaluate_kc(str(tmp_path), "skill", random_kc=True, num_runs=3)
+
+    assert res.index.tolist() == ["concept (4 KCs)", "concept-rand (4 KCs)",
+                                  "kcluster-unnorm (2 KCs)", "kcluster-unnorm-rand (2 KCs)"]
+    assert res.loc["kcluster-unnorm (2 KCs)"].eq(1.0).all()  # same partition as the truth
+    assert res.loc["concept (4 KCs)", "Completeness [0, 1]"] < 1.0  # one KC per question splits every skill

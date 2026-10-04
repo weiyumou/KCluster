@@ -27,8 +27,7 @@ remain in the history.
 What drivers share ships in the package, under `kcluster.io`:
 
 - format adapters: DataShop exports and KC-model templates (`io.datashop`,
-  `io.loaders.datashop_export`), OLI course HTML (`io.loaders.oli_html`) and
-  ScienceQA (`io.loaders.sciqa`);
+  `io.loaders.datashop_export`) and OLI course HTML (`io.loaders.oli_html`);
 - writers and validators: `dump_questions` and `validate_question`
   (`io.jsonl`) for the bank; `save_student_step`, `validate_student_step` and
   `check_coverage` (`io.student_step`) for the student-step file.

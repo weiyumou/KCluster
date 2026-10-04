@@ -91,8 +91,8 @@ Questions are JSONL, one object per line:
 ```
 
 Extra fields pass through untouched (e.g. `lo` for learning objectives,
-`ds-step-name` for DataShop step mapping). Format adapters for public
-datasets live in `kcluster/io/loaders/` (e.g. ScienceQA, OLI HTML).
+`ds-step-name` for DataShop step mapping). Format adapters for common
+sources live in `kcluster/io/loaders/` (e.g. DataShop exports, OLI HTML).
 
 ## Repository layout
 
