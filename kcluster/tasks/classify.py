@@ -28,15 +28,12 @@ from kcluster.io.jsonl import dump_questions, load_questions
 
 
 class QuestionLO:
-    def __init__(self, questions: list[Question], los: list[str], lo_type: str):
-        match lo_type:
-            case "actions":
-                self.los = [lo[0].lower() + lo[1:].rstrip().rstrip(".") for lo in los]
-            case "facts":
-                self.los = [lo.rstrip().rstrip(".") for lo in los]
-            case _:
-                raise ValueError(f"Invalid lo_type: '{lo_type}'")
+    HEADERS = {"actions": prompts.LO_ACTIONS_HEADER, "facts": prompts.LO_FACTS_HEADER}
 
+    def __init__(self, questions: list[Question], los: list[str], lo_type: str):
+        if lo_type not in self.HEADERS:
+            raise ValueError(f"Invalid lo_type: '{lo_type}'")
+        self.los = [prompts.normalize_lo(lo, lo_type) for lo in los]
         self.questions, self.lo_type = questions, lo_type
 
     def __getitem__(self, index):
@@ -47,13 +44,7 @@ class QuestionLO:
 
         lo_idx, q_idx = (index - n) // n, (index - n) % n
         lo, q = self.los[lo_idx], self.questions[q_idx]
-        header = None
-        match self.lo_type:
-            case "actions":
-                header = prompts.LO_ACTIONS_HEADER.format(lo=lo)
-            case "facts":
-                header = prompts.LO_FACTS_HEADER.format(lo=lo)
-
+        header = self.HEADERS[self.lo_type].format(lo=lo)
         return f"{header}\n\n" + prompts.LO_ALIGNMENT_MARGINAL_CONTEXT.format(q_type=q.q_type), str(q)
 
     def __len__(self):

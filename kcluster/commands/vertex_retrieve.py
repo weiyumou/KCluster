@@ -10,7 +10,6 @@ the fly first.
 """
 
 import argparse
-import json
 import logging
 import os
 
@@ -19,7 +18,7 @@ from google.cloud import aiplatform
 from google.cloud.aiplatform_v1 import JobState
 
 from kcluster.core.pmi import PointwiseMutualInfo
-from kcluster.engine.vertex import VertexConfig, collect_predictions, download_pmi, init
+from kcluster.engine.vertex import VertexConfig, collect_predictions, download_pmi, init, read_job_log
 
 
 def count_questions(data_path: str) -> int:
@@ -35,8 +34,7 @@ def main(args):
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    with open(args.jobs_path) as f:
-        launched_jobs = [json.loads(line) for line in f]
+    launched_jobs = read_job_log(args.jobs_path)
     logging.info(f"Read {len(launched_jobs)} jobs from '{args.jobs_path}'")
 
     sym_tag = "sym" if args.symmetric else "asym"

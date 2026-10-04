@@ -12,7 +12,6 @@ import itertools
 import os
 import warnings
 from collections.abc import Callable
-from operator import itemgetter
 
 import numpy as np
 import pandas as pd
@@ -60,14 +59,13 @@ def run_ap(questions: list[Question], sim_mtx: np.ndarray,
                                                       return_n_iter=True, random_state=42, **ap_kwargs)
     print(f"Affinity Propagation completed in {num_iters} iterations and created {len(centers)} clusters")
 
-    # Collect clustering results
-    res_dicts = []
-    for q, label in zip(questions, labels, strict=True):
-        q_dict = q.flat_dict
-        q_dict.pop("images", None)
-        q_dict["KC"] = f"KC-{centers[label]}"
-        res_dicts.append(q_dict)
-    return pd.DataFrame.from_records(res_dicts)
+    # Each cluster is named for its exemplar's row (read back by exemplar_index)
+    return build_res_df(questions, [f"KC-{centers[label]}" for label in labels])
+
+
+def exemplar_index(label: str) -> int:
+    """The exemplar's row behind a ``KC-<index>`` cluster label from :func:`run_ap`."""
+    return int(label.split("-")[1])
 
 
 def build_res_df(questions: list[Question], concepts: list[str]) -> pd.DataFrame:
@@ -77,7 +75,7 @@ def build_res_df(questions: list[Question], concepts: list[str]) -> pd.DataFrame
     build-kc command in particular — can import it without the local engine.
     """
     q_dicts = []
-    for q, c in zip(questions, concepts):
+    for q, c in zip(questions, concepts, strict=True):
         q_dict = q.flat_dict
         q_dict.pop("images", None)
         q_dict["KC"] = c
@@ -93,13 +91,13 @@ def create_kc(concept_df: pd.DataFrame, questions: list[Question], sim_mtx: np.n
     Searches for the minimal damping factor leading to convergence; returns
     None if affinity propagation never converges.
     """
-    # Flag convergence issues as errors
-    warnings.filterwarnings("error", category=ConvergenceWarning)
-
     damping = 0.5
     while damping < 1.0:
         try:
-            kc = run_ap(questions, sim_mtx, damping=damping, **kwargs)
+            # Flag convergence issues as errors, for this search only
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", category=ConvergenceWarning)
+                kc = run_ap(questions, sim_mtx, damping=damping, **kwargs)
             assert kc.shape[0] == concept_df.shape[0], "Inconsistent number of questions"
         except ConvergenceWarning:
             print(f"Did not converge when damping = {damping}")
@@ -107,7 +105,7 @@ def create_kc(concept_df: pd.DataFrame, questions: list[Question], sim_mtx: np.n
         else:
             # populate the concepts of exemplars to its subordinates
             kc = kc.rename(columns={"KC": "KC-raw"})
-            exemplars = kc["KC-raw"].str.split("-").apply(itemgetter(1)).apply(int)
+            exemplars = kc["KC-raw"].map(exemplar_index)
             kc["KC"] = concept_df["KC"].iloc[exemplars].reset_index(drop=True)
             return kc
     print("*** Failed to create KCs ***")
@@ -210,7 +208,7 @@ def build_kcluster_models(concept_df: pd.DataFrame, questions: list[Question],
             # only by redoing the estimator and strata by hand.
             np.save(os.path.join(mat_out_dir, f"{ds}_pmi-{tag}.npy"), matrix)
             kc = create_kc(concept_df, questions, matrix)
-            if isinstance(kc, pd.DataFrame):
+            if kc is not None:
                 save_kc_models(kc, os.path.join(kc_out_dir, f"{ds}_kcluster-{tag}-kc.csv"))
                 print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
                 models[f"kcluster-{tag}"] = kc

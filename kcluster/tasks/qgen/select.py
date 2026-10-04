@@ -13,12 +13,13 @@ import numpy as np
 import pandas as pd
 
 from kcluster.core.question import Question
+from kcluster.tasks.cluster import exemplar_index
 
 
 def select_mcq(kc: pd.DataFrame, questions: list[Question],
                mcq_per_lo: int = 6, rng: np.random.Generator = None) -> list[Question]:
     inv_val_counts = kc.value_counts("KC-raw", sort=True).rdiv(1.0)
-    exemplars = [int(x.split("-")[1]) for x in inv_val_counts.index.tolist()]
+    exemplars = [exemplar_index(x) for x in inv_val_counts.index.tolist()]
 
     # all exemplars are selected; if not enough, randomly sample others
     if (n := mcq_per_lo - len(exemplars)) > 0:

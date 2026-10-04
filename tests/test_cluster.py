@@ -1,8 +1,17 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
 
-from kcluster.tasks.cluster import create_kc, run_ap, save_kc_models, sim_from_embeddings, split_collisions
+from kcluster.tasks.cluster import (
+    create_kc,
+    exemplar_index,
+    run_ap,
+    save_kc_models,
+    sim_from_embeddings,
+    split_collisions,
+)
 
 
 @pytest.fixture
@@ -61,7 +70,18 @@ def test_create_kc_returns_none_when_ap_never_converges(two_blobs):
     questions, sim = two_blobs
     concept_df = pd.DataFrame({"KC": ["alpha"] * 6})
     # max_iter below convergence_iter can never satisfy the convergence check.
+    filters = list(warnings.filters)
     assert create_kc(concept_df, questions, sim, max_iter=2) is None
+    # Convergence warnings are errors for the search only, not for the process
+    assert warnings.filters == filters
+
+
+def test_exemplar_index_reads_back_a_cluster_label(two_blobs):
+    questions, sim = two_blobs
+    kc = run_ap(questions, sim)
+    assert exemplar_index("KC-152") == 152
+    # Every cluster is named for one of its own members
+    assert all(kc["KC"].iloc[exemplar_index(label)] == label for label in kc["KC"])
 
 
 def test_split_collisions_disambiguates_shared_labels_only(two_blobs):

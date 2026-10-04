@@ -7,7 +7,7 @@ question files — the inline ``json.loads`` loops and, especially, the
 """
 
 import json
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 
 from kcluster.core.question import Question
 
@@ -30,27 +30,15 @@ def validate_question(q: Question) -> None:
 
 def load_questions(path: str, validate: bool = True) -> list[Question]:
     """Read a JSONL question file (one JSON object per line)."""
-    return _load(path, json.loads, "JSON", validate)
-
-
-def dump_questions(questions: Iterable[Question], path: str) -> None:
-    """Write questions as JSONL (one JSON object per line)."""
-    with open(path, "w") as f:
-        for q in questions:
-            f.write(json.dumps(q.data))
-            f.write("\n")
-
-
-def _load(path: str, parse: Callable, fmt: str, validate: bool) -> list[Question]:
     questions = []
     with open(path, "r") as f:
         for lineno, line in enumerate(f, 1):
             if not line.strip():
                 continue
             try:
-                data = parse(line)
-            except (ValueError, SyntaxError) as e:
-                raise ValueError(f"{path}:{lineno}: not a valid {fmt} line: {e}") from e
+                data = json.loads(line)
+            except ValueError as e:
+                raise ValueError(f"{path}:{lineno}: not a valid JSON line: {e}") from e
             if not isinstance(data, dict):
                 raise ValueError(f"{path}:{lineno}: expected an object per line, got {type(data).__name__}")
             q = Question(data)
@@ -61,3 +49,11 @@ def _load(path: str, parse: Callable, fmt: str, validate: bool) -> list[Question
                     raise ValueError(f"{path}:{lineno}: {e}") from e
             questions.append(q)
     return questions
+
+
+def dump_questions(questions: Iterable[Question], path: str) -> None:
+    """Write questions as JSONL (one JSON object per line)."""
+    with open(path, "w") as f:
+        for q in questions:
+            f.write(json.dumps(q.data))
+            f.write("\n")

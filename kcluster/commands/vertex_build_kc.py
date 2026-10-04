@@ -5,14 +5,19 @@ each collected job, downloads the concepts and PMI values from GCS and runs
 the same clustering as the local ``build-kc`` command.
 """
 
-import json
 import logging
 import os
 
 import numpy as np
 
 from kcluster.core.pmi import PointwiseMutualInfo
-from kcluster.engine.vertex import VertexConfig, collected_inputs, download_concepts, download_pmi
+from kcluster.engine.vertex import (
+    VertexConfig,
+    collected_inputs,
+    download_concepts,
+    download_pmi,
+    read_job_log,
+)
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import dataset_name, kc_dir, pmi_dir, prepare_output_dir, save_args
 from kcluster.tasks.cluster import build_kcluster_models, build_res_df
@@ -25,13 +30,14 @@ def buildable_jobs(jobs_path: str, config: VertexConfig) -> list[dict]:
     once, and only the winning attempt has a pmi.npy. Building every entry would
     stop on the first dead one, so keep just the attempt that has results.
     """
-    with open(jobs_path) as f:
-        entries = [json.loads(line) for line in f if line.strip()]
     collected = collected_inputs(jobs_path, config)
-    for item in entries:
-        if collected.get(item["data_path"]) != item["job_id"]:
+    buildable = []
+    for item in read_job_log(jobs_path):
+        if collected.get(item["data_path"]) == item["job_id"]:
+            buildable.append(item)
+        else:
             logging.info(f"Skipping '{item['job_id']}': superseded or never produced results")
-    return [item for item in entries if collected.get(item["data_path"]) == item["job_id"]]
+    return buildable
 
 
 def main(args):

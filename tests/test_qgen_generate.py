@@ -116,3 +116,10 @@ def test_generate_mcq_from_std_assigns_los():
     # Every seed prompt embeds its standard and the shared MCQ header
     assert "whether a student can standard one" in prompts[0]
     assert "Multiple Choice (best out of 2 options):" in prompts[0]
+
+
+def test_generate_mcq_from_std_without_configs_warns_and_uses_defaults():
+    with pytest.warns(UserWarning, match="default generation config"):
+        questions, _ = generate_mcq_from_std(StubLLM(), ["standard one"], "actions", stds_per_batch=1, qs_per_std=1,
+                                             num_choices=2)
+    assert [q["lo"] for q in questions] == ["standard one"]

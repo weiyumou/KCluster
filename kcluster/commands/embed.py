@@ -51,7 +51,7 @@ def _save_and_cluster(name: str, embeds: np.ndarray, ds: str, concept_df, questi
     np.save(os.path.join(out_embed, f"{ds}_{name}-embed.npy"), embeds)
     print(f"*** Building KCs based on {name}, metric='cosine' ***")
     kc = create_kc(concept_df, questions, sim_from_embeddings(embeds, metric="cosine"))
-    if isinstance(kc, pd.DataFrame):
+    if kc is not None:
         save_kc_models(kc, os.path.join(out_kc, f"{ds}_{name}-cosine-kc.csv"))
         print(f"*** Finished with {kc['KC'].nunique()} KCs ***")
 

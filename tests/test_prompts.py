@@ -5,6 +5,8 @@ If one of these fails, a prompt changed — that is a scientific decision
 requiring a PROMPT_VERSION bump, not a wording cleanup.
 """
 
+import pytest
+
 from kcluster.core import prompts
 from kcluster.core.question import Question
 
@@ -50,10 +52,28 @@ def test_concept_prompt_noun_and_verbal_variants():
     assert prompts.concept_prompt(q, verbal=True).endswith("that tests whether the student can")
 
 
+def test_concept_decoding_is_shared_by_both_engines():
+    # The local concept step and the Vertex job both read these; a concept is
+    # the completion up to its first period or comma, cleaned of that token.
+    assert prompts.CONCEPT_STOP_TOKENS == (".", ",")
+    assert (prompts.CONCEPT_NUM_BEAMS, prompts.CONCEPT_LENGTH_PENALTY) == (5, -0.1)
+    assert prompts.clean_concept(" flexibility. ") == "flexibility"
+    assert prompts.clean_concept("states of matter,") == "states of matter"
+    assert prompts.clean_concept(" Ohm's law") == "Ohm's law"
+
+
 def test_lo_alignment_scaffolds():
     assert prompts.LO_ALIGNMENT_MARGINAL_CONTEXT == "{q_type}:\n"
     assert prompts.LO_ACTIONS_HEADER == "The exercise below is designed to test whether a student can {lo}."
     assert prompts.LO_FACTS_HEADER == "The exercise below is designed to test whether a student knows:\n{lo}."
+
+
+def test_normalize_lo_fits_an_objective_to_its_scaffold():
+    # Both scaffolds end the sentence themselves; an action continues "...a student can"
+    assert prompts.normalize_lo("Explain how levers work.\n", "actions") == "explain how levers work"
+    assert prompts.normalize_lo("Water boils at 100 C..", "facts") == "Water boils at 100 C"
+    with pytest.raises(ValueError, match="lo_type"):
+        prompts.normalize_lo("Explain how levers work.", "verbs")
 
 
 def test_qgen_scaffolds():

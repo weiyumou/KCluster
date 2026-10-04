@@ -77,12 +77,12 @@ def main(args):
         # Refinement using 'question-cosine'
         print("*** Refining KCs based on question, metric='cosine' ***")
         q_cos_kc = create_kc(concept_kc, questions, q_cos_sim, predicate=predicate)
-        assert isinstance(q_cos_kc, pd.DataFrame), "Failed to create KCs with question-cosine"
+        assert q_cos_kc is not None, "Failed to create KCs with question-cosine"
 
         # Refinement using PMI
         print("*** Refining KCs with KCluster-PMI ***")
         pmi_kc = create_kc(concept_kc, questions, pmi_sim, predicate=predicate)
-        assert isinstance(pmi_kc, pd.DataFrame), "Failed to create KCs with KCluster-PMI"
+        assert pmi_kc is not None, "Failed to create KCs with KCluster-PMI"
 
         for name, df in zip((f"{item}-{kc_label}" for item in ("cpt", "qcos", "pmi")), (concept_kc, q_cos_kc, pmi_kc)):
             kc[f"KC ({name})"] = kc[f"KC ({kcm})"]

@@ -10,6 +10,10 @@ Templates are ``str.format`` style. Composition helpers that need a
 Question take it duck-typed (``header``/``q_type``/``__str__``) to keep
 this module import-free. The human-facing survey wording lives with the
 survey writer in kcluster/output/qualtrics.py, not here.
+
+What fixes a prompt's *reading* sits beside it, because both engines must
+agree on it as exactly as on the string: where a concept completion stops and
+how it is cleaned, and the form an objective takes inside its scaffold.
 """
 
 PROMPT_VERSION = 1
@@ -40,10 +44,22 @@ CONCEPT_TRAILER_VERBAL = "whether the student can"
 CONCEPT_PROMPT = "{header}\n{question}\n\nRemark:\nThe above exercise is a {q_type} question that tests {trailer}"
 
 
+# The concept is the completion up to its first period or comma, found by beam
+# search under a negative length penalty that keeps it short.
+CONCEPT_STOP_TOKENS = (".", ",")
+CONCEPT_NUM_BEAMS = 5
+CONCEPT_LENGTH_PENALTY = -0.1
+
+
 def concept_prompt(question, verbal: bool = False) -> str:
     trailer = CONCEPT_TRAILER_VERBAL if verbal else CONCEPT_TRAILER_NOUN
     q_type = question.q_type.lower().replace(SPACE, "-")
     return CONCEPT_PROMPT.format(header=question.header(1), question=question, q_type=q_type, trailer=trailer)
+
+
+def clean_concept(completion: str) -> str:
+    """The concept a completion names: without surrounding whitespace or the stop token."""
+    return completion.strip().rstrip("".join(CONCEPT_STOP_TOKENS))
 
 
 # --- LO alignment (LAK 2026; tasks/classify.py). The marginal is the bare
@@ -51,6 +67,22 @@ def concept_prompt(question, verbal: bool = False) -> str:
 LO_ALIGNMENT_MARGINAL_CONTEXT = "{q_type}:\n"
 LO_ACTIONS_HEADER = "The exercise below is designed to test whether a student can {lo}."
 LO_FACTS_HEADER = "The exercise below is designed to test whether a student knows:\n{lo}."
+
+
+def normalize_lo(lo: str, lo_type: str) -> str:
+    """A learning objective or standard in the form its scaffold embeds.
+
+    The scaffolds here and under MCQ generation end the sentence themselves, so
+    the trailing period goes; an ``actions`` objective is a verb phrase that
+    continues "...whether a student can", so it is also decapitalized.
+    """
+    match lo_type:
+        case "actions":
+            return lo[0].lower() + lo[1:].rstrip().rstrip(".")
+        case "facts":
+            return lo.rstrip().rstrip(".")
+        case _:
+            raise ValueError(f"Invalid lo_type: '{lo_type}'")
 
 # --- MCQ generation (LAK 2026; tasks/qgen/generate.py) ---
 QGEN_SEED_ACTIONS = "The exercises below are designed to test whether a student can {std}.\n\n{header}"

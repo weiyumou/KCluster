@@ -108,13 +108,7 @@ def create_seed_prompts(standards: list[str], std_type: str, header: str) -> lis
 def read_standards(path: str, std_type: str) -> list[str]:
     """Read one standard per line, normalized like the classify task's LOs."""
     with open(path, "r") as f:
-        match std_type:
-            case "actions":
-                return [line[0].lower() + line[1:].rstrip().rstrip(".") for line in f if line.strip()]
-            case "facts":
-                return [line.rstrip().rstrip(".") for line in f if line.strip()]
-            case _:
-                raise ValueError(f"Invalid std_type: '{std_type}'")
+        return [prompt_registry.normalize_lo(line, std_type) for line in f if line.strip()]
 
 
 def generate_mcq_from_std(llm: LargeLangModel,
@@ -122,6 +116,7 @@ def generate_mcq_from_std(llm: LargeLangModel,
                           configs: dict[str, dict] = None, num_choices: int = 4) -> tuple[list[Question], list[str]]:
     if not configs:
         warnings.warn("Given no custom config, default generation config is used")
+        configs = {}
 
     header = prompt_registry.QGEN_MCQ_HEADER.format(num_choices=num_choices)
 

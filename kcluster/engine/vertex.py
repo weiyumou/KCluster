@@ -28,7 +28,13 @@ import numpy as np
 from google.cloud import aiplatform, storage
 from google.cloud.aiplatform_v1 import JobState
 
-from kcluster.core.prompts import concept_prompt
+from kcluster.core.prompts import (
+    CONCEPT_LENGTH_PENALTY,
+    CONCEPT_NUM_BEAMS,
+    CONCEPT_STOP_TOKENS,
+    clean_concept,
+    concept_prompt,
+)
 from kcluster.core.question import Question
 from kcluster.tasks.congruity import PairQuestion
 
@@ -102,8 +108,9 @@ def prepare_concept_jobs(questions: list[Question], verbal: bool = False, config
     # Prepare concept-specific parameters, which can be overridden by configs
     configs = configs or dict()
     parameters = {
-        PURPOSE: {"stop_tokens": [".", ","], "do_sample": False, "pad_to_multiple_of": 8,
-                  "max_new_tokens": 20, "num_beams": 5, "length_penalty": -0.1, **configs}
+        PURPOSE: {"stop_tokens": list(CONCEPT_STOP_TOKENS), "do_sample": False, "pad_to_multiple_of": 8,
+                  "max_new_tokens": 20, "num_beams": CONCEPT_NUM_BEAMS, "length_penalty": CONCEPT_LENGTH_PENALTY,
+                  **configs}
     }
 
     # Prepare the content of each instance (the same prompt the local
@@ -192,7 +199,7 @@ def collect_predictions(job_id: str, num_questions: int, config: VertexConfig):
     bucket = storage_client.bucket(config.bucket)
 
     # Save the concepts to a jsonl file in GCS
-    results["concept"] = [c.strip().rstrip(".,") for c in results["concept"]]
+    results["concept"] = [clean_concept(c) for c in results["concept"]]
     concept_blob = bucket.blob(f"{config.output_prefix}/{job_id}/concepts.jsonl")
     with concept_blob.open("w") as f:
         f.write("\n".join(json.dumps({"concept": c}) for c in results["concept"]))
@@ -224,6 +231,12 @@ def download_concepts(job_id: str, config: VertexConfig) -> list[str] | None:
         return [json.loads(line)["concept"] for line in f]
 
 
+def read_job_log(jobs_path: str) -> list[dict]:
+    """The entries of a job log (``launched_jobs.jsonl``), oldest first."""
+    with open(jobs_path) as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
 def collected_inputs(jobs_path: str, config: VertexConfig) -> dict[str, str]:
     """Map each input file in a job log to the job that already has results.
 
@@ -234,15 +247,9 @@ def collected_inputs(jobs_path: str, config: VertexConfig) -> dict[str, str]:
     """
     if not os.path.exists(jobs_path):
         return {}
-    collected = {}
-    with open(jobs_path) as f:
-        for line in f:
-            if not line.strip():
-                continue
-            item = json.loads(line)
-            if download_pmi(item["job_id"], config) is not None:
-                collected[item["data_path"]] = item["job_id"]
-    logging.info(f"{len(collected)} input file(s) already have collected results in {jobs_path}")
+    collected = {item["data_path"]: item["job_id"] for item in read_job_log(jobs_path)
+                 if download_pmi(item["job_id"], config) is not None}
+    logger.info(f"{len(collected)} input file(s) already have collected results in {jobs_path}")
     return collected
 
 

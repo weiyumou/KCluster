@@ -3,6 +3,7 @@ import os
 import torch
 from transformers.utils import logging
 
+from kcluster.core.prompts import CONCEPT_LENGTH_PENALTY, CONCEPT_NUM_BEAMS
 from kcluster.engine.local import LargeLangModel
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import dataset_name, default_result_dir, kc_dir, prepare_output_dir, save_args
@@ -49,6 +50,8 @@ def add_arguments(parser):
                         help="Result folder shared by every step of this run (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--verbal", action="store_true", help="Whether the concept should start with a verb")
     parser.add_argument("--batch_size", type=int, default=16, help="Number of questions to process in a batch")
-    parser.add_argument("--num_beams", type=int, default=5, help="Number of beams employed in beam search")
-    parser.add_argument("--length_penalty", type=float, default=-0.1, help="Length penalty for beam search")
+    parser.add_argument("--num_beams", type=int, default=CONCEPT_NUM_BEAMS,
+                        help="Number of beams employed in beam search")
+    parser.add_argument("--length_penalty", type=float, default=CONCEPT_LENGTH_PENALTY,
+                        help="Length penalty for beam search")
     parser.add_argument("--pad_to_multiple_of", type=int, default=None, help="Pad to multiple of")
