@@ -20,7 +20,8 @@ never rename it mid-pipeline.
 
 Whatever turns a raw export into these files is a *driver*. Drivers are not
 part of this repository: each encodes the quirks of one export whose raw data
-cannot be redistributed, so it lives with the data it builds. The drivers
+cannot be redistributed, so it lives in a private project beside the data
+it builds. The drivers
 behind the datasets in KCluster's papers lived in this folder up to 20aaa96 and
 remain in the history.
 
