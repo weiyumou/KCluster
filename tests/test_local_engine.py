@@ -57,3 +57,43 @@ def test_custom_writer_shard_filenames_are_rank_stamped(tmp_path):
     writer.write_on_epoch_end(FakeTrainer(), None, [torch.tensor([1.0])], [[torch.tensor([0])]])
     assert (tmp_path / "predictions_0.pt").exists()
     assert (tmp_path / "batch_indices_0.pt").exists()
+
+
+@pytest.mark.filterwarnings("ignore:.*pin_memory.*:UserWarning")  # no CUDA on a dev machine
+def test_score_pairs_feeds_the_grid_to_a_gpu_trainer_in_order(tmp_path, monkeypatch):
+    import torch
+
+    from kcluster.engine import local
+
+    seen = {"pad": []}
+
+    class FakeTrainer:
+        def __init__(self, **kwargs):
+            seen["trainer"] = kwargs
+
+        def predict(self, model, dataloaders, return_predictions):
+            seen.update(model=model, batches=list(dataloaders), return_predictions=return_predictions)
+
+    def fake_tokenizer(text, text_pair, **kwargs):
+        seen["pad"].append(kwargs["pad_to_multiple_of"])
+        return {"input_ids": torch.tensor([[int(t[1:]), 7] for t in text_pair]),
+                "token_type_ids": torch.tensor([[0, 1]] * len(text))}
+
+    monkeypatch.setattr(local.L, "Trainer", FakeTrainer)
+    pairs = [("c0", "t0"), ("c1", "t1"), ("c2", "t2")]
+    local.score_pairs("scorer", fake_tokenizer, pairs, str(tmp_path), batch_size=2, pad_to_multiple_of=8,
+                      strategy="ddp")
+
+    kwargs = seen["trainer"]
+    assert (kwargs["accelerator"], kwargs["devices"], kwargs["strategy"], kwargs["logger"]) == ("gpu", -1, "ddp", False)
+    [writer] = kwargs["callbacks"]
+    assert isinstance(writer, local.CustomWriter) and writer.output_dir == str(tmp_path)
+    assert seen["model"] == "scorer" and seen["return_predictions"] is False
+    # Unshuffled, in dataset order: from_shards puts each score back by its flat index
+    assert [inputs["input_ids"][:, 0].tolist() for inputs, _ in seen["batches"]] == [[0, 1], [2]]
+    assert [labels.tolist() for _, labels in seen["batches"]] == [[[-100, 7], [-100, 7]], [[-100, 7]]]
+    assert seen["pad"] == [8, 8]
+
+    # Trainer arguments pass through: one device, and no strategy unless asked for
+    local.score_pairs("scorer", fake_tokenizer, pairs, str(tmp_path), devices=1)
+    assert seen["trainer"]["devices"] == 1 and "strategy" not in seen["trainer"]

@@ -1,13 +1,10 @@
 import json
 import os
-from functools import partial
 
-import lightning as L
 import torch
-from torch.utils.data import DataLoader
 from transformers.utils import logging
 
-from kcluster.engine.local import CustomWriter, LargeLangModel, LogProbScorer, collate_pair
+from kcluster.engine.local import LargeLangModel, LogProbScorer, score_pairs
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import dataset_name, default_output_dir, prepare_output_dir, save_args
 from kcluster.tasks.classify import QuestionLO, classify_from_pmi
@@ -32,13 +29,8 @@ def main(args):
     all_los = list(set(q["lo"] for q in all_questions))
 
     # Compute PMI for questions and LOs
-    ds = QuestionLO(all_questions, all_los, args.lo_type)
-    dl = DataLoader(ds, batch_size=args.batch_size, pin_memory=True, shuffle=False, num_workers=args.num_workers,
-                    collate_fn=partial(collate_pair, tokenizer=tokenizer, pad_to_multiple_of=args.pad_to_multiple_of))
-
-    pred_writer = CustomWriter(output_dir=args.output_dir, write_interval="epoch")
-    trainer = L.Trainer(accelerator="gpu", devices=-1, callbacks=[pred_writer], logger=False)
-    trainer.predict(model, dataloaders=dl, return_predictions=False)
+    score_pairs(model, tokenizer, QuestionLO(all_questions, all_los, args.lo_type), args.output_dir,
+                batch_size=args.batch_size, num_workers=args.num_workers, pad_to_multiple_of=args.pad_to_multiple_of)
 
     ds = dataset_name(args.data_path)
     # Save LOs

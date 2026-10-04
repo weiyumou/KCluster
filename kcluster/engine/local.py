@@ -3,12 +3,35 @@ the Lightning batch scorer that shards large scoring jobs across GPUs."""
 
 import itertools
 import os
+from functools import partial
 
 import lightning as L
 import torch
 import torch.nn.functional as F
 from lightning.pytorch.callbacks import BasePredictionWriter
+from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+
+def _pair_inputs(tokenizer, contexts, texts, pad_to_multiple_of: int = None, device=None):
+    """Model inputs for a batch of (context, text) pairs, and the mask of each text's tokens.
+
+    The tokenizer marks the second sequence of a pair in ``token_type_ids``;
+    that marker is what lets scoring and pooling cover the text alone, leaving
+    out the context and the padding.
+    """
+    inputs = tokenizer(text=contexts, text_pair=texts,
+                       return_tensors="pt", return_token_type_ids=True,
+                       padding=True, pad_to_multiple_of=pad_to_multiple_of)
+    if device is not None:
+        inputs = inputs.to(device)
+    return inputs, inputs.pop("token_type_ids").bool()
+
+
+def _token_loss(model, inputs, labels, ignore_idx: int = -100):
+    """Per-token cross-entropy of each label given the tokens before it, 0 where ignored."""
+    logits = model(**inputs).logits.transpose(-1, -2)  # (N, V, S)
+    return F.cross_entropy(logits[..., :-1], labels[:, 1:], reduction="none", ignore_index=ignore_idx)  # (N, S)
 
 
 class LargeLangModel:
@@ -84,17 +107,12 @@ class LargeLangModel:
         """Computes the log-prob of a batch of texts, optionally given contexts"""
         if not contexts:
             contexts = [self.pad_token] * len(texts)
-        inputs = self.tokenizer(text=contexts, text_pair=texts,
-                                return_tensors="pt", return_token_type_ids=True,
-                                padding=True, pad_to_multiple_of=pad_to_multiple_of).to(self.device)
-        mask = torch.logical_not(inputs.pop("token_type_ids"))
-        labels = torch.masked_fill(inputs["input_ids"], mask, ignore_idx)
-
-        logits = self.model(**inputs).logits.transpose(-1, -2)  # (N, V, S)
-        loss = F.cross_entropy(logits[..., :-1], labels[:, 1:], reduction="none", ignore_index=ignore_idx)  # (N, S)
+        inputs, is_text = _pair_inputs(self.tokenizer, contexts, texts, pad_to_multiple_of, self.device)
+        labels = torch.masked_fill(inputs["input_ids"], ~is_text, ignore_idx)
+        loss = _token_loss(self.model, inputs, labels, ignore_idx)  # (N, S)
 
         if return_ppl:  # calculate perplexity
-            return torch.exp(torch.sum(loss, dim=-1) / torch.sum(~mask, dim=-1))  # (N,)
+            return torch.exp(torch.sum(loss, dim=-1) / torch.sum(is_text, dim=-1))  # (N,)
 
         return -torch.sum(loss, dim=-1)  # (N,)
 
@@ -102,10 +120,7 @@ class LargeLangModel:
         """Encodes a batch of texts (with optional contexts) using mean-pooled last-layer hidden states"""
         if not contexts:
             contexts = [self.pad_token] * len(texts)
-        inputs = self.tokenizer(text=contexts, text_pair=texts,
-                                return_tensors="pt", return_token_type_ids=True,
-                                padding=True, pad_to_multiple_of=pad_to_multiple_of).to(self.device)
-        mask = inputs.pop("token_type_ids").bool()  # (N, S)
+        inputs, mask = _pair_inputs(self.tokenizer, contexts, texts, pad_to_multiple_of, self.device)  # mask: (N, S)
         indices = torch.cumsum(torch.sum(mask, dim=-1), dim=-1).tolist()  # (N,)
 
         last_states = self.model(**inputs, output_hidden_states=True).hidden_states[-1]  # (N, S, H)
@@ -118,14 +133,8 @@ class LargeLangModel:
 def collate_pair(batch: list[tuple[str, str]], tokenizer,
                  pad_to_multiple_of: int = None, ignore_idx: int = -100):
     contexts, texts = list(zip(*batch))
-
-    inputs = tokenizer(text=contexts, text_pair=texts,
-                       return_tensors="pt", return_token_type_ids=True,
-                       padding=True, pad_to_multiple_of=pad_to_multiple_of)
-    mask = torch.logical_not(inputs.pop("token_type_ids"))
-    labels = torch.masked_fill(inputs["input_ids"], mask, ignore_idx)
-
-    return inputs, labels
+    inputs, is_text = _pair_inputs(tokenizer, contexts, texts, pad_to_multiple_of)
+    return inputs, torch.masked_fill(inputs["input_ids"], ~is_text, ignore_idx)
 
 
 class LogProbScorer(L.LightningModule):
@@ -135,9 +144,7 @@ class LogProbScorer(L.LightningModule):
 
     def forward(self, batch):
         inputs, labels = batch
-        logits = self.model(**inputs).logits.transpose(-1, -2)  # (N, V, S)
-        loss = F.cross_entropy(logits[..., :-1], labels[:, 1:], reduction="none")  # (N, S)
-        return -torch.sum(loss, dim=-1)  # (N,)
+        return -torch.sum(_token_loss(self.model, inputs, labels), dim=-1)  # (N,)
 
 
 class CustomWriter(BasePredictionWriter):
@@ -151,3 +158,20 @@ class CustomWriter(BasePredictionWriter):
 
         # save `batch_indices` to get the information about the data index from prediction data
         torch.save(batch_indices, os.path.join(self.output_dir, f"batch_indices_{trainer.global_rank}.pt"))
+
+
+def score_pairs(model: LogProbScorer, tokenizer, pairs, shard_dir: str, *, batch_size: int = 16,
+                num_workers: int = 0, pad_to_multiple_of: int = None, **trainer_kwargs) -> None:
+    """Score a grid of (context, text) pairs on the GPUs, as shards in ``shard_dir``.
+
+    ``pairs`` is a map-style dataset of (context, text) tuples — ``PairQuestion``,
+    ``QuestionLO`` — and each rank writes the log-prob of every text given its
+    context to its own shard pair, which ``PointwiseMutualInfo.from_shards``
+    reassembles. ``trainer_kwargs`` reach ``L.Trainer``: ``devices`` (every GPU
+    unless given) and ``strategy``.
+    """
+    dl = DataLoader(pairs, batch_size=batch_size, pin_memory=True, shuffle=False, num_workers=num_workers,
+                    collate_fn=partial(collate_pair, tokenizer=tokenizer, pad_to_multiple_of=pad_to_multiple_of))
+    trainer = L.Trainer(accelerator="gpu", callbacks=[CustomWriter(output_dir=shard_dir, write_interval="epoch")],
+                        logger=False, **{"devices": -1, **trainer_kwargs})
+    trainer.predict(model, dataloaders=dl, return_predictions=False)
