@@ -65,9 +65,10 @@ identically shaped.
 `build-kc` writes the KCluster model (`<ds>_kcluster-unnorm-kc.csv`)
 discovered by affinity propagation over the congruity matrix, alongside the
 concept model the concept step produced; `embed` adds cosine baselines from
-question and concept embeddings. `build-datashop-kc` and
-`refine-datashop-kc` then insert and refine KC models in
-[DataShop](https://pslcdatashop.web.cmu.edu/) format for AFM evaluation.
+question and concept embeddings. `build-datashop-kc` fills a
+[DataShop](https://pslcdatashop.web.cmu.edu/) KC-model export with a run's
+KC models, ready to import for AFM evaluation there, and
+`refine-datashop-kc` splits the KCs that fit poorly.
 
 **No GPU?** The scoring steps run as Vertex AI batch jobs in your own GCP
 project: deploy the model once ([`deploy/vertex/`](deploy/vertex/README.md)),

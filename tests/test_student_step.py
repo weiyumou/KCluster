@@ -5,6 +5,7 @@ from kcluster.core.question import Question
 from kcluster.datashop.student_step import (
     MINIMAL_SUFFIX,
     check_coverage,
+    covered_rows,
     load_student_step,
     save_student_step,
     validate_student_step,
@@ -164,6 +165,11 @@ def test_coverage_reports_uncovered_datashop_question():
                  _q("e-2", **{"ds-problem-name": "quiz2", "ds-step-name": "q2s1"}),
                  _q("e-3", **{"ds-problem-name": "quiz3", "ds-step-name": "q3s1"})]
     assert check_coverage(questions, _ds_frame()) == ["e-3"]
+
+
+def test_covered_rows_says_which_rows_a_bank_reaches_without_raising():
+    # fa-2 has no question, and nothing is raised over it as check_coverage would
+    assert covered_rows([_q("fa-1")], _frame()).tolist() == [True, False, True]
 
 
 def test_ambiguous_key_raises():

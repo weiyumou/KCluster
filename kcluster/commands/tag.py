@@ -47,7 +47,7 @@ from kcluster.tasks.tag import (
 def main(args):
     run = run_dir(args.run_dir)
     kc_paths = [os.path.abspath(path) for path in args.kc_paths]
-    kc_paths += _run_dir_kc_paths(run) if run else []
+    kc_paths += run_dir_kc_paths(run) if run else []
 
     kc_models = load_kc_models(dict.fromkeys(kc_paths))
 
@@ -80,7 +80,7 @@ def _report_scope(ss: pd.DataFrame, tagged: pd.DataFrame, scope_column: str | No
           f"{before:,} student id(s) -> {after:,} subject(s) ***")
 
 
-def _run_dir_kc_paths(run: str) -> list[str]:
+def run_dir_kc_paths(run: str) -> list[str]:
     """The KC files of a result dir: its own ``kc/``, else its result dirs' own.
 
     One level down is where a Vertex work dir keeps them, one result dir per

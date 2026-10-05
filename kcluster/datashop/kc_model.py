@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 This module contains functions for working with DataShop Knowledge Component (KC) models.
+
+A KC model reaches DataShop's rows through one join, :func:`join_kc_model`:
+onto a student-step file (``kcluster tag``) or onto a KC-model export, to
+import back into DataShop (:func:`fill_kc_template`).
 """
-import itertools
+import csv
 import os
 import re
 from collections import defaultdict
@@ -10,9 +14,15 @@ from collections import defaultdict
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
+from kcluster.datashop.student_step import DS_KEY_FIELDS, MULTI_KC_SEP, check_coverage, covered_rows
 from kcluster.io.jsonl import load_questions
 
 KC_PAT = r"KC \((?P<name>.+?)(-\d+)?\)"
+
+#: A KC model's column in a KC-model export. A step with several KCs repeats
+#: its model's column, one KC in each, which pandas reads back as
+#: ``KC (<model>).1``, ``KC (<model>).2`` and so on.
+TEMPLATE_KC_COLUMN = re.compile(r"^KC \((?P<name>.+)\)(\.\d+)?$")
 
 
 def load_datashop_temp(path: str) -> pd.DataFrame:
@@ -27,6 +37,31 @@ def load_datashop_temp(path: str) -> pd.DataFrame:
 def save_datashop_temp(df: pd.DataFrame, path: str) -> None:
     """Save KC models to a DataShop tab-delimited template file"""
     df.to_csv(path, sep="\t", index=False)
+
+
+def load_kc_template(path: str) -> pd.DataFrame:
+    """Read a DataShop KC-model export cell for cell, to be filled and imported back.
+
+    DataShop's import wants every column but the KC models back as exported, so
+    unlike :func:`load_datashop_temp` nothing is parsed, filled, unquoted or
+    dropped: every cell is a string, an empty cell ``""``. The exception is the
+    nameless, empty column the trailing tab on DataShop's header line makes.
+    """
+    template = pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False, quoting=csv.QUOTE_NONE)
+    nameless = [col for col in template.columns
+                if col.startswith("Unnamed: ") and template[col].fillna("").eq("").all()]
+    return template.drop(columns=nameless)
+
+
+def save_kc_template(df: pd.DataFrame, path: str) -> None:
+    """Write a filled KC-model export for DataShop's import, every cell as it is.
+
+    Nothing is quoted: DataShop splits each line on tabs and takes the cells as
+    they come, so a KC label with quotes in it (``the "carrots and sticks"
+    approach``) must go out as it is, or the quoting becomes part of its name.
+    A tab or line break in a cell raises instead.
+    """
+    df.to_csv(path, sep="\t", index=False, quoting=csv.QUOTE_NONE)
 
 
 def create_default_kc(kc_temp_path: str,
@@ -94,53 +129,6 @@ def create_kc_from_questions(data_path: str, kc_temp_path: str,
         save_datashop_temp(kc_temp, fname)
 
     return kc_temp
-
-
-def adjust_datashop_kc(data_path: str, kc_path: str, step_kc_path: str, save_to_file: bool = False,
-                       old_to_new_kc: dict = None, new_kc_suffix: str = "new") -> pd.DataFrame:
-    """
-    Adjust existing DataShop KC models according to available questions
-    :param data_path: A path to a jsonl file containing questions, e.g., "data/elearning/elearning22-mcq.jsonl"
-    :param kc_path: A path to a (filled) DataShop KC template file, e.g., "data/datashop/ds5426-elearning/ds5426_kcm.txt"
-    :param step_kc_path: A path to a (system-generated) unique-step KC model,
-        e.g., "data/datashop/ds5426-elearning/unique-step.txt"
-    :param save_to_file: Whether to save the new KC models to a file
-    :param old_to_new_kc: A mapping between old and new KC names
-    :param new_kc_suffix: If `old_to_new_kc` is not provided, extend old KC names by `new_kc_suffix`
-    :return: A modified KC model as a DataFrame
-    """
-    # Load the existing KC model and identify the KC mask
-    kc = load_datashop_temp(kc_path)
-    kc_mask = kc.filter(regex=KC_PAT).isna().any(axis=1)
-
-    # Extract existing KC models
-    kc_names = [re.match(KC_PAT, col).group("name") for col in kc.filter(regex=KC_PAT).columns]
-
-    # Load questions and identify the problem mask
-    questions = load_questions(data_path)
-
-    ds_step_names = set(itertools.chain.from_iterable(q["ds-step-name"] for q in questions))
-    prob_mask = ~kc["Step Name"].isin(ds_step_names)
-
-    # Load the unique-step KC model
-    step_kc = load_datashop_temp(step_kc_path)
-    step_mask = step_kc["KC (Unique-step)"].isna()
-
-    # Empty any cells where the problem name is not found in available questions
-    mask = kc_mask | prob_mask | step_mask
-    kc.loc[mask, [f"KC ({kcm})" for kcm in kc_names]] = None
-
-    # Adjust old-to-new KC mappings
-    old_to_new_kc = old_to_new_kc or {}
-    old_to_new_kc = {f"KC ({key})": f"KC ({val})" for key, val in old_to_new_kc.items()}
-    default_mapping = {f"KC ({kcm})": f"KC ({kcm.replace(' ', '-')}-{new_kc_suffix})" for kcm in kc_names}
-    old_to_new_kc = default_mapping | old_to_new_kc
-
-    # Rename and save KC models
-    kc.rename(columns=old_to_new_kc, inplace=True)
-    if save_to_file:
-        kc.to_csv(f"{os.path.splitext(kc_path)[0]}-new.txt", sep="\t", index=False)
-    return kc
 
 
 def get_step_to_kc(kc: pd.DataFrame) -> dict[str, str]:
@@ -222,6 +210,149 @@ def create_datashop_kc(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
         kc_temp.loc[kc_mask, list(kc_cols.values())] = None
 
     return kc_temp
+
+
+def join_kc_model(steps: pd.DataFrame, kc: pd.DataFrame, name: str, universe: pd.Series) -> pd.DataFrame:
+    """Join one KC model onto DataShop's rows as ``KC (name)``, blank outside ``universe``.
+
+    The rows are a student-step file's or a KC-model export's; either way each
+    one in the universe must resolve to exactly one question of the model, on
+    the ``ds-*`` keys the questions carry, and take a label from it. A row
+    outside the universe may match nothing, and is left blank.
+
+    :param steps: the rows to label, with DataShop's step columns
+    :param kc: a KC CSV frame: one question per row, its ``ds-*`` keys and ``KC``
+    :param name: the KC model's name
+    :param universe: the rows the model must label, as a mask over ``steps``
+    :return: a new frame, ``steps`` plus the ``KC (name)`` column
+    """
+    # Unmatched, ambiguous and unkeyed rows raise. The flattened CSV rows
+    # duck-type Question here.
+    check_coverage(kc.to_dict("records"), steps.loc[universe])
+
+    fields = [field for field in DS_KEY_FIELDS if field in kc.columns and DS_KEY_FIELDS[field] in steps.columns]
+    join_kc = kc[fields + ["KC"]].copy()
+    for field in fields:
+        # Collapse self-duplicates ("a~a", one question listing a step twice):
+        # the explode-join would otherwise duplicate its rows.
+        join_kc[field] = join_kc[field].str.split("~").map(lambda parts: "~".join(dict.fromkeys(parts)))
+
+    n_rows = len(steps)
+    steps = create_datashop_kc(join_kc, steps, kc_cols=["KC"], new_kc_names=[name])
+    assert len(steps) == n_rows, "the step-to-question join duplicated rows"
+
+    col = f"KC ({name})"
+    unlabeled = universe & (steps[col].isna() | steps[col].astype(str).str.strip().eq(""))
+    if unlabeled.any():
+        raise ValueError(f"KC model {name!r} leaves {int(unlabeled.sum())} expert-tagged row(s) without a "
+                         "label. Every KC model must cover the same rows or fits under them are incomparable; "
+                         "rebuild the model from this dataset's questions.")
+    steps[col] = steps[col].where(universe, "")
+    return steps
+
+
+def template_models(template: pd.DataFrame) -> dict[str, pd.Series]:
+    """The KC models in a DataShop KC-model export, each with the steps it tags.
+
+    A model that tags no step is left out: that is the placeholder column
+    (``KC (new KC model name)``) the export adds for a new model.
+    """
+    tagged: dict[str, pd.Series] = {}
+    for col in template.columns:
+        if match := TEMPLATE_KC_COLUMN.match(col):
+            steps = template[col].fillna("").astype(str).str.strip().ne("")
+            name = match["name"]
+            tagged[name] = tagged[name] | steps if name in tagged else steps
+    return {name: steps for name, steps in tagged.items() if steps.any()}
+
+
+def template_universe(template: pd.DataFrame) -> pd.Series:
+    """The steps every KC model in a DataShop KC-model export tags (all of them, if it has none).
+
+    Where the models disagree, that is the steps they all tag: the export of an
+    expert model alongside DataShop's own ``Unique-step``, say, which leaves out
+    the steps too few students reached.
+    """
+    universe = pd.Series(True, index=template.index)
+    for steps in template_models(template).values():
+        universe &= steps
+    return universe
+
+
+def fill_kc_template(template: pd.DataFrame, kc_models: dict[str, pd.DataFrame],
+                     restrict_suffix: str | None = None) -> pd.DataFrame:
+    """Fill a DataShop KC-model export with KC models, to import back into DataShop.
+
+    DataShop imports KC models from a file shaped like its KC-model export: one
+    row per step, matched on ``Step ID``, a ``KC (<model>)`` column per model,
+    and every other column as exported. The steps the export's own models all
+    tag are the comparable universe (:func:`template_universe`): every model
+    joined here must label each of them and is blanked on the rest, so DataShop
+    fits all of them over the same steps. The export's own models are then left
+    out, as DataShop advises, since importing them again would overwrite them;
+    a new model of the same name raises for that reason.
+
+    A question bank can reach fewer steps than the export's models tag: the
+    multiple-choice questions of a course whose expert model covers every
+    question type, say. That raises, unless ``restrict_suffix`` is given. The
+    universe is then cut down to the steps the new models' questions reach, and
+    each of the export's own models goes out again cut down the same, as
+    ``<model>-<restrict_suffix>``, so that DataShop still has the models to
+    compare over one set of steps.
+
+    :param template: a KC-model export (:func:`load_kc_template`)
+    :param kc_models: model name -> KC CSV frame, joined in order
+    :param restrict_suffix: label only the steps the new models' questions
+        reach, and name the cut-down copies of the export's models by it
+    :return: a new frame: the export's other columns unchanged, then the
+        cut-down copies if any, then one ``KC (<model>)`` column per new model
+    """
+    if missing := [col for col in ("Step ID", "Step Name") if col not in template.columns]:
+        raise ValueError(f"missing column(s) {missing}: not a DataShop KC-model export")
+    if restrict_suffix and not kc_models:
+        raise ValueError("no KC models to say which steps their questions reach")
+    existing = template_models(template)
+    copies = {name: f"{name}-{restrict_suffix}" for name in existing} if restrict_suffix else {}
+    new_names = [*copies.values(), *kc_models]
+    if taken := [name for name in new_names if name in existing]:
+        raise ValueError(f"KC model(s) {taken} are already in the template, and importing them again would "
+                         "overwrite them in DataShop. Rename them, or export the template without them if "
+                         "overwriting is what you want.")
+    if twice := [name for name in kc_models if name in copies.values()]:
+        raise ValueError(f"KC model(s) {twice} are named like the cut-down copies of the template's own models")
+    for name, kc in kc_models.items():
+        if multi := int(kc["KC"].astype(str).str.contains(MULTI_KC_SEP, regex=False).sum()):
+            raise ValueError(f"KC model {name!r} gives {multi} question(s) several KCs ({MULTI_KC_SEP!r}-joined). "
+                             "DataShop's import takes one KC per column, repeating the model's column for "
+                             "each extra KC, which a filled template does not do.")
+
+    template = template.reset_index(drop=True)
+    universe = template_universe(template)
+    for name, kc in kc_models.items():
+        reached = covered_rows(kc.to_dict("records"), template)
+        if restrict_suffix:
+            universe &= reached
+        elif (unreached := universe & ~reached).any():
+            raise ValueError(f"KC model {name!r} has no question for {int(unreached.sum())} of the "
+                             f"{int(universe.sum())} step(s) to label, e.g. Step ID "
+                             f"{template.loc[unreached, 'Step ID'].iloc[0]!r}. Models fitted over different "
+                             "steps cannot be compared. If the question bank is meant to reach fewer steps "
+                             "than the template's KC models tag, set restrict_suffix (--restrict_suffix): the "
+                             "template's models are then imported again under it, cut down to the bank's steps.")
+    if not universe.any():
+        raise ValueError("no step is left to label: the template's KC models and the questions share none")
+
+    own = [col for col in template.columns if TEMPLATE_KC_COLUMN.match(col)]
+    filled = template.drop(columns=own)
+    n_other = filled.shape[1]
+    for name, kc in kc_models.items():
+        filled = join_kc_model(filled, kc, name, universe)
+
+    # A model's repeated columns keep one name, as DataShop wrote them
+    copied = [col for col in own if TEMPLATE_KC_COLUMN.match(col)["name"] in copies]
+    cut_down = template[copied].where(universe, "")
+    cut_down.columns = [f"KC ({copies[TEMPLATE_KC_COLUMN.match(col)['name']]})" for col in copied]
+    return pd.concat([filled.iloc[:, :n_other], cut_down, filled.iloc[:, n_other:]], axis=1)
 
 
 def merge_student_step_with_kc(ss_path: str, kc: str | pd.DataFrame,

@@ -13,7 +13,9 @@ from kcluster.datashop.kc_model import (
     create_default_kc,
     create_kc_from_questions,
     load_datashop_temp,
+    load_kc_template,
     merge_student_step_with_kc,
+    save_kc_template,
 )
 
 
@@ -146,6 +148,16 @@ def test_merge_student_step_minimal_encodes_identifiers(filled_kc_and_ss):
     assert ss["Anon Student Id"].str.fullmatch(r"ST-\d+").all()
     assert ss["Step Name"].str.fullmatch(r"SN-\d+").all()
     assert ss["KC (m)"].str.fullmatch(r"KC-\d+").all()
+
+
+def test_kc_template_round_trips_cell_for_cell(tmp_path):
+    # DataShop's import wants the export's columns back as they were: nothing
+    # parsed, unquoted or dropped, bar the column the header's trailing tab makes
+    path = tmp_path / "kcm.txt"
+    path.write_text('Step ID\tProblem Name\tMax Problem View\tAvg Error Step Duration (sec)\tKC (m)\t\n'
+                    'id1\t"Intro" quiz\t2.0\t\tthe "carrots" approach\n')
+    save_kc_template(load_kc_template(str(path)), str(tmp_path / "out.txt"))
+    assert (tmp_path / "out.txt").read_text() == path.read_text().replace("(m)\t\n", "(m)\n")
 
 
 def test_the_toolbox_imports_only_the_core_and_the_question_reader():

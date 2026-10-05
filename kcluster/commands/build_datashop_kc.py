@@ -1,99 +1,77 @@
-import glob
+"""Fill a DataShop KC-model export with a run's KC models, for import into DataShop.
+
+DataShop imports KC models from a file shaped like its own KC-model export: one
+row per step, matched on ``Step ID``, a ``KC (<model>)`` column per model, and
+every other column as exported. This adds a result dir's KC models (and any
+``--kc_paths``) to such an export, found and named as ``kcluster tag`` finds and
+names them, and joined by the same rules: each step resolves to exactly one
+question through the ``ds-*`` keys the questions carry, and every model labels
+each step the export's own KC models all tag (every step, if it has none) and
+no other. Export the template with the models that should set those steps — an
+expert model, or DataShop's ``Unique-step`` to follow its student threshold —
+and the imported models are fitted over the same steps as they are.
+
+The export's own models are left out of the output, as DataShop advises:
+importing them again would overwrite them. The exception is
+``--restrict_suffix``, for a question bank that reaches fewer steps than those
+models tag: the new models then label only the bank's steps, and the export's
+models go out again under the suffix, cut down to the same steps.
+"""
+
 import os
-import re
 
-import pandas as pd
-
+from kcluster.commands.tag import load_kc_models, run_dir_kc_paths
 from kcluster.datashop.kc_model import (
-    KC_PAT,
-    get_step_to_kc,
-    load_datashop_temp,
-    merge_student_step_with_kc,
+    fill_kc_template,
+    load_kc_template,
+    save_kc_template,
+    template_models,
+    template_universe,
 )
-from kcluster.paths import prepare_output_dir, timestamp
-
-
-def insert_kc_model(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
-                    step_kc_path: str, new_kc_name: str,
-                    match_other_kc: bool = True, drop_other_kc: bool = True) -> pd.DataFrame:
-    """
-    Insert one KCluster result into a DataShop template, keyed by step name.
-
-    Unlike datashop.kc_model.create_datashop_kc (which key-joins on the available
-    ds-* columns), this maps by Step Name alone and additionally masks steps
-    that the system-generated unique-step model excludes.
-    :param kc: Either a path to a human-readable KC model or a pd.DataFrame of such
-    :param kc_temp: Either a path to DataShop KC template file or a pd.DataFrame of a loaded template
-    :param step_kc_path: A path to a (system-generated) unique-step KC model
-    :param new_kc_name: The name given to the new KC model, e.g., "KCluster"
-    :param match_other_kc: Whether to match other KC models in the template;
-            if True, the new KC model will not map to steps that are not mapped by other KC models
-    :param drop_other_kc: Whether to drop other KC models in the template
-    :return: The new DataShop KC model as a DataFrame
-    """
-    # Load KC model
-    if isinstance(kc, str):
-        kc = pd.read_csv(kc)
-    assert isinstance(kc, pd.DataFrame), "Incorrect type for 'kc'"
-
-    # Load KC template
-    if isinstance(kc_temp, str):
-        kc_temp = load_datashop_temp(kc_temp)
-    assert isinstance(kc_temp, pd.DataFrame), "Incorrect type for 'kc_temp'"
-
-    kc_mask = False
-    if match_other_kc:
-        kc_mask = kc_temp.filter(regex=KC_PAT).isna().any(axis=1)  # match other KC models if any
-
-    if drop_other_kc:
-        kc_cols = kc_temp.filter(regex=KC_PAT).columns
-        kc_temp.drop(columns=kc_cols, inplace=True)  # drop other KC models if any
-
-    # Load the unique-step KC model
-    step_kc = load_datashop_temp(step_kc_path)
-    step_mask = step_kc["KC (Unique-step)"].isna()
-
-    # Fill in KC
-    step_to_kc = get_step_to_kc(kc)
-    kc_temp[f"KC ({new_kc_name})"] = kc_temp["Step Name"].map(step_to_kc)
-    kc_temp.loc[kc_mask | step_mask, f"KC ({new_kc_name})"] = None
-
-    return kc_temp
+from kcluster.paths import run_dir
 
 
 def main(args):
-    output_dir = prepare_output_dir(os.path.join(args.kc_dir, timestamp()), exist_ok=False)
-    print(f"*** Writing results to {output_dir} ***")
+    run = run_dir(args.run_dir)
+    kc_paths = [os.path.abspath(path) for path in args.kc_paths]
+    kc_paths += run_dir_kc_paths(run) if run else []
+    if not kc_paths:
+        raise SystemExit("No KC models to add: pass --run_dir (or set KCLUSTER_RUN_DIR) or --kc_paths")
+    kc_models = load_kc_models(dict.fromkeys(kc_paths))
 
-    # Add KCs to the template
-    kc_temp = args.kc_temp
-    for fname in glob.iglob("*-kc.csv", root_dir=args.kc_dir):
-        # Drop the dataset prefix (D10 filenames are <ds>_<model>-kc.csv) so
-        # the DataShop model keeps its short name, e.g. "kcluster-unnorm"
-        stem = os.path.splitext(fname)[0].split("_", 1)[-1]
-        new_kc_name = re.match(r".+?(?=-kc)", stem).group(0)
-        print(f"*** Adding KC '{new_kc_name}' to the template ***")
-        kc = os.path.join(args.kc_dir, fname)
-        kc_temp = insert_kc_model(kc, kc_temp, args.step_kc, new_kc_name,
-                                  match_other_kc=True, drop_other_kc=False)
+    template = load_kc_template(args.kc_temp)
+    if own := template_models(template):
+        print(f"*** The template's KC models set the steps to label: {', '.join(own)} ***")
+    filled = fill_kc_template(template, kc_models, restrict_suffix=args.restrict_suffix)
+    print(f"*** Labelled {int(template_universe(filled).sum()):,} of {len(filled):,} steps ***")
 
-    # Save the template
-    kc_path = os.path.join(output_dir, "all-kc.txt")
-    kc_temp.to_csv(kc_path, sep="\t", index=False)
+    output = args.output or _default_output(args.kc_temp, run)
+    save_kc_template(filled, output)
+    print(f"*** Wrote {len(template_models(filled))} KC models to {output} ***")
 
-    # Merge KCs into student step (for cross-validation) if a path is present
-    if args.ss_path:
-        print("*** Merging KCs with student steps ***")
-        ss = merge_student_step_with_kc(args.ss_path, kc_temp, minimal=args.minimal, multiplier=args.multiplier)
-        fname = f"ss-merged-minimal={args.minimal}-multiplier={args.multiplier}.txt"
-        ss.to_csv(os.path.join(output_dir, fname), sep="\t", index=False)
+
+def _default_output(kc_temp: str, run: str | None) -> str:
+    """``<template>-import.txt``, in the run dir whose models it carries, else beside the template."""
+    name = f"{os.path.splitext(os.path.basename(kc_temp))[0]}-import.txt"
+    return os.path.join(run or os.path.dirname(os.path.abspath(kc_temp)), name)
 
 
 def add_arguments(parser):
-    parser.add_argument("--kc_dir", required=True, type=str, help="Path to a directory containing non-DataShop KCs")
-    parser.add_argument("--kc_temp", required=True, type=str, help="Path to a DataShop KC template file")
-    parser.add_argument("--step_kc", required=True, type=str, help="Path to a DataShop step-KC file")
-    parser.add_argument("--ss_path", default=None, type=str, help="Path to a DataShop student-step file")
-    parser.add_argument("--minimal", action="store_true", help="Whether to minimize the merged student-step file")
-    parser.add_argument("--multiplier", default=1, type=int,
-                        help="Number of times to duplicate each KC model for cross-validation")
+    parser.add_argument("--kc_temp", required=True, type=str,
+                        help="A KC-model export from DataShop to fill. Its KC models set the steps to label: "
+                             "every model added must label each step they all tag (every step, if it has none), "
+                             "and none other. They are left out of the output, since importing them again "
+                             "would overwrite them.")
+    parser.add_argument("--run_dir", default=None, type=str,
+                        help="A result dir whose kc/*-kc.csv models are all added — or, for a work dir "
+                             "of per-bank result dirs, each of their kc/*-kc.csv")
+    parser.add_argument("--kc_paths", nargs="*", default=[], type=str,
+                        help="KC CSVs to add (<ds>_<model>-kc.csv; the model becomes the column name)")
+    parser.add_argument("--restrict_suffix", default=None, type=str,
+                        help="For a question bank that reaches fewer steps than the template's KC models tag: "
+                             "label only the steps the questions reach, and add each of the template's models "
+                             "again as <model>-<suffix>, cut down to those steps, so DataShop compares all of "
+                             "them over the same steps (e.g. MCQ gives LOs-MCQ beside LOs)")
+    parser.add_argument("--output", default=None, type=str,
+                        help="Output path (default: <template name>-import.txt in --run_dir, else beside "
+                             "the template)")

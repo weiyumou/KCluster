@@ -31,13 +31,11 @@ import os
 
 import pandas as pd
 
-from kcluster.datashop.kc_model import create_datashop_kc
+from kcluster.datashop.kc_model import join_kc_model
 from kcluster.datashop.student_step import (
-    DS_KEY_FIELDS,
     KC_COLUMN,
     MULTI_KC_SEP,
     OPPORTUNITY_COLUMN,
-    check_coverage,
     validate_student_step,
 )
 
@@ -125,7 +123,7 @@ def namespace_kc(kc: pd.DataFrame, bank: str) -> pd.DataFrame:
 
     Multi-KC cells are prefixed label by label, and an empty label stays empty:
     a model that leaves a question unlabeled must still read as unlabeled to
-    :func:`_join_kc_model`, which is what catches an incomplete model.
+    ``join_kc_model``, which is what catches an incomplete model.
     """
     def prefixed(cell: str) -> str:
         labels = str(cell).split(MULTI_KC_SEP)
@@ -192,38 +190,10 @@ def tag_student_step(ss: pd.DataFrame, kc_models: dict[str, pd.DataFrame], *,
         mask = pd.Series(True, index=ss.index)
 
     for name, kc in kc_models.items():
-        ss = _join_kc_model(ss, kc, name, mask)
+        ss = join_kc_model(ss, kc, name, mask)
 
     _add_default_kc(ss, mask, scope)
     return add_opportunities(ss)
-
-
-def _join_kc_model(ss: pd.DataFrame, kc: pd.DataFrame, name: str, mask: pd.Series) -> pd.DataFrame:
-    """Join one KC CSV onto ``ss`` as ``KC (name)``, blanked outside ``mask``."""
-    # Every row in the universe must resolve to exactly one question of this
-    # model (unmatched, ambiguous, or unkeyed raise); rows outside it are inert
-    # and may match nothing. The flattened CSV rows duck-type Question here.
-    check_coverage(kc.to_dict("records"), ss.loc[mask])
-
-    fields = [field for field in DS_KEY_FIELDS if field in kc.columns and DS_KEY_FIELDS[field] in ss.columns]
-    join_kc = kc[fields + ["KC"]].copy()
-    for field in fields:
-        # Collapse self-duplicates ("a~a", one question listing a step twice):
-        # the explode-join would otherwise duplicate its rows.
-        join_kc[field] = join_kc[field].str.split("~").map(lambda parts: "~".join(dict.fromkeys(parts)))
-
-    n_rows = len(ss)
-    ss = create_datashop_kc(join_kc, ss, kc_cols=["KC"], new_kc_names=[name])
-    assert len(ss) == n_rows, "the step-to-question join duplicated rows"
-
-    col = f"KC ({name})"
-    unlabeled = mask & (ss[col].isna() | ss[col].astype(str).str.strip().eq(""))
-    if unlabeled.any():
-        raise ValueError(f"KC model {name!r} leaves {int(unlabeled.sum())} expert-tagged row(s) without a "
-                         "label. Every KC model must cover the same rows or fits under them are incomparable; "
-                         "rebuild the model from this dataset's questions.")
-    ss[col] = ss[col].where(mask, "")
-    return ss
 
 
 def _add_default_kc(ss: pd.DataFrame, mask: pd.Series, scope: pd.Series | None = None) -> None:

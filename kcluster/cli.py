@@ -28,7 +28,7 @@ COMMANDS = [
     ("fit", "kcluster.commands.fit",
      "Fit student models (AFM/PFA) to a tagged file, one row per KC model"),
     ("build-datashop-kc", "kcluster.commands.build_datashop_kc",
-     "Insert KC models into a DataShop KC template / student-step file"),
+     "Fill a DataShop KC-model export with a run's KC models, for import"),
     ("refine-datashop-kc", "kcluster.commands.refine_datashop_kc",
      "Refine a DataShop KC model by splitting poorly-fitting KCs"),
     ("vertex-launch", "kcluster.commands.vertex_launch",
