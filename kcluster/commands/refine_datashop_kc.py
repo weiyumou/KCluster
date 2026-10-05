@@ -1,3 +1,4 @@
+import csv
 import glob
 import os
 import re
@@ -6,7 +7,8 @@ import numpy as np
 import pandas as pd
 
 from kcluster.core.pmi import PointwiseMutualInfo
-from kcluster.datashop.kc_model import KC_PAT, get_step_to_kc, merge_student_step_with_kc
+from kcluster.datashop.kc_model import KC_PAT, load_kc_template, merge_student_step_with_kc, save_kc_template
+from kcluster.datashop.student_step import step_questions
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import (
     concept_kc_path,
@@ -18,6 +20,7 @@ from kcluster.paths import (
     result_dataset,
 )
 from kcluster.tasks.cluster import create_kc, sim_from_embeddings
+from kcluster.tasks.tag import load_kc_csv
 
 
 def main(args):
@@ -31,14 +34,16 @@ def main(args):
     kc_val = pd.read_csv(args.kc_val_path)
     val_mask = (kc_val["Slope"].le(0.001)) & (kc_val["Intercept (probability) at Opportunity 1"].between(0.2, 0.8))
 
-    # Load the KC model to refine
-    kc = pd.read_csv(args.kc_path, sep="\t", na_values=" ",
-                     usecols=(lambda col: col == f"KC ({kcm})" or not re.match(KC_PAT, col)))
+    # Load the KC model to refine, cell for cell: DataShop's files are unquoted
+    # text, so a label with quotes in it is the KC's name as it stands
+    kc = load_kc_template(args.kc_path)
+    kc = kc.drop(columns=[col for col in kc.columns if re.match(KC_PAT, col) and col != f"KC ({kcm})"])
     assert f"KC ({kcm})" in kc, "The KC model to refine is not found in the template file"
 
     # Load concepts (the concept step writes them under kc/)
-    concept_df = pd.read_csv(concept_kc_path(result_dir))
+    concept_df = load_kc_csv(concept_kc_path(result_dir))
     assert concept_df["KC"].str.strip().all(), "Some concepts are invalid"
+    concept_records = concept_df.to_dict("records")  # rows of the flattened questions
 
     # Recover the questions behind the concepts (--data_path overrides the recorded path)
     questions = load_questions(question_path(result_dir, result_dataset(result_dir), args.data_path))
@@ -62,17 +67,20 @@ def main(args):
         label_mask = kc[f"KC ({kcm})"].eq(kc_label)
         assert label_mask.sum() == num_steps, "Inconsistent number of steps"
 
-        step_name = set(kc.loc[label_mask, "Step Name"])
-        concept_mask = concept_df["ds-step-name"].apply(lambda x: any(t in step_name for t in x.split("~")))
-        if concept_mask.sum() <= 2:  # skip refinement if there are two or fewer questions
+        # The question behind each of its steps, keyed on every ds-* field the
+        # questions carry, as kcluster tag keys them: a step name alone can
+        # recur under several problems
+        step_ids = step_questions(concept_records, kc.loc[label_mask])
+        in_kc = concept_df["id"].isin(set(step_ids))
+        if in_kc.sum() <= 2:  # skip refinement if there are two or fewer questions
             print("Too few questions tagged with this KC, skipping refinement. ")
             continue
 
         # Refinement using 'concept'
-        concept_kc = concept_df[concept_mask]
+        concept_kc = concept_df[in_kc]
 
-        def predicate(q, step_name=step_name):  # bind the loop variable
-            return any(t in step_name for t in q["ds-step-name"])
+        def predicate(q, ids=frozenset(step_ids)):  # bind the loop variable
+            return str(q["id"]) in ids
 
         # Refinement using 'question-cosine'
         print("*** Refining KCs based on question, metric='cosine' ***")
@@ -86,14 +94,15 @@ def main(args):
 
         for name, df in zip((f"{item}-{kc_label}" for item in ("cpt", "qcos", "pmi")), (concept_kc, q_cos_kc, pmi_kc)):
             kc[f"KC ({name})"] = kc[f"KC ({kcm})"]
-            step_to_kc = get_step_to_kc(df)
-            kc.loc[label_mask, f"KC ({name})"] = kc.loc[label_mask, "Step Name"].map(step_to_kc)
-            assert kc[f"KC ({name})"].dropna().ne(kc[f"KC ({kcm})"].dropna()).sum() == num_steps, "Incorrect refinement"
+            # Each step takes the label of its own question
+            id_to_kc = dict(zip(df["id"].astype(str), df["KC"], strict=True))
+            kc.loc[label_mask, f"KC ({name})"] = step_ids.map(id_to_kc)
+            assert kc[f"KC ({name})"].ne(kc[f"KC ({kcm})"]).sum() == num_steps, "Incorrect refinement"
         count += 1
 
     print(f"*** Refined {count} KCs in {kcm} ***")
     kc_path = os.path.join(output_dir, "refined-kc.txt")
-    kc.to_csv(kc_path, sep="\t", index=False)
+    save_kc_template(kc, kc_path)
 
     # Merge KCs into student step (for cross-validation) if a path is present
     if args.ss_path:
@@ -101,7 +110,7 @@ def main(args):
         ss = merge_student_step_with_kc(args.ss_path, kc, minimal=args.minimal, multiplier=args.multiplier)
         fname = os.path.splitext(os.path.basename(kc_path))[0]
         fname = f"{fname}-merged-minimal={args.minimal}-multiplier={args.multiplier}.txt"
-        ss.to_csv(os.path.join(output_dir, fname), sep="\t", index=False)
+        ss.to_csv(os.path.join(output_dir, fname), sep="\t", index=False, quoting=csv.QUOTE_NONE)
 
 
 def add_arguments(parser):

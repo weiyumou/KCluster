@@ -11,6 +11,7 @@ import os
 import re
 from collections import defaultdict
 
+import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
@@ -129,17 +130,6 @@ def create_kc_from_questions(data_path: str, kc_temp_path: str,
         save_datashop_temp(kc_temp, fname)
 
     return kc_temp
-
-
-def get_step_to_kc(kc: pd.DataFrame) -> dict[str, str]:
-    """Create a dictionary mapping step names to KC labels"""
-    steps, labels = [], []
-    for step, label in kc[["ds-step-name", "KC"]].itertuples(index=False):
-        step = step.split("~")
-        steps.extend(step)
-        labels.extend([label] * len(step))
-    step_to_kc = dict(zip(steps, labels, strict=True))
-    return step_to_kc
 
 
 def create_datashop_kc(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
@@ -373,11 +363,14 @@ def merge_student_step_with_kc(ss_path: str, kc: str | pd.DataFrame,
 
     # Identify all KC models
     if isinstance(kc, str):
-        kc = load_datashop_temp(kc)
+        kc = load_kc_template(kc)
     assert isinstance(kc, pd.DataFrame), "Incorrect type for 'kc'"
 
     kc["Problem Hierarchy"] = kc["Problem Hierarchy"].str.replace("(", "").str.replace(")", "")
-    kc_cols = kc.set_index(key_cols).filter(regex=KC_PAT)
+    # A blank cell is a step without a KC (DataShop writes it as one space), and
+    # a model without any is the empty placeholder of a KC-model export
+    kc_cols = kc.set_index(key_cols).filter(regex=KC_PAT).replace(r"^\s*$", np.nan, regex=True)
+    kc_cols = kc_cols.dropna(axis="columns", how="all")
     kc_names = [re.match(KC_PAT, col).group("name") for col in kc_cols.columns]
     if minimal:  # Transcribe KC labels to minimize file size
         for col in kc_cols:
@@ -385,8 +378,10 @@ def merge_student_step_with_kc(ss_path: str, kc: str | pd.DataFrame,
             kc_cols[col] = [f"KC-{lbl}" for lbl in LabelEncoder().fit_transform(kc_cols[col])]
             kc_cols.loc[mask, col] = None  # Keep the NaN values as they were
 
-    # Load student-step data
-    ss = pd.read_csv(ss_path, sep="\t", dtype={"Anon Student Id": str}, usecols=minimal_cols)
+    # Load student-step data as text, the way the KC models are read: DataShop's
+    # files are unquoted, so a step name may begin with a quote
+    ss = pd.read_csv(ss_path, sep="\t", dtype=str, keep_default_na=False, quoting=csv.QUOTE_NONE,
+                     usecols=minimal_cols)
     ss["Problem Hierarchy"] = ss["Problem Hierarchy"].str.replace("(", "").str.replace(")", "")
 
     # Merge KCs into student-step

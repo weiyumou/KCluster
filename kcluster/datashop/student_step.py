@@ -294,3 +294,14 @@ def check_coverage(questions: Sequence[Question], df: pd.DataFrame) -> list[str]
                          "many-to-one.")
 
     return [str(q["id"]) for q in questions if str(q["id"]) not in covered]
+
+
+def step_questions(questions: Sequence[Question], df: pd.DataFrame) -> pd.Series:
+    """The id of the question each row of ``df`` resolves to, keyed as :func:`check_coverage` keys it.
+
+    A row that matches no question or more than one raises, as there.
+    """
+    check_coverage(questions, df)
+    key_cols, key_to_ids = _key_index(questions, df)
+    keys = df[key_cols].astype(str).itertuples(index=False, name=None)
+    return pd.Series([next(iter(key_to_ids[key])) for key in keys], index=df.index, dtype=object)

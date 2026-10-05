@@ -8,6 +8,7 @@ from kcluster.datashop.student_step import (
     covered_rows,
     load_student_step,
     save_student_step,
+    step_questions,
     validate_student_step,
 )
 
@@ -170,6 +171,16 @@ def test_coverage_reports_uncovered_datashop_question():
 def test_covered_rows_says_which_rows_a_bank_reaches_without_raising():
     # fa-2 has no question, and nothing is raised over it as check_coverage would
     assert covered_rows([_q("fa-1")], _frame()).tolist() == [True, False, True]
+
+
+def test_step_questions_gives_each_row_its_question_on_every_key():
+    # fa-1 is a step name under two problems; the problem tells the questions apart
+    questions = [_q("a", **{"ds-step-name": "fa-1", "ds-problem-name": "fa-1"}),
+                 _q("b", **{"ds-step-name": "fa-1~fa-2", "ds-problem-name": "fa-2"})]
+    df = _frame(**{"Step Name": ["fa-1", "fa-2", "fa-1"]})
+    assert step_questions(questions, df).tolist() == ["a", "b", "a"]
+    with pytest.raises(ValueError, match="match no question"):
+        step_questions(questions[:1], df)
 
 
 def test_ambiguous_key_raises():

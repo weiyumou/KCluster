@@ -162,6 +162,24 @@ def test_merge_student_step_minimal_encodes_identifiers(filled_kc_and_ss):
     assert ss["KC (m)"].str.fullmatch(r"KC-\d+").all()
 
 
+def test_merge_student_step_reads_both_files_as_unquoted_text(tmp_path):
+    # DataShop writes its files unquoted, so a step name may begin with a quote:
+    # read CSV-style, the student steps would lose it and match no KC. A blank
+    # cell, which DataShop writes as one space, is a step without a KC.
+    step = '"Who" named cells'
+    kc = pd.DataFrame({"Problem Hierarchy": ["U", "U"], "Problem Name": ["P1", "P1"],
+                       "Step Name": [step, "s2"], "KC (m)": ["alpha", " "], "KC (new KC model name)": [" ", " "]})
+    ss_path = tmp_path / "ss.txt"
+    ss_path.write_text("Anon Student Id\tProblem Hierarchy\tProblem Name\tStep Name\t"
+                       "First Transaction Time\tFirst Attempt\n"
+                       f"ST1\tU\tP1\t{step}\tt1\tcorrect\nST1\tU\tP1\ts2\tt2\tcorrect\n")
+    ss = merge_student_step_with_kc(str(ss_path), kc)
+    assert ss["Step Name"].tolist() == [step, "s2"]
+    assert ss["KC (m)"].fillna("").tolist() == ["alpha", ""]
+    assert ss["Opportunity (m)"].tolist() == [1, ""]
+    assert "KC (new KC model name)" not in ss
+
+
 def test_kc_template_round_trips_cell_for_cell(tmp_path):
     # DataShop's import wants the export's columns back as they were: nothing
     # parsed, unquoted or dropped, bar the column the header's trailing tab makes
