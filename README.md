@@ -91,14 +91,15 @@ Questions are JSONL, one object per line:
 ```
 
 Extra fields pass through untouched (e.g. `lo` for learning objectives,
-`ds-step-name` for DataShop step mapping). Format adapters for common
-sources live in `kcluster/io/loaders/` (e.g. DataShop exports, OLI HTML).
+`ds-step-name` for DataShop step mapping). Adapters for common sources ship
+in the package: `kcluster/datashop/` for DataShop's files, and
+`kcluster/io/loaders/` for others (e.g. OLI HTML).
 
 ## Repository layout
 
 | path        | contents | shipped in the wheel |
 |-------------|----------|----------------------|
-| `kcluster/` | the installable package: `core` (Question, PMI, prompts), `engine` (local / Vertex / Gemini), `tasks`, `io`, `output`, CLI commands | yes |
+| `kcluster/` | the installable package: `core` (Question, PMI, prompts), `engine` (local / Vertex / Gemini), `tasks`, `io`, `datashop` (DataShop's file formats, usable on their own), `output`, CLI commands | yes |
 | `examples/` | synthetic sample data + walkthrough | no |
 | `papers/`   | paper-specific reproduction scripts (`lak2026/`) | no |
 | `datasets/` | the dataset contract: what KCluster reads, and what a driver must produce | no |

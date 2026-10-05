@@ -1,10 +1,13 @@
+import ast
 import json
+import pathlib
 import re
 
 import pandas as pd
 import pytest
 
-from kcluster.io.datashop import (
+import kcluster.datashop
+from kcluster.datashop.kc_model import (
     KC_PAT,
     create_datashop_kc,
     create_default_kc,
@@ -143,3 +146,18 @@ def test_merge_student_step_minimal_encodes_identifiers(filled_kc_and_ss):
     assert ss["Anon Student Id"].str.fullmatch(r"ST-\d+").all()
     assert ss["Step Name"].str.fullmatch(r"SN-\d+").all()
     assert ss["KC (m)"].str.fullmatch(r"KC-\d+").all()
+
+
+def test_the_toolbox_imports_only_the_core_and_the_question_reader():
+    """The promise that lets another project use it on the base install: no
+    engine, no task, no command behind any of its modules."""
+    imported = set()
+    for path in pathlib.Path(kcluster.datashop.__file__).parent.glob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom):
+                imported.add(node.module)
+            elif isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+    own = {name for name in imported if name.split(".")[0] == "kcluster"}
+    allowed = ("kcluster.datashop.", "kcluster.core.", "kcluster.io.jsonl")
+    assert {name for name in own if not name.startswith(allowed)} == set()

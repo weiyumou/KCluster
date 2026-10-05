@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from kcluster.io.loaders.datashop_export import load_export, reduce_to_steps, universe_steps
+from kcluster.datashop.export import load_export, reduce_to_steps, universe_steps
 
 
 def _write_export(path, rows, **extra) -> str:

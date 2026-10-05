@@ -3,7 +3,7 @@
 A driver for a DataShop-sourced dataset needs two things out of the export, and
 this module is both of them: the set of steps that defines the dataset's
 comparison universe, and the export reduced to the minimal student-step
-contract (``kcluster.io.student_step``).
+contract (``kcluster.datashop.student_step``).
 
 **The export defines the universe, not a KC-model template.** A template is a
 second export of the same steps and can only drift from the one that actually
@@ -33,7 +33,7 @@ already a student-step file:
 
 import pandas as pd
 
-from kcluster.io.student_step import MINIMAL_COLUMNS
+from kcluster.datashop.student_step import MINIMAL_COLUMNS
 
 #: What makes a DataShop step distinct. ``Step Name`` alone does not: the same
 #: name recurs under different problems.

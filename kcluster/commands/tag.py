@@ -25,7 +25,7 @@ import os
 
 import pandas as pd
 
-from kcluster.io.student_step import (
+from kcluster.datashop.student_step import (
     KC_COLUMN,
     MINIMAL_SUFFIX,
     TAGGED_SUFFIX,
@@ -150,7 +150,7 @@ def _concat_parts(name: str, paths: list[str], frames: list[pd.DataFrame]) -> pd
 def _default_output(ss_path: str, run: str | None) -> str:
     """``<ds>_student-step-minimal.txt`` -> ``<ds>_student-step-tagged.txt``.
 
-    The two names are the dataset convention (``kcluster.io.student_step``), so a
+    The two names are the dataset convention (``kcluster.datashop.student_step``), so a
     conventionally named input keeps its ``<ds>`` and swaps stage; anything else
     just gains ``-tagged``.
     """

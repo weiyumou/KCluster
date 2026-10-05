@@ -1,7 +1,7 @@
 """The KC tagger: joins KC models onto a minimal student-step file.
 
 This is the second stage of the dataset seam described in
-:mod:`kcluster.io.student_step`: a dataset driver emits ``<ds>.jsonl`` plus a
+:mod:`kcluster.datashop.student_step`: a dataset driver emits ``<ds>.jsonl`` plus a
 minimal student-step file, and this module turns the latter into a DataShop-style
 student-step file ready for AFM/PFA fitting — KC CSVs from a result dir joined
 on as ``KC (<model>)`` columns, the ``Single-KC`` / ``Unique-step`` baselines
@@ -31,8 +31,8 @@ import os
 
 import pandas as pd
 
-from kcluster.io.datashop import create_datashop_kc
-from kcluster.io.student_step import (
+from kcluster.datashop.kc_model import create_datashop_kc
+from kcluster.datashop.student_step import (
     DS_KEY_FIELDS,
     KC_COLUMN,
     MULTI_KC_SEP,

@@ -35,7 +35,7 @@ import re
 
 import pandas as pd
 
-from kcluster.io.student_step import (
+from kcluster.datashop.student_step import (
     PREDICTIONS_NAME,
     TAGGED_SUFFIX,
     load_student_step,

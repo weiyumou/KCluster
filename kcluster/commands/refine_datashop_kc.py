@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from kcluster.core.pmi import PointwiseMutualInfo
-from kcluster.io.datashop import KC_PAT, get_step_to_kc, merge_student_step_with_kc
+from kcluster.datashop.kc_model import KC_PAT, get_step_to_kc, merge_student_step_with_kc
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import (
     concept_kc_path,

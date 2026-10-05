@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from kcluster.core.question import Question
-from kcluster.io.student_step import (
+from kcluster.datashop.student_step import (
     MINIMAL_SUFFIX,
     check_coverage,
     load_student_step,

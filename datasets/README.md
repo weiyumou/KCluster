@@ -6,7 +6,7 @@ KCluster reads a dataset as files that share one stem, the dataset id `<ds>`:
   describes. Every pipeline runs on it.
 - **`<ds>_student-step-minimal.txt`** (optional): the dataset's interaction log
   reduced to first attempts, carrying no KC model of KCluster's making; the
-  contract is in `kcluster.io.student_step`. `kcluster tag` joins a run's KC
+  contract is in `kcluster.datashop.student_step`. `kcluster tag` joins a run's KC
   models onto it and writes `<ds>_student-step-tagged.txt` into that run's
   result dir — a tagged file belongs to the run whose models it carries — and
   `kcluster fit` scores that.
@@ -25,13 +25,14 @@ it builds. The drivers
 behind the datasets in KCluster's papers lived in this folder up to 20aaa96 and
 remain in the history.
 
-What drivers share ships in the package, under `kcluster.io`:
+What drivers share ships in the package, under `kcluster.io` and
+`kcluster.datashop`:
 
-- format adapters: DataShop exports and KC-model templates (`io.datashop`,
-  `io.loaders.datashop_export`) and OLI course HTML (`io.loaders.oli_html`);
+- format adapters: DataShop exports and KC-model templates (`datashop.export`,
+  `datashop.kc_model`) and OLI course HTML (`io.loaders.oli_html`);
 - writers and validators: `dump_questions` and `validate_question`
   (`io.jsonl`) for the bank; `save_student_step`, `validate_student_step` and
-  `check_coverage` (`io.student_step`) for the student-step file.
+  `check_coverage` (`datashop.student_step`) for the student-step file.
 
 Write the bank and the student-step file in one pass, so the two cannot come
 to describe different question sets: cleaning that drops a question must drop

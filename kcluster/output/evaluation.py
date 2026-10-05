@@ -6,7 +6,7 @@ KC files whose bank ships its own labeling as a question field, and
 :func:`eval_datashop_kc` for the models of a DataShop KC template.
 
 Reading another tool's fit results is a separate concern and lives with the
-other foreign-format readers: :mod:`kcluster.io.learnsphere`."""
+other foreign-format readers: :mod:`kcluster.datashop.learnsphere`."""
 
 import glob
 import os
@@ -19,7 +19,7 @@ import pandas as pd
 from sklearn import metrics
 from sklearn.preprocessing import LabelEncoder
 
-from kcluster.io.datashop import KC_PAT, load_datashop_temp
+from kcluster.datashop.kc_model import KC_PAT, load_datashop_temp
 
 
 def compute_clustering_metrics(true_kcs: Sequence[str], pred_kcs: Sequence[str]) -> dict[str, float]:

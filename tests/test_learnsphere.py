@@ -1,8 +1,8 @@
-"""Tests for reading LearnSphere workflow results (kcluster.io.learnsphere)."""
+"""Tests for reading LearnSphere workflow results (kcluster.datashop.learnsphere)."""
 
 import pytest
 
-from kcluster.io.learnsphere import read_cv_results
+from kcluster.datashop.learnsphere import read_cv_results
 
 
 def test_read_cv_results_averages_fit_metrics_and_formats_pub_table(tmp_path):

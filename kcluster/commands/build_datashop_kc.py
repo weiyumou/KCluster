@@ -4,7 +4,7 @@ import re
 
 import pandas as pd
 
-from kcluster.io.datashop import (
+from kcluster.datashop.kc_model import (
     KC_PAT,
     get_step_to_kc,
     load_datashop_temp,
@@ -19,7 +19,7 @@ def insert_kc_model(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
     """
     Insert one KCluster result into a DataShop template, keyed by step name.
 
-    Unlike io.datashop.create_datashop_kc (which key-joins on the available
+    Unlike datashop.kc_model.create_datashop_kc (which key-joins on the available
     ds-* columns), this maps by Step Name alone and additionally masks steps
     that the system-generated unique-step model excludes.
     :param kc: Either a path to a human-readable KC model or a pd.DataFrame of such
