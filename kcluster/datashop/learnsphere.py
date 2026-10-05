@@ -20,6 +20,7 @@ from collections import defaultdict
 
 import numpy as np
 import pandas as pd
+from bs4 import BeautifulSoup
 
 from kcluster.datashop.kc_model import KC_PAT
 
@@ -35,10 +36,6 @@ def read_cv_results(res_path: str, num_cv_runs: int = 10) -> tuple[pd.DataFrame,
     short count means the workflow's runs and the table's rows disagree about
     what is being averaged.
     """
-    # bs4 ships with the optional [datashop] extra; import lazily so importing
-    # this module does not require it
-    from bs4 import BeautifulSoup
-
     with open(res_path, "r") as f:
         soup = BeautifulSoup(f, features="html.parser")
 

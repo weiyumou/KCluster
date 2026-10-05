@@ -5,8 +5,6 @@ Question JSONL format, keeping each question's OLI part id, ``skillref`` and
 derived step name so the questions can be joined against DataShop exports of
 the same course — which :func:`attach_datashop_steps` does, given the notation
 one particular offering encodes its step names in.
-
-Requires BeautifulSoup (the ``datashop`` extra).
 """
 
 import copy

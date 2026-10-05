@@ -1226,6 +1226,7 @@ name = "kcluster"
 version = "0.2.0.dev0"
 source = { editable = "." }
 dependencies = [
+    { name = "beautifulsoup4" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "scikit-learn" },
@@ -1234,9 +1235,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-datashop = [
-    { name = "beautifulsoup4" },
-]
 fit = [
     { name = "leapfit" },
 ]
@@ -1275,7 +1273,7 @@ papers = [
 [package.metadata]
 requires-dist = [
     { name = "accelerate", marker = "extra == 'local'", specifier = ">=1.0" },
-    { name = "beautifulsoup4", marker = "extra == 'datashop'", specifier = ">=4.12" },
+    { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "fastapi", marker = "extra == 'serve'", specifier = ">=0.110" },
     { name = "google-cloud-aiplatform", extras = ["prediction"], marker = "extra == 'vertex'", specifier = ">=1.96,<2" },
     { name = "google-cloud-storage", marker = "extra == 'vertex'", specifier = ">=2.14" },
@@ -1292,7 +1290,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'local'", specifier = ">=4.45" },
     { name = "uvicorn", marker = "extra == 'serve'", specifier = ">=0.30" },
 ]
-provides-extras = ["local", "vertex", "gemini", "datashop", "fit", "serve"]
+provides-extras = ["local", "vertex", "gemini", "fit", "serve"]
 
 [package.metadata.requires-dev]
 dev = [

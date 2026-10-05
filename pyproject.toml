@@ -26,6 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
+    "beautifulsoup4>=4.12",
     "numpy>=1.26",
     "pandas>=2.0",
     "scikit-learn>=1.4",
@@ -46,7 +47,6 @@ vertex = [
     "google-cloud-storage>=2.14",
 ]
 gemini = ["google-genai>=1.0"]
-datashop = ["beautifulsoup4>=4.12"]
 # `kcluster fit` only. Leapfit is released on GitHub but not on PyPI, so this is
 # a direct reference to the release's own wheel.
 # 0.4.0 is the floor because `kcluster fit` summarizes paired cross-validation

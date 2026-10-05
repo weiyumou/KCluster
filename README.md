@@ -33,7 +33,6 @@ pip install -e ".[local]"
 | `local`    | running the pipelines on a local GPU (Phi-2 via transformers + Lightning) |
 | `vertex`   | running the scoring steps as Vertex AI batch jobs in your own GCP project — no local GPU needed |
 | `gemini`   | the async Gemini engine used by the LAK 2026 judge and baseline scripts |
-| `datashop` | parsing LearnSphere/DataShop cross-validation results |
 | `serve`    | `kcluster serve`: the local engine behind an HTTP API, for interactive experiments over an SSH tunnel (see `deploy/vm/`) |
 
 For development: `uv sync --all-extras`, and once per clone
