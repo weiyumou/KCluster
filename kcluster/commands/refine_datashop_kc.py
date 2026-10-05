@@ -7,7 +7,13 @@ import numpy as np
 import pandas as pd
 
 from kcluster.core.pmi import PointwiseMutualInfo
-from kcluster.datashop.kc_model import KC_PAT, load_kc_template, merge_student_step_with_kc, save_kc_template
+from kcluster.datashop.kc_model import (
+    KC_PAT,
+    load_kc_template,
+    merge_student_step_with_kc,
+    save_kc_template,
+    template_models,
+)
 from kcluster.datashop.student_step import step_questions
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import (
@@ -19,7 +25,7 @@ from kcluster.paths import (
     required_result_dir,
     result_dataset,
 )
-from kcluster.tasks.cluster import create_kc, sim_from_embeddings
+from kcluster.tasks.cluster import create_kc, sim_from_embeddings, split_collisions
 from kcluster.tasks.tag import load_kc_csv
 
 
@@ -29,16 +35,15 @@ def main(args):
     output_dir = prepare_output_dir(os.path.join(result_dir, "kc-refine"), exist_ok=False)
     print(f"*** Writing results to {output_dir} ***")
 
-    # Identify the KC model to refine and load the KC values
-    kcm = os.path.split(args.kc_val_path)[1].split("_")[0]  # Extract the KC model from the file name
-    kc_val = pd.read_csv(args.kc_val_path)
-    val_mask = (kc_val["Slope"].le(0.001)) & (kc_val["Intercept (probability) at Opportunity 1"].between(0.2, 0.8))
-
     # Load the KC model to refine, cell for cell: DataShop's files are unquoted
     # text, so a label with quotes in it is the KC's name as it stands
     kc = load_kc_template(args.kc_path)
+    kcm = kc_model_name(kc, args.kc_val_path, args.kc_model)
     kc = kc.drop(columns=[col for col in kc.columns if re.match(KC_PAT, col) and col != f"KC ({kcm})"])
-    assert f"KC ({kcm})" in kc, "The KC model to refine is not found in the template file"
+
+    # Its KC values: the KCs that show no learning are the ones to refine
+    kc_val = pd.read_csv(args.kc_val_path)
+    val_mask = (kc_val["Slope"].le(0.001)) & (kc_val["Intercept (probability) at Opportunity 1"].between(0.2, 0.8))
 
     # Load concepts (the concept step writes them under kc/)
     concept_df = load_kc_csv(concept_kc_path(result_dir))
@@ -92,12 +97,11 @@ def main(args):
         pmi_kc = create_kc(concept_kc, questions, pmi_sim, predicate=predicate)
         assert pmi_kc is not None, "Failed to create KCs with KCluster-PMI"
 
-        for name, df in zip((f"{item}-{kc_label}" for item in ("cpt", "qcos", "pmi")), (concept_kc, q_cos_kc, pmi_kc)):
-            kc[f"KC ({name})"] = kc[f"KC ({kcm})"]
-            # Each step takes the label of its own question
-            id_to_kc = dict(zip(df["id"].astype(str), df["KC"], strict=True))
-            kc.loc[label_mask, f"KC ({name})"] = step_ids.map(id_to_kc)
-            assert kc[f"KC ({name})"].ne(kc[f"KC ({kcm})"]).sum() == num_steps, "Incorrect refinement"
+        for item, df in (("cpt", concept_kc), ("qcos", q_cos_kc), ("pmi", pmi_kc)):
+            col = f"KC ({item}-{kc_label})"
+            kc[col] = kc[f"KC ({kcm})"]
+            kc.loc[label_mask, col] = refined_labels(kc[f"KC ({kcm})"], label_mask, step_ids, df)
+            print(f"*** {item}: {kc.loc[label_mask, col].nunique()} KC(s) ***")
         count += 1
 
     print(f"*** Refined {count} KCs in {kcm} ***")
@@ -113,9 +117,48 @@ def main(args):
         ss.to_csv(os.path.join(output_dir, fname), sep="\t", index=False, quoting=csv.QUOTE_NONE)
 
 
+def kc_model_name(kc: pd.DataFrame, kc_val_path: str, explicit: str | None = None) -> str:
+    """The model whose KC values ``kc_val_path`` holds, which the template must carry.
+
+    ``kcluster fit`` names the file after the model (``kc-values/<model>.csv``);
+    a hand-named file puts the model before the first underscore
+    (``LOs_kc-values.csv``). ``--kc_model`` names it outright.
+    """
+    stem = os.path.splitext(os.path.basename(kc_val_path))[0]
+    for name in (explicit,) if explicit else (stem, stem.split("_")[0]):
+        if f"KC ({name})" in kc:
+            return name
+    raise SystemExit(f"No KC model {explicit or stem!r} in the template (it has {list(template_models(kc))}); "
+                     "name the one these KC values are for with --kc_model")
+
+
+def refined_labels(model: pd.Series, in_kc: pd.Series, step_ids: pd.Series, refinement: pd.DataFrame) -> pd.Series:
+    """The steps of one KC of ``model`` (``in_kc``), relabelled by a refinement of its questions.
+
+    Each step takes the label of its own question (``step_ids``, from
+    ``step_questions``).
+
+    A refinement labels its KCs by concept, and so does a KCluster model, so
+    the labels can coincide where the KCs do not. Two clusters whose exemplars
+    share a concept are told apart by cluster id, as build-kc's split models
+    are (D14); a part labelled like another KC of the model takes its parent's
+    label in brackets, so it does not merge with that KC. A part may keep the
+    parent's own label: no other step carries it.
+    """
+    if "KC-raw" in refinement and (split := split_collisions(refinement)) is not None:
+        refinement = split
+    labels = step_ids.map(dict(zip(refinement["id"].astype(str), refinement["KC"], strict=True)))
+    assert labels.notna().all(), "A refined step has no label"
+    elsewhere = labels.isin(set(model[~in_kc]))
+    return labels.where(~elsewhere, labels + " [" + model[in_kc] + "]")
+
+
 def add_arguments(parser):
     parser.add_argument("--kc_path", required=True, type=str, help="Path to a DataShop KC template file")
-    parser.add_argument("--kc_val_path", required=True, type=str, help="Path to a CSV file containing KC values")
+    parser.add_argument("--kc_val_path", required=True, type=str,
+                        help="KC values of the model to refine, as kcluster fit writes them (kc-values/<model>.csv)")
+    parser.add_argument("--kc_model", default=None, type=str,
+                        help="The model the KC values are for (default: from their file name)")
     parser.add_argument("--result_dir", default=None, type=str,
                         help="The result directory holding the concept KC, embeddings, and score shards "
                              "(default: --run_dir)")
