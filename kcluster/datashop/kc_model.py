@@ -189,8 +189,7 @@ def create_datashop_kc(kc: str | pd.DataFrame, kc_temp: str | pd.DataFrame,
     # Expand each key column if it contains multiple values separated by "~"
     for col in key_cols:
         if col in kc:
-            kc[col] = kc[col].str.split("~")
-            kc = kc.explode(col, ignore_index=True)
+            kc = kc.assign(**{col: kc[col].str.split("~")}).explode(col, ignore_index=True)
 
     # Grab all available key columns
     df = kc.filter(items=list(key_cols), axis="columns").rename(columns=key_cols)

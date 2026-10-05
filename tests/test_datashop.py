@@ -67,6 +67,18 @@ def test_create_datashop_kc_explodes_tilde_joined_steps(template):
     assert out["KC (MyModel)"].tolist() == ["alpha", "alpha", "beta"]
 
 
+def test_create_datashop_kc_leaves_the_callers_frames_alone(template):
+    # The first key column used to be split into lists in place, so a caller
+    # reusing its KC frame (for another model or template) joined on lists
+    kc = pd.DataFrame({"ds-problem-name": ["P1", "P2"], "ds-step-name": ["s1~s2", "s3"], "concept": ["a", "b"]})
+    kc_temp = load_datashop_temp(template)
+    kc_before, kc_temp_before = kc.copy(), kc_temp.copy()
+
+    create_datashop_kc(kc, kc_temp, kc_cols=["concept"], match_other_kc=True, drop_other_kc=True)
+    pd.testing.assert_frame_equal(kc, kc_before)
+    pd.testing.assert_frame_equal(kc_temp, kc_temp_before)
+
+
 def test_create_datashop_kc_match_other_kc_masks_uncovered_steps(tmp_path, write_tsv):
     template = write_tsv(
         pd.DataFrame(
