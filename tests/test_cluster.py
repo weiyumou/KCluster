@@ -56,6 +56,16 @@ def test_run_ap_rejects_unknown_preference(two_blobs):
         run_ap(questions, sim, use_p="mode")
 
 
+def test_run_ap_takes_a_fixed_preference(two_blobs):
+    questions, sim = two_blobs
+    # Far below every similarity: one cluster. At the largest similarity: more than the two groups.
+    assert run_ap(questions, sim, preference=-1000.0)["KC"].nunique() == 1
+    assert run_ap(questions, sim, preference=0.0)["KC"].nunique() > 2
+    # create_kc hands it through
+    kc = create_kc(pd.DataFrame({"KC": list("abcdef")}), questions, sim, preference=-1000.0)
+    assert kc["KC"].nunique() == 1
+
+
 def test_create_kc_relabels_clusters_with_exemplar_concepts(two_blobs):
     questions, sim = two_blobs
     concept_df = pd.DataFrame({"KC": ["alpha"] * 3 + ["beta"] * 3})

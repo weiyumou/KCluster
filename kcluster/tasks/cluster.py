@@ -31,13 +31,14 @@ def sim_from_embeddings(embeddings: np.ndarray, metric: str = "cosine") -> np.nd
 
 def run_ap(questions: list[Question], sim_mtx: np.ndarray,
            predicate: Callable[[Question], bool] | None = None,
-           use_p: str = "median", **ap_kwargs) -> pd.DataFrame:
+           use_p: str = "median", preference: float | None = None, **ap_kwargs) -> pd.DataFrame:
     """
     Create a new KC model from the similarity matrix
     :param questions: The questions the rows/columns of the matrix describe
     :param sim_mtx: A square similarity matrix over the questions
     :param predicate: A function indicating if a question should be considered
     :param use_p: Determine how to compute preference
+    :param preference: A fixed preference, used in place of the one ``use_p`` computes; the lower, the fewer clusters
     :param ap_kwargs: Additional arguments for the Affinity Propagation algorithm, e.g., damping=0.7
     :return: The new KC model in a DataFrame
     """
@@ -52,7 +53,7 @@ def run_ap(questions: list[Question], sim_mtx: np.ndarray,
 
     # Determine p
     func: dict[str, Callable] = {"median": np.median, "mean": np.mean, "min": np.amin, "max": np.amax}
-    p = func[use_p](sim_mtx[~np.eye(len(questions), dtype=bool)])
+    p = func[use_p](sim_mtx[~np.eye(len(questions), dtype=bool)]) if preference is None else preference
 
     # Run AP
     centers, labels, num_iters = affinity_propagation(sim_mtx, preference=p,
