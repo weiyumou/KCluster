@@ -22,8 +22,7 @@ The steps of a pipeline still run at different times (often as separate
 cluster jobs), so pass the same ``--run_dir`` (or set ``KCLUSTER_RUN_DIR``)
 to make every step target one result dir; downstream steps then find their
 inputs automatically. For a Vertex batch the work dir holds one such result
-dir per course. Steps outside the KC pipeline (classify, qgen, kc-refine)
-keep the older per-step folders via ``default_output_dir``.
+dir per course.
 """
 
 import glob
@@ -56,17 +55,6 @@ def run_dir(explicit: str | None = None) -> str | None:
     Resolution order: the ``--run_dir`` flag, then ``KCLUSTER_RUN_DIR``.
     """
     return explicit or os.environ.get(RUN_DIR_ENV) or None
-
-
-def default_output_dir(step: str, explicit_run_dir: str | None = None) -> str:
-    """Default output directory for a non-KC pipeline ``step`` (e.g. ``classify``).
-
-    Inside a run folder this is ``<run>/<step>``; otherwise a fresh run folder
-    is minted for this invocation alone (``<results>/<timestamp>/<step>``).
-    """
-    if run := run_dir(explicit_run_dir):
-        return os.path.join(run, step)
-    return os.path.join(results_root(), timestamp(), step)
 
 
 def default_result_dir(explicit_run_dir: str | None = None) -> str:

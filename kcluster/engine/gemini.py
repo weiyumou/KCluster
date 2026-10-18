@@ -1,12 +1,14 @@
-"""Gemini engine: async batched content generation (LAK 2026 study arms).
+"""Gemini engine: async batched content generation.
 
-Wraps google-genai with the patterns the qgen study scripts share: fire a
+Wraps google-genai with the patterns batch callers share: fire a
 batch of prompts concurrently (optionally ramping a per-call delay to stay
 under rate limits), stamp every response with the caller's id, capture
 errors as data instead of exceptions, and parse answers back out — either
 from plain text or from the log-probabilities of a choice token (the
 prefilled-turn trick: end ``contents`` with a model-role turn like
-"The answer is **" and read the next token's candidates).
+"The answer is **" and read the next token's candidates). Dataset drivers
+use it to parse problems and check answerability; genval's LAK 2026 study
+scripts use it as generator and judge.
 
 No project identifiers are baked in: pass ``api_key`` (or set
 ``GOOGLE_API_KEY``) for the Developer API, or ``vertexai=True`` with your

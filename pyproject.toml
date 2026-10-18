@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kcluster"
 version = "0.2.0"
-description = "LLM-based knowledge component discovery and question generation for education"
+description = "LLM-based knowledge component discovery for education"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
@@ -14,7 +14,6 @@ keywords = [
     "knowledge components",
     "educational data mining",
     "learning analytics",
-    "question generation",
     "large language models",
 ]
 classifiers = [
@@ -65,10 +64,7 @@ dev = [
     "httpx>=0.27",
     "pytest>=8.0",
     "ruff>=0.5",
-    {include-group = "papers"},
 ]
-# Analysis-notebook dependencies for the papers/ workspaces; never shipped in the wheel
-papers = ["seaborn>=0.13", "statsmodels>=0.14"]
 
 [project.scripts]
 kcluster = "kcluster.cli:main"

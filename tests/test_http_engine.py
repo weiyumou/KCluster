@@ -79,11 +79,10 @@ def test_numpy_tensors(server):
 
 
 def test_tasks_run_unmodified_over_http(server):
-    """extract_concepts / extract_question_embeds / sort_questions only use the engine surface."""
+    """extract_concepts / extract_question_embeds only use the engine surface."""
     torch = pytest.importorskip("torch")
     from kcluster.core.question import Question
     from kcluster.tasks.concept import extract_concepts, extract_question_embeds
-    from kcluster.tasks.qgen.validate import sort_questions
 
     url, _ = server
     llm = HttpLangModel(url)  # auto → torch
@@ -96,7 +95,3 @@ def test_tasks_run_unmodified_over_http(server):
     assert len(concepts) == 3 and all(c.endswith("done") for c in concepts)
     embeds = extract_question_embeds(llm, qs, batch_size=2)
     assert isinstance(embeds, torch.Tensor) and embeds.shape == (3, 2)
-
-    prompts = [f"seed {i}\n1. Stem {i}?" for i in range(3)]
-    sorted_qs, sorted_prompts = sort_questions(llm, {"lo": list(qs)}, prompts, batch_size=2)
-    assert len(sorted_qs["lo"]) == 3 and len(sorted_prompts) == 3  # prompts come back flattened
