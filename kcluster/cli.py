@@ -37,12 +37,6 @@ COMMANDS = [
      "Retrieve PMI similarity matrices for completed Vertex batch jobs"),
     ("vertex-build-kc", "kcluster.commands.vertex_build_kc",
      "Build KC models from completed Vertex batch jobs"),
-    ("classify", "kcluster.commands.classify",
-     "Align questions with learning objectives via rectangular PMI"),
-    ("qgen-generate", "kcluster.commands.qgen_generate",
-     "Generate MCQs incrementally from course standards"),
-    ("qgen-validate", "kcluster.commands.qgen_validate",
-     "Filter generated MCQs by completeness and answer confidence"),
     ("serve", "kcluster.commands.serve",
      "Serve a local model over HTTP for interactive experiments"),
 ]

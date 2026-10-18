@@ -97,9 +97,11 @@ only use the engine surface run unmodified:
     llm = HttpLangModel("http://localhost:8080")
     extract_concepts(llm, questions, batch_size=16)
 
-Covered: `extract_concepts`, `extract_question_embeds`, `validate_mcq`,
-`sort_questions`. Not covered: `generate_mcq`, which hands the tokenizer
-object to `generate` — run that in-process on the VM.
+Covered: every engine method, so `extract_concepts`, `extract_question_embeds`
+and any downstream stage that scores or completes through the engine surface
+(`log_prob` with `return_ppl`, `next_tokens`, `next_logits`). Not covered:
+callers that hand tensors or the tokenizer object to `complete_prompts` —
+run those in-process on the VM.
 
 ## Swapping the model
 

@@ -1,19 +1,18 @@
 """The prompt registry: every string KCluster sends to a model, in one place.
 
 These strings are published artifacts — the EDM 2025 paper (Tables 1, 3, 4)
-and the LAK 2026 paper quote them verbatim — so they are versioned: any
+quotes them verbatim — so they are versioned: any
 change must bump ``PROMPT_VERSION`` and is a scientific decision, not a
 wording cleanup. Golden tests (tests/test_prompts.py and the task tests)
 pin the exact strings.
 
 Templates are ``str.format`` style. Composition helpers that need a
 Question take it duck-typed (``header``/``q_type``/``__str__``) to keep
-this module import-free. The human-facing survey wording lives with the
-survey writer in kcluster/output/qualtrics.py, not here.
+this module import-free.
 
 What fixes a prompt's *reading* sits beside it, because both engines must
 agree on it as exactly as on the string: where a concept completion stops and
-how it is cleaned, and the form an objective takes inside its scaffold.
+how it is cleaned.
 """
 
 PROMPT_VERSION = 1
@@ -60,47 +59,3 @@ def concept_prompt(question, verbal: bool = False) -> str:
 def clean_concept(completion: str) -> str:
     """The concept a completion names: without surrounding whitespace or the stop token."""
     return completion.strip().rstrip("".join(CONCEPT_STOP_TOKENS))
-
-
-# --- LO alignment (LAK 2026; tasks/classify.py). The marginal is the bare
-# type line — deliberately NOT the congruity grid's "Exercise 2:" header ---
-LO_ALIGNMENT_MARGINAL_CONTEXT = "{q_type}:\n"
-LO_ACTIONS_HEADER = "The exercise below is designed to test whether a student can {lo}."
-LO_FACTS_HEADER = "The exercise below is designed to test whether a student knows:\n{lo}."
-
-
-def normalize_lo(lo: str, lo_type: str) -> str:
-    """A learning objective or standard in the form its scaffold embeds.
-
-    The scaffolds here and under MCQ generation end the sentence themselves, so
-    the trailing period goes; an ``actions`` objective is a verb phrase that
-    continues "...whether a student can", so it is also decapitalized.
-    """
-    match lo_type:
-        case "actions":
-            return lo[0].lower() + lo[1:].rstrip().rstrip(".")
-        case "facts":
-            return lo.rstrip().rstrip(".")
-        case _:
-            raise ValueError(f"Invalid lo_type: '{lo_type}'")
-
-# --- MCQ generation (LAK 2026; tasks/qgen/generate.py) ---
-QGEN_SEED_ACTIONS = "The exercises below are designed to test whether a student can {std}.\n\n{header}"
-QGEN_SEED_FACTS = ('The exercises below are designed to test whether a student understands the following facts:\n'
-                   '"{std}."\n\n{header}')
-QGEN_MCQ_HEADER = "Multiple Choice (best out of {num_choices} options):\n1."
-QGEN_SOLUTION_PREFIX = "\n\nSolution:\nThe correct answer is"
-QGEN_EXPLANATION_PREFIX = "\n\nExplanation:\n"
-
-# --- LLM judges (LAK 2026 study arms; papers/lak2026/scripts/) ---
-GPT_JUDGE_SYSTEM_PROMPT = (
-    "You are an expert at answering multiple choice questions. "
-    "If none of the options a-d are correct, choose e for 'None of the above'. "
-    "Provide your answer (letter a-e) and explanation in the JSON format specified."
-)
-JUDGE_Q1_PAIRED = "Answer the following two questions:\n\nQ1. {question}"
-JUDGE_Q1_SINGLE = "Answer the following question:\n\n{question}"
-JUDGE_Q2_LOGPROB = "Does the above question help teachers test whether a student can {lo}?\na) Yes\nb) No"
-JUDGE_Q2_TEXT = "Does the following question test whether a student can **{lo}**?\n\n{question}"
-JUDGE_PREFILL_Q1 = "The answer to Q1 is **"
-JUDGE_PREFILL_Q2 = "The answer to Q2 is **"

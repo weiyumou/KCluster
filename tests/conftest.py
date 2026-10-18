@@ -2,7 +2,7 @@
 the result-dir scaffold, and the fakes more than one module builds on.
 
 Only what was being copied between files lives here. Questions whose content a
-test pins — the papers' golden examples, the qgen and survey samples — stay
+test pins — the papers' golden examples — stay
 with the tests that assert on them.
 """
 

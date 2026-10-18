@@ -2,7 +2,7 @@
 
 ``HttpLangModel`` exposes the same method names and signatures as the local
 engine, so tasks that only use the engine surface — ``extract_concepts``,
-``extract_question_embeds``, ``validate_mcq``, ``sort_questions`` — run
+``extract_question_embeds``, and downstream packages' Phi-2 stages — run
 unmodified against a served model::
 
     llm = HttpLangModel("http://localhost:8080")
