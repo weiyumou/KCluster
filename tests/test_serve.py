@@ -1,55 +1,20 @@
 """Offline tests for the HTTP server: routes, kwarg passthrough, error
-surfacing, the tokenizer guard, and the health report. A stub engine stands
-in for the model, so neither torch nor a GPU is needed."""
+surfacing, the tokenizer guard, and the health report. A stub engine
+(conftest's ``make_stub_llm``) stands in for the model, so neither torch nor a
+GPU is needed."""
 
 import pytest
 
 pytest.importorskip("fastapi")
 
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from kcluster.engine.serve import check_tokenizer, create_app, to_jsonable  # noqa: E402
-
-
-class StubTokenizer:
-    def __call__(self, texts, **kwargs):
-        texts = [texts] if isinstance(texts, str) else texts
-        return {"input_ids": [[len(w) for w in t.split()] for t in texts]}
-
-
-class StubLLM:
-    """Records calls; returns shapes matching LargeLangModel's contract (as plain lists)."""
-
-    device = "cpu"
-    tokenizer = StubTokenizer()
-
-    def __init__(self):
-        self.calls = []
-
-    def complete_prompts(self, prompts, stop_tokens=None, max_new_tokens=200, pad_to_multiple_of=None, **kwargs):
-        self.calls.append(("complete_prompts", kwargs))
-        return [p + " done" for p in prompts]
-
-    def log_prob(self, texts, contexts=None, ignore_idx=-100, pad_to_multiple_of=None, return_ppl=False):
-        self.calls.append(("log_prob", {"contexts": contexts, "return_ppl": return_ppl}))
-        return [-float(len(t)) for t in texts]
-
-    def next_tokens(self, prompts, choices=None, top_k=1, pad_to_multiple_of=None):
-        self.calls.append(("next_tokens", {"choices": choices, "top_k": top_k}))
-        return [tuple((choices or ["x"])[:top_k]) for _ in prompts]
-
-    def next_logits(self, prompts, normalize=False, pad_to_multiple_of=None):
-        return [[0.1, 0.2, 0.7] for _ in prompts]
-
-    def encode(self, texts, contexts=None, pad_to_multiple_of=None):
-        if contexts is not None and len(contexts) != len(texts):
-            raise ValueError("Contexts and texts must have the equal length")
-        return [[1.0, 2.0] for _ in texts]
+from kcluster.engine.serve import check_tokenizer, create_app, to_jsonable
 
 
 @pytest.fixture
-def stub():
-    return StubLLM()
+def stub(make_stub_llm):
+    return make_stub_llm()
 
 
 @pytest.fixture

@@ -10,9 +10,9 @@ import pytest
 
 pytest.importorskip("torch")
 
-from kcluster.core.question import Question  # noqa: E402
-from kcluster.tasks.cluster import build_res_df  # noqa: E402
-from kcluster.tasks.concept import extract_concepts, extract_question_embeds  # noqa: E402
+from kcluster.core.question import Question
+from kcluster.tasks.cluster import build_res_df
+from kcluster.tasks.concept import extract_concepts, extract_question_embeds
 
 
 class StubLLM:

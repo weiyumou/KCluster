@@ -20,8 +20,8 @@ import pytest
 leapfit_data = pytest.importorskip(
     "leapfit.data", reason='needs the fit extra: pip install "kcluster[fit]"')
 
-from kcluster.io.student_step import KC_COLUMN, load_student_step  # noqa: E402
-from kcluster.tasks.tag import load_kc_csv, model_name, tag_student_step  # noqa: E402
+from kcluster.datashop.student_step import KC_COLUMN, load_student_step
+from kcluster.tasks.tag import load_kc_csv, model_name, tag_student_step
 
 ROOT = Path(__file__).resolve().parents[1]
 

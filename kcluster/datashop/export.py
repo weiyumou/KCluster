@@ -3,7 +3,7 @@
 A driver for a DataShop-sourced dataset needs two things out of the export, and
 this module is both of them: the set of steps that defines the dataset's
 comparison universe, and the export reduced to the minimal student-step
-contract (``kcluster.io.student_step``).
+contract (``kcluster.datashop.student_step``).
 
 **The export defines the universe, not a KC-model template.** A template is a
 second export of the same steps and can only drift from the one that actually
@@ -19,9 +19,9 @@ already a student-step file:
 
 - rows whose step resolves to no question are **dropped**, which defines the
   comparison universe once and up front. It is why the legacy KC masking
-  (``adjust_datashop_kc``, ``match_other_kc``, the unique-step NaN mask) is not
-  needed: every KC model is built over the same rows by construction, rather
-  than by keeping several masks in step.
+  (``match_other_kc``, the unique-step NaN mask) is not needed: every KC model
+  is built over the same rows by construction, rather than by keeping several
+  masks in step.
 - the file is cut to the contract's columns plus the pass-through ``KC (m)``
   models. Their ``Opportunity (m)`` columns are dropped — the KC tagger
   recomputes opportunities so pass-through and generated models are counted the
@@ -33,7 +33,7 @@ already a student-step file:
 
 import pandas as pd
 
-from kcluster.io.student_step import MINIMAL_COLUMNS
+from kcluster.datashop.student_step import MINIMAL_COLUMNS
 
 #: What makes a DataShop step distinct. ``Step Name`` alone does not: the same
 #: name recurs under different problems.

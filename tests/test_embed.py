@@ -5,7 +5,6 @@ propagation runs; correctly labeled cosine KC models land in an existing
 result dir. No model weights are involved.
 """
 
-import argparse
 import json
 import os
 
@@ -16,10 +15,9 @@ import pytest
 torch = pytest.importorskip("torch")
 pytest.importorskip("sentence_transformers")
 
-from kcluster.commands import embed  # noqa: E402
-from kcluster.core.question import Question  # noqa: E402
-from kcluster.io.jsonl import dump_questions  # noqa: E402
-from kcluster.tasks.cluster import build_res_df  # noqa: E402
+from kcluster.cli import main as cli_main
+from kcluster.commands import embed
+from kcluster.io.jsonl import dump_questions
 
 GROUPS = ["alpha"] * 3 + ["beta"] * 3
 
@@ -28,20 +26,6 @@ PLANTED = np.array(
     [[1.0, 0.01], [1.0, 0.02], [1.0, 0.03],
      [0.01, 1.0], [0.02, 1.0], [0.03, 1.0]]
 )
-
-
-def _questions() -> list[Question]:
-    return [
-        Question(
-            {
-                "id": f"q-{i}",
-                "type": "Multiple Choice",
-                "question": {"stem": f"Stem {i}?", "choices": [{"label": "a", "text": "x"}]},
-                "answerKey": "a",
-            }
-        )
-        for i in range(6)
-    ]
 
 
 class FakeSentenceTransformer:
@@ -54,16 +38,9 @@ class FakeSentenceTransformer:
 
 
 @pytest.fixture
-def result_dir(tmp_path):
+def result_dir(make_questions, make_result_dir):
     """A result dir as the concept step (or vertex-build-kc) leaves it."""
-    questions = _questions()
-    rd = tmp_path / "run"
-    data_path = tmp_path / "questions.jsonl"
-    dump_questions(questions, str(data_path))
-    (rd / "kc" / "concept").mkdir(parents=True)
-    (rd / "args-concept-questions.json").write_text(json.dumps({"data_path": str(data_path)}))
-    build_res_df(questions, GROUPS).to_csv(rd / "kc" / "concept" / "questions_concept-kc.csv", index=False)
-    return rd
+    return make_result_dir(make_questions(), GROUPS)
 
 
 def _assert_model(rd, name):
@@ -78,7 +55,7 @@ def _assert_model(rd, name):
 
 def test_embed_sbert_builds_question_and_concept_models(result_dir, monkeypatch):
     monkeypatch.setattr(embed, "SentenceTransformer", FakeSentenceTransformer)
-    embed.main(argparse.Namespace(result_dir=str(result_dir), sent_path="st-path"))
+    cli_main(["embed", "--result_dir", str(result_dir), "--sent_path", "st-path"])
 
     # One SentenceTransformer, two models: questions and concept phrases
     _assert_model(result_dir, "sbert")
@@ -92,7 +69,7 @@ def test_embed_llm_builds_the_llm_model(result_dir, monkeypatch):
     monkeypatch.setattr(embed, "LargeLangModel", lambda path, **kwargs: object())
     monkeypatch.setattr(embed, "extract_question_embeds",
                         lambda llm, questions, batch_size: torch.tensor(PLANTED))
-    embed.main(argparse.Namespace(result_dir=str(result_dir), llm_path="llm-path", batch_size=4))
+    cli_main(["embed", "--result_dir", str(result_dir), "--llm_path", "llm-path", "--batch_size", "4"])
 
     _assert_model(result_dir, "llm")
     assert not (result_dir / "kc" / "embed" / "questions_sbert-cosine-kc.csv").exists()
@@ -103,7 +80,7 @@ def test_embed_works_on_a_vertex_course_dir(result_dir, monkeypatch):
     the data path is recovered all the same (engine-agnostic by design)."""
     (result_dir / "args-concept-questions.json").rename(result_dir / "args-kc-questions.json")
     monkeypatch.setattr(embed, "SentenceTransformer", FakeSentenceTransformer)
-    embed.main(argparse.Namespace(result_dir=str(result_dir), sent_path="st-path"))
+    cli_main(["embed", "--result_dir", str(result_dir), "--sent_path", "st-path"])
     _assert_model(result_dir, "sbert")
 
 
@@ -117,28 +94,26 @@ def test_embed_data_path_overrides_an_unreachable_recorded_path(result_dir, tmp_
 
     monkeypatch.setattr(embed, "SentenceTransformer", FakeSentenceTransformer)
     with pytest.raises(SystemExit, match="Question file not found"):
-        embed.main(argparse.Namespace(result_dir=str(result_dir), sent_path="st-path"))
+        cli_main(["embed", "--result_dir", str(result_dir), "--sent_path", "st-path"])
 
-    embed.main(argparse.Namespace(result_dir=str(result_dir), sent_path="st-path",
-                                  data_path=str(moved)))
+    cli_main(["embed", "--result_dir", str(result_dir), "--sent_path", "st-path", "--data_path", str(moved)])
     _assert_model(result_dir, "sbert")
 
 
-def test_embed_rejects_a_question_file_of_the_wrong_size(result_dir, tmp_path, monkeypatch):
+def test_embed_rejects_a_question_file_of_the_wrong_size(result_dir, tmp_path, monkeypatch, make_questions):
     wrong = tmp_path / "short.jsonl"
-    dump_questions(_questions()[:4], str(wrong))
+    dump_questions(make_questions(4), str(wrong))
     monkeypatch.setattr(embed, "SentenceTransformer", FakeSentenceTransformer)
     with pytest.raises(SystemExit, match="wrong question file"):
-        embed.main(argparse.Namespace(result_dir=str(result_dir), sent_path="st-path",
-                                      data_path=str(wrong)))
+        cli_main(["embed", "--result_dir", str(result_dir), "--sent_path", "st-path", "--data_path", str(wrong)])
 
 
 def test_embed_requires_an_encoder(result_dir):
     with pytest.raises(SystemExit, match="--sent_path"):
-        embed.main(argparse.Namespace(result_dir=str(result_dir)))
+        cli_main(["embed", "--result_dir", str(result_dir)])
 
 
 def test_embed_requires_a_result_dir_without_a_run_dir(monkeypatch):
     monkeypatch.delenv("KCLUSTER_RUN_DIR", raising=False)
     with pytest.raises(SystemExit, match="--result_dir is required"):
-        embed.main(argparse.Namespace(sent_path="st-path"))
+        cli_main(["embed", "--sent_path", "st-path"])

@@ -33,7 +33,6 @@ pip install -e ".[local]"
 | `local`    | running the pipelines on a local GPU (Phi-2 via transformers + Lightning) |
 | `vertex`   | running the scoring steps as Vertex AI batch jobs in your own GCP project — no local GPU needed |
 | `gemini`   | the async Gemini engine used by the LAK 2026 judge and baseline scripts |
-| `datashop` | parsing LearnSphere/DataShop cross-validation results |
 | `serve`    | `kcluster serve`: the local engine behind an HTTP API, for interactive experiments over an SSH tunnel (see `deploy/vm/`) |
 
 For development: `uv sync --all-extras`, and once per clone
@@ -65,9 +64,10 @@ identically shaped.
 `build-kc` writes the KCluster model (`<ds>_kcluster-unnorm-kc.csv`)
 discovered by affinity propagation over the congruity matrix, alongside the
 concept model the concept step produced; `embed` adds cosine baselines from
-question and concept embeddings. `build-datashop-kc` and
-`refine-datashop-kc` then insert and refine KC models in
-[DataShop](https://pslcdatashop.web.cmu.edu/) format for AFM evaluation.
+question and concept embeddings. `build-datashop-kc` fills a
+[DataShop](https://pslcdatashop.web.cmu.edu/) KC-model export with a run's
+KC models, ready to import for AFM evaluation there, and
+`refine-datashop-kc` splits the KCs that fit poorly.
 
 **No GPU?** The scoring steps run as Vertex AI batch jobs in your own GCP
 project: deploy the model once ([`deploy/vertex/`](deploy/vertex/README.md)),
@@ -91,17 +91,18 @@ Questions are JSONL, one object per line:
 ```
 
 Extra fields pass through untouched (e.g. `lo` for learning objectives,
-`ds-step-name` for DataShop step mapping). Format adapters for public
-datasets live in `kcluster/io/loaders/` (e.g. ScienceQA, OLI HTML).
+`ds-step-name` for DataShop step mapping). Adapters for common sources ship
+in the package: `kcluster/datashop/` for DataShop's files, and
+`kcluster/io/loaders/` for others (e.g. OLI HTML).
 
 ## Repository layout
 
 | path        | contents | shipped in the wheel |
 |-------------|----------|----------------------|
-| `kcluster/` | the installable package: `core` (Question, PMI, prompts), `engine` (local / Vertex / Gemini), `tasks`, `io`, `output`, CLI commands | yes |
+| `kcluster/` | the installable package: `core` (Question, PMI, prompts), `engine` (local / Vertex / Gemini), `tasks`, `io`, `datashop` (DataShop's file formats, usable on their own), `output`, CLI commands | yes |
 | `examples/` | synthetic sample data + walkthrough | no |
 | `papers/`   | paper-specific reproduction scripts (`lak2026/`) | no |
-| `datasets/` | per-dataset ETL workspaces (spacing-exp2, webwork, elearning22, …) | no |
+| `datasets/` | the dataset contract: what KCluster reads, and what a driver must produce | no |
 | `deploy/`   | the Vertex serving container and deployment scripts | no |
 
 ## Data policy

@@ -5,17 +5,21 @@ each collected job, downloads the concepts and PMI values from GCS and runs
 the same clustering as the local ``build-kc`` command.
 """
 
-import argparse
-import json
 import logging
 import os
 
 import numpy as np
 
 from kcluster.core.pmi import PointwiseMutualInfo
-from kcluster.engine.vertex import VertexConfig, collected_inputs, download_concepts, download_pmi
+from kcluster.engine.vertex import (
+    VertexConfig,
+    collected_inputs,
+    download_concepts,
+    download_pmi,
+    read_job_log,
+)
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import kc_dir, pmi_dir, prepare_output_dir
+from kcluster.paths import dataset_name, kc_dir, pmi_dir, prepare_output_dir, save_args
 from kcluster.tasks.cluster import build_kcluster_models, build_res_df
 
 
@@ -26,18 +30,19 @@ def buildable_jobs(jobs_path: str, config: VertexConfig) -> list[dict]:
     once, and only the winning attempt has a pmi.npy. Building every entry would
     stop on the first dead one, so keep just the attempt that has results.
     """
-    with open(jobs_path) as f:
-        entries = [json.loads(line) for line in f if line.strip()]
     collected = collected_inputs(jobs_path, config)
-    for item in entries:
-        if collected.get(item["data_path"]) != item["job_id"]:
+    buildable = []
+    for item in read_job_log(jobs_path):
+        if collected.get(item["data_path"]) == item["job_id"]:
+            buildable.append(item)
+        else:
             logging.info(f"Skipping '{item['job_id']}': superseded or never produced results")
-    return [item for item in entries if collected.get(item["data_path"]) == item["job_id"]]
+    return buildable
 
 
 def main(args):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-    config = VertexConfig.load(getattr(args, "config", None))
+    config = VertexConfig.load(args.config)
 
     jobs_path = os.path.join(args.work_dir, "launched_jobs.jsonl")
     launched_jobs = buildable_jobs(jobs_path, config)
@@ -46,7 +51,7 @@ def main(args):
 
     for item in launched_jobs:
         job_id, data_path = item["job_id"], item["data_path"]
-        data_name = os.path.splitext(os.path.basename(data_path))[0].replace(" ", "-")
+        data_name = dataset_name(data_path)
 
         # Each course gets a full result dir under the work dir (D10)
         result_dir = os.path.join(args.work_dir, data_name)
@@ -76,18 +81,15 @@ def main(args):
             return PointwiseMutualInfo.from_array(mtx, symmetric=True, normalize=normalize).pmi_mat
 
         build_kcluster_models(concept_df, questions, congruity, ds=data_name, kc_out_dir=output_dir,
-                              mat_out_dir=mat_dir, normalize=getattr(args, "normalize", False),
-                              residualize=getattr(args, "residualize", False),
-                              residualize_full=getattr(args, "residualize_full", False))
+                              mat_out_dir=mat_dir, normalize=args.normalize, residualize=args.residualize,
+                              residualize_full=args.residualize_full)
 
         print(f"*** Created {concept_df['KC'].nunique()} Concept KCs ***\n\n")
         concept_df.to_csv(os.path.join(concept_dir, f"{data_name}_concept-kc.csv"), index=False)
 
         # Provenance breadcrumb at the course's result root, mirroring the
         # local pipeline; the embed command recovers data_path from here
-        breadcrumb = dict(vars(args), job_id=job_id, data_path=data_path)
-        with open(os.path.join(result_dir, f"args-kc-{data_name}.json"), "w") as f:
-            json.dump(breadcrumb, f, indent=2)
+        save_args(result_dir, "kc", data_name, dict(vars(args), job_id=job_id, data_path=data_path))
 
 
 def add_arguments(parser):
@@ -104,11 +106,5 @@ def add_arguments(parser):
                         help="Also build a KC model from congruity with the joint item + format "
                              "correction removed — the recommended variant for mixed-format banks; "
                              "implies --residualize")
-    parser.add_argument("--config", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--config", default=None, type=str,
                         help="Path to a vertex TOML config (default: KCLUSTER_VERTEX_* environment)")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

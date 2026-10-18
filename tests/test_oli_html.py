@@ -1,10 +1,6 @@
 """Tests for the OLI course-HTML loader, using synthetic OLI page markup."""
 
-import pytest
-
-bs4 = pytest.importorskip("bs4")
-
-from kcluster.io.loaders.oli_html import (  # noqa: E402
+from kcluster.io.loaders.oli_html import (
     attach_datashop_steps,
     parse_all_mcqs,
     parse_mcq,

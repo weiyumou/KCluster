@@ -1,27 +1,23 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
 
-from kcluster.core.question import Question
-from kcluster.tasks.cluster import create_kc, run_ap, save_kc_models, sim_from_embeddings, split_collisions
-
-
-def _question(i: int) -> Question:
-    return Question(
-        {
-            "id": f"q-{i}",
-            "type": "Multiple Choice",
-            "question": {"stem": f"Stem {i}?", "choices": [{"label": "a", "text": "x"}]},
-            "answerKey": "a",
-            "images": [f"{i}.png"],
-        }
-    )
+from kcluster.tasks.cluster import (
+    create_kc,
+    exemplar_index,
+    run_ap,
+    save_kc_models,
+    sim_from_embeddings,
+    split_collisions,
+)
 
 
 @pytest.fixture
-def two_blobs():
+def two_blobs(make_questions):
     # Six questions whose embeddings form two well-separated groups.
-    questions = [_question(i) for i in range(6)]
+    questions = make_questions(extra=lambda i: {"images": [f"{i}.png"]})
     embeds = np.array(
         [[0.0, 0.1], [0.1, 0.0], [0.0, -0.1],
          [10.0, 10.0], [10.1, 10.0], [10.0, 10.1]]
@@ -60,6 +56,16 @@ def test_run_ap_rejects_unknown_preference(two_blobs):
         run_ap(questions, sim, use_p="mode")
 
 
+def test_run_ap_takes_a_fixed_preference(two_blobs):
+    questions, sim = two_blobs
+    # Far below every similarity: one cluster. At the largest similarity: more than the two groups.
+    assert run_ap(questions, sim, preference=-1000.0)["KC"].nunique() == 1
+    assert run_ap(questions, sim, preference=0.0)["KC"].nunique() > 2
+    # create_kc hands it through
+    kc = create_kc(pd.DataFrame({"KC": list("abcdef")}), questions, sim, preference=-1000.0)
+    assert kc["KC"].nunique() == 1
+
+
 def test_create_kc_relabels_clusters_with_exemplar_concepts(two_blobs):
     questions, sim = two_blobs
     concept_df = pd.DataFrame({"KC": ["alpha"] * 3 + ["beta"] * 3})
@@ -74,7 +80,18 @@ def test_create_kc_returns_none_when_ap_never_converges(two_blobs):
     questions, sim = two_blobs
     concept_df = pd.DataFrame({"KC": ["alpha"] * 6})
     # max_iter below convergence_iter can never satisfy the convergence check.
+    filters = list(warnings.filters)
     assert create_kc(concept_df, questions, sim, max_iter=2) is None
+    # Convergence warnings are errors for the search only, not for the process
+    assert warnings.filters == filters
+
+
+def test_exemplar_index_reads_back_a_cluster_label(two_blobs):
+    questions, sim = two_blobs
+    kc = run_ap(questions, sim)
+    assert exemplar_index("KC-152") == 152
+    # Every cluster is named for one of its own members
+    assert all(kc["KC"].iloc[exemplar_index(label)] == label for label in kc["KC"])
 
 
 def test_split_collisions_disambiguates_shared_labels_only(two_blobs):

@@ -9,8 +9,8 @@ import pytest
 
 pytest.importorskip("google.genai")
 
-from kcluster.engine import gemini  # noqa: E402
-from kcluster.engine.gemini import (  # noqa: E402
+from kcluster.engine import gemini
+from kcluster.engine.gemini import (
     GeminiEngine,
     parse_logprob_choices,
     parse_text_choices,

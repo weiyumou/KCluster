@@ -213,6 +213,46 @@ def _key_values(value) -> list[str]:
     return str(value).split("~")
 
 
+def _key_index(questions: Sequence[Question], df: pd.DataFrame) -> tuple[list[str], dict[tuple, set]]:
+    """The columns of ``df`` a step is keyed on, and the ids of the questions behind each key.
+
+    Every question must carry :data:`REQUIRED_KEY_FIELD`; the other passthrough
+    fields join the key where the questions carry them and ``df`` has the
+    column, and each must be on every question or none.
+    """
+    if unkeyed := [str(q.get("id", "<no id>")) for q in questions if REQUIRED_KEY_FIELD not in q]:
+        raise ValueError(f"{len(unkeyed)} of {len(questions)} questions lack {REQUIRED_KEY_FIELD!r}, "
+                         f"e.g. {unkeyed[:5]}. Every question joined to student-step data must declare "
+                         "the step it maps to: DataShop-derived questions carry their native value, other "
+                         "sources copy their own id into it and write the same value to 'Step Name'.")
+
+    fields = []
+    for field in DS_KEY_FIELDS:
+        n = sum(field in q for q in questions)
+        if 0 < n < len(questions):
+            raise ValueError(f"passthrough field {field!r} is present on {n} of {len(questions)} questions; "
+                             "it must be on all or none for the step-to-question key to be well-defined")
+        if n and DS_KEY_FIELDS[field] in df.columns:
+            fields.append(field)
+
+    key_to_ids: dict[tuple, set] = {}
+    for q in questions:
+        for key in itertools.product(*(_key_values(q[field]) for field in fields)):
+            key_to_ids.setdefault(tuple(key), set()).add(str(q["id"]))
+    return [DS_KEY_FIELDS[field] for field in fields], key_to_ids
+
+
+def covered_rows(questions: Sequence[Question], df: pd.DataFrame) -> pd.Series:
+    """Which rows of ``df`` resolve to a question, keyed as :func:`check_coverage` keys them.
+
+    Nothing raises over a row here: this is for asking which steps a question
+    bank reaches before holding a file to it.
+    """
+    key_cols, key_to_ids = _key_index(questions, df)
+    keys = df[key_cols].astype(str).itertuples(index=False, name=None)
+    return pd.Series([key in key_to_ids for key in keys], index=df.index, dtype=bool)
+
+
 def check_coverage(questions: Sequence[Question], df: pd.DataFrame) -> list[str]:
     """Verify every student-step row resolves to exactly one question.
 
@@ -230,31 +270,7 @@ def check_coverage(questions: Sequence[Question], df: pd.DataFrame) -> list[str]
     :return: ids of questions with no interaction rows — whether to keep or drop
         those questions is the driver's decision, so they are reported, not raised
     """
-    if unkeyed := [str(q.get("id", "<no id>")) for q in questions if REQUIRED_KEY_FIELD not in q]:
-        raise ValueError(f"{len(unkeyed)} of {len(questions)} questions lack {REQUIRED_KEY_FIELD!r}, "
-                         f"e.g. {unkeyed[:5]}. Every question joined to student-step data must declare "
-                         "the step it maps to: DataShop-derived questions carry their native value, other "
-                         "sources copy their own id into it and write the same value to 'Step Name'.")
-
-    fields = []
-    for field in DS_KEY_FIELDS:
-        n = sum(field in q for q in questions)
-        if 0 < n < len(questions):
-            raise ValueError(f"passthrough field {field!r} is present on {n} of {len(questions)} questions; "
-                             "it must be on all or none for the step-to-question key to be well-defined")
-        if n and DS_KEY_FIELDS[field] in df.columns:
-            fields.append(field)
-
-    key_cols = [DS_KEY_FIELDS[field] for field in fields]
-
-    def keys_of(q: Question):
-        return itertools.product(*(_key_values(q[field]) for field in fields))
-
-    key_to_ids: dict[tuple, set] = {}
-    for q in questions:
-        for key in keys_of(q):
-            key_to_ids.setdefault(tuple(key), set()).add(str(q["id"]))
-
+    key_cols, key_to_ids = _key_index(questions, df)
     unmatched, ambiguous, covered = [], [], set()
     for key in df[key_cols].astype(str).drop_duplicates().itertuples(index=False, name=None):
         ids = key_to_ids.get(key, set())
@@ -278,3 +294,14 @@ def check_coverage(questions: Sequence[Question], df: pd.DataFrame) -> list[str]
                          "many-to-one.")
 
     return [str(q["id"]) for q in questions if str(q["id"]) not in covered]
+
+
+def step_questions(questions: Sequence[Question], df: pd.DataFrame) -> pd.Series:
+    """The id of the question each row of ``df`` resolves to, keyed as :func:`check_coverage` keys it.
+
+    A row that matches no question or more than one raises, as there.
+    """
+    check_coverage(questions, df)
+    key_cols, key_to_ids = _key_index(questions, df)
+    keys = df[key_cols].astype(str).itertuples(index=False, name=None)
+    return pd.Series([next(iter(key_to_ids[key])) for key in keys], index=df.index, dtype=object)

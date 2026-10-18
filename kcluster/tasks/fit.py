@@ -20,6 +20,8 @@ command when it is missing.
 import numpy as np
 import pandas as pd
 
+from kcluster.tasks.tag import SINGLE_KC_NAME
+
 # The protocol these tables are produced under (D13). Fixed here rather than
 # per call, because the point of the tables is comparison: two runs made under
 # different conventions cannot be read side by side.
@@ -38,7 +40,7 @@ N_JOBS = 1
 
 INSTALL_HINT = (
     "Fitting student models needs Leapfit, which is not part of a base install.\n"
-    '  pip install "kcluster[fit]"   (needs Python >= 3.11)\n'
+    '  pip install "kcluster[fit]"\n'
     "Leapfit is released on GitHub rather than PyPI, so the extra carries the "
     "release URL; installing 'leapfit' by name will not find it."
 )
@@ -167,27 +169,28 @@ def fit_kc_models(ss: pd.DataFrame, family: str = "afm", *, models=None,
         if on_model is not None:
             on_model(name, row, fit)
 
-    cross_validate = _paired_folds if paired else _per_model_folds
     fold_frames, contrast_frames = [], []
     summaries: dict[str, dict] = {name: {} for name in models}
     for scheme in schemes:
-        table = cross_validate(leapfit, designs, folds, scheme=scheme, n_folds=n_folds,
-                               n_seeds=n_seeds, n_jobs=n_jobs)
-        scores = (leapfit.paired_scores(table.rename(columns={"kc_model": "model"}),
-                                        CONVENTION).rename(columns={"model": "kc_model"})
-                  if paired else table)
+        if paired:
+            # Leapfit keys its paired tables on "model", and its own functions
+            # pivot on that; every output here is keyed on "kc_model", so the
+            # tables are renamed once, as they leave.
+            native = _paired_folds(leapfit, designs, folds, scheme=scheme, n_folds=n_folds,
+                                   n_seeds=n_seeds, n_jobs=n_jobs)
+            table = _kc_keyed(native)
+            scores = _kc_keyed(leapfit.paired_scores(native, CONVENTION))
+            # A contrast needs something to contrast against: a run over a
+            # single KC model has folds and a summary, but no margin over a baseline.
+            if len(models) > 1:
+                contrasts = leapfit.paired_contrasts(native, _baseline(models))
+                contrast_frames.append(_kc_keyed(contrasts).assign(scheme=scheme))
+        else:
+            table = scores = _per_model_folds(leapfit, designs, folds, scheme=scheme, n_folds=n_folds,
+                                              n_seeds=n_seeds, n_jobs=n_jobs)
         for name, summary in _summarize(scores, scheme).items():
             summaries[name] |= summary
         fold_frames.append(table)
-        # A contrast needs something to contrast against: a run over a single
-        # KC model has folds and a summary, but no margin over a baseline.
-        if paired and len(models) > 1:
-            # paired_contrasts pivots on Leapfit's own "model" column; the fold
-            # table carries the "kc_model" every other output here is keyed on.
-            contrasts = leapfit.paired_contrasts(
-                table.rename(columns={"kc_model": "model"}), _baseline(models))
-            contrast_frames.append(
-                contrasts.rename(columns={"model": "kc_model"}).assign(scheme=scheme))
 
     comparison = pd.DataFrame(rows)
     for column in [c for name in models for c in summaries[name]]:
@@ -209,21 +212,30 @@ def fit_kc_models(ss: pd.DataFrame, family: str = "afm", *, models=None,
 def _baseline(models: list[str]) -> str:
     """The model paired margins are measured against.
 
-    ``Single-KC`` where the file carries it: "everything here is one skill" is
+    ``Single-KC`` (the tagger's baseline) where the file carries it: "everything here is one skill" is
     the null a KC model has to beat to have found anything, and it is the one
     model every tagged file has. Otherwise the first by name, so a run over a
     hand-picked subset still produces contrasts rather than raising.
     """
-    return "Single-KC" if "Single-KC" in models else sorted(models)[0]
+    return SINGLE_KC_NAME if SINGLE_KC_NAME in models else sorted(models)[0]
+
+
+def _kc_keyed(table: pd.DataFrame) -> pd.DataFrame:
+    """A Leapfit table keyed on its ``model`` column, keyed on ``kc_model`` instead."""
+    return table.rename(columns={"model": "kc_model"})
 
 
 def _paired_folds(leapfit, designs: dict, data, *, scheme: str, n_folds: int,
                   n_seeds: int, n_jobs: int) -> pd.DataFrame:
-    """Every model scored on one partition per seed: one row per (seed, fold, model)."""
+    """Every model scored on one partition per seed: one row per (seed, fold, model).
+
+    In Leapfit's vocabulary — keyed on ``model`` — so it can go straight back
+    into ``paired_scores`` and ``paired_contrasts``.
+    """
     table = leapfit.paired_cross_validate(
         designs, data, scheme=scheme, n_folds=n_folds, seeds=list(range(n_seeds)),
         convention=CONVENTION, method=METHOD, max_fun=MAX_FUN, n_jobs=n_jobs)
-    return table.rename(columns={"model": "kc_model"}).assign(scheme=scheme)
+    return table.assign(scheme=scheme)
 
 
 def _per_model_folds(leapfit, designs: dict, data, *, scheme: str, n_folds: int,

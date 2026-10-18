@@ -5,7 +5,7 @@ import os
 import pandas as pd
 import pytest
 
-from kcluster.commands.tag import _default_output, _run_dir_kc_paths, load_kc_models
+from kcluster.commands.tag import _default_output, load_kc_models, run_dir_kc_paths
 from kcluster.tasks.tag import (
     SINGLE_KC_NAME,
     UNIQUE_STEP_NAME,
@@ -244,13 +244,13 @@ def test_run_dir_falls_back_to_per_bank_result_dirs(tmp_path):
     # the D15 subfolders, course B is a pre-D15 flat dir — both must resolve.
     _write_kc(tmp_path / "Course-A" / "kc" / "concept" / "Course-A_concept-kc.csv", ["a1"], ["alpha"])
     _write_kc(tmp_path / "Course-B" / "kc" / "Course-B_concept-kc.csv", ["b1"], ["beta"])
-    assert [os.path.basename(p) for p in _run_dir_kc_paths(str(tmp_path))] == \
+    assert [os.path.basename(p) for p in run_dir_kc_paths(str(tmp_path))] == \
         ["Course-A_concept-kc.csv", "Course-B_concept-kc.csv"]
 
     # Once the run has its own kc/, that is the model — per-bank files are not
     # mixed in, which would double every question.
     _write_kc(tmp_path / "kc" / "concept" / "ds_concept-kc.csv", ["a1", "b1"], ["alpha", "beta"])
-    assert [os.path.basename(p) for p in _run_dir_kc_paths(str(tmp_path))] == ["ds_concept-kc.csv"]
+    assert [os.path.basename(p) for p in run_dir_kc_paths(str(tmp_path))] == ["ds_concept-kc.csv"]
 
 
 def test_same_named_kc_files_are_concatenated_into_one_model(tmp_path):
@@ -288,7 +288,7 @@ def test_split_model_borrows_base_parts_from_collision_free_banks(tmp_path):
 
 def test_namespacing_leaves_an_unlabeled_question_unlabeled(tmp_path):
     # Prefixing an empty label would turn an incomplete model into a complete-
-    # looking one, hiding what _join_kc_model exists to catch.
+    # looking one, hiding what join_kc_model exists to catch.
     paths = [_write_kc(tmp_path / "A" / "kc" / "A_concept-kc.csv", ["a1"], ["alpha"]),
              _write_kc(tmp_path / "B" / "kc" / "B_concept-kc.csv", ["b1", "b2"], ["beta", ""])]
 

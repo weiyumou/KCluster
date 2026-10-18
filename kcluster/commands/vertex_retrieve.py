@@ -10,7 +10,6 @@ the fly first.
 """
 
 import argparse
-import json
 import logging
 import os
 
@@ -19,7 +18,7 @@ from google.cloud import aiplatform
 from google.cloud.aiplatform_v1 import JobState
 
 from kcluster.core.pmi import PointwiseMutualInfo
-from kcluster.engine.vertex import VertexConfig, collect_predictions, download_pmi, init
+from kcluster.engine.vertex import VertexConfig, collect_predictions, download_pmi, init, read_job_log
 
 
 def count_questions(data_path: str) -> int:
@@ -30,13 +29,12 @@ def count_questions(data_path: str) -> int:
 
 def main(args):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-    config = VertexConfig.load(getattr(args, "config", None))
+    config = VertexConfig.load(args.config)
     init(config)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    with open(args.jobs_path) as f:
-        launched_jobs = [json.loads(line) for line in f]
+    launched_jobs = read_job_log(args.jobs_path)
     logging.info(f"Read {len(launched_jobs)} jobs from '{args.jobs_path}'")
 
     sym_tag = "sym" if args.symmetric else "asym"
@@ -79,11 +77,5 @@ def add_arguments(parser):
                         help="Symmetrize the PMI matrix (default: enabled; use --no-symmetric to disable)")
     parser.add_argument("--normalize", action=argparse.BooleanOptionalAction, default=False,
                         help="Normalize the PMI over the question set (default: disabled)")
-    parser.add_argument("--config", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--config", default=None, type=str,
                         help="Path to a vertex TOML config (default: KCLUSTER_VERTEX_* environment)")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

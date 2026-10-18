@@ -1,12 +1,11 @@
-"""Tests for reading LearnSphere workflow results (kcluster.io.learnsphere)."""
+"""Tests for reading LearnSphere workflow results (kcluster.datashop.learnsphere)."""
 
 import pytest
 
-from kcluster.io.learnsphere import read_cv_results
+from kcluster.datashop.learnsphere import read_cv_results
 
 
 def test_read_cv_results_averages_fit_metrics_and_formats_pub_table(tmp_path):
-    pytest.importorskip("bs4")
     runs = [
         (100.0, 110.0, -50.0, 0.40),
         (102.0, 112.0, -51.0, 0.42),
@@ -29,7 +28,6 @@ def test_read_cv_results_averages_fit_metrics_and_formats_pub_table(tmp_path):
 
 
 def test_read_cv_results_asserts_on_wrong_run_count(tmp_path):
-    pytest.importorskip("bs4")
     path = tmp_path / "model_values.xml"
     path.write_text("<models><model><name>KC (m)</name><AIC>1.0</AIC></model></models>")
     with pytest.raises(AssertionError, match="Expected 10 results"):

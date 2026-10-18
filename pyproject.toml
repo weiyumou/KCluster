@@ -26,6 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
+    "beautifulsoup4>=4.12",
     "numpy>=1.26",
     "pandas>=2.0",
     "scikit-learn>=1.4",
@@ -46,7 +47,6 @@ vertex = [
     "google-cloud-storage>=2.14",
 ]
 gemini = ["google-genai>=1.0"]
-datashop = ["beautifulsoup4>=4.12"]
 # `kcluster fit` only. Leapfit is released on GitHub but not on PyPI, so this is
 # a direct reference to the release's own wheel.
 # 0.4.0 is the floor because `kcluster fit` summarizes paired cross-validation
@@ -65,11 +65,8 @@ dev = [
     "httpx>=0.27",
     "pytest>=8.0",
     "ruff>=0.5",
-    {include-group = "datasets"},
     {include-group = "papers"},
 ]
-# Driver-only dependencies for the datasets/ workspaces; never shipped in the wheel
-datasets = ["requests>=2.31", "pillow>=10", "beautifulsoup4>=4.12"]
 # Analysis-notebook dependencies for the papers/ workspaces; never shipped in the wheel
 papers = ["seaborn>=0.13", "statsmodels>=0.14"]
 
@@ -92,6 +89,8 @@ select = ["E4", "E7", "E9", "F", "I"]
 [tool.ruff.lint.per-file-ignores]
 # The deploy scripts bootstrap sys.path before their imports by design
 "deploy/vertex/*.py" = ["E402"]
+# Test modules skip on a missing extra (pytest.importorskip) before importing what needs it
+"tests/*.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

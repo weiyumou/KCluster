@@ -1,9 +1,15 @@
 """Evaluation of KC models: clustering-alignment metrics against a reference
 model, and a shuffled-label null baseline.
 
-Reading another tool's fit results is a separate concern and lives with the
-other foreign-format readers: :mod:`kcluster.io.learnsphere`."""
+Two entry points, by where the reference model lives: :func:`evaluate_kc` for
+KC files whose bank ships its own labeling as a question field, and
+:func:`eval_datashop_kc` for the models of a DataShop KC template.
 
+Reading another tool's fit results is a separate concern and lives with the
+other foreign-format readers: :mod:`kcluster.datashop.learnsphere`."""
+
+import glob
+import os
 import random
 import re
 from collections.abc import Sequence
@@ -13,7 +19,7 @@ import pandas as pd
 from sklearn import metrics
 from sklearn.preprocessing import LabelEncoder
 
-from kcluster.io.datashop import KC_PAT, load_datashop_temp
+from kcluster.datashop.kc_model import KC_PAT, load_datashop_temp
 
 
 def compute_clustering_metrics(true_kcs: Sequence[str], pred_kcs: Sequence[str]) -> dict[str, float]:
@@ -41,7 +47,7 @@ def eval_datashop_kc(kc_temp: str | pd.DataFrame, true_kcm: str, random_kc: bool
         e.g., "data/datashop/ds5426-elearning/ds5426_kcm.txt", or a pd.DataFrame of such
     :param true_kcm: Name of the 'ground-truth' KC model
     :param random_kc: Whether to compare with a random KC model
-    :return: A dictionary containing the results of evaluation
+    :return: One row of metrics per KC model, named ``<model> (<n> KCs)``
     """
     if isinstance(kc_temp, str):
         kc_temp = load_datashop_temp(kc_temp)
@@ -53,13 +59,41 @@ def eval_datashop_kc(kc_temp: str | pd.DataFrame, true_kcm: str, random_kc: bool
         mask = kc_temp[f"KC ({pred_kcm})"].notna()
         true_kcs = kc_temp.loc[mask, f"KC ({true_kcm})"].to_list()
         pred_kcs = kc_temp.loc[mask, f"KC ({pred_kcm})"].to_list()
-        num_kcs = kc_temp[f"KC ({pred_kcm})"].nunique(dropna=True)
-        results[f"{pred_kcm} ({num_kcs} KCs)"] = compute_clustering_metrics(true_kcs, pred_kcs)
-
-        if random_kc:
-            results[f"{pred_kcm}-rand ({num_kcs} KCs)"] = evaluate_random_kc(true_kcs, pred_kcs, **kwargs)
+        results |= _score(pred_kcm, true_kcs, pred_kcs, random_kc, **kwargs)
 
     return pd.DataFrame.from_dict(results, orient="index")
+
+
+def evaluate_kc(kc_dir: str, true_kc: str, random_kc: bool = False, **kwargs) -> pd.DataFrame:
+    """
+    Evaluate the KC models of a directory against a labeling their questions carry.
+
+    A KC file (``<ds>_<model>-kc.csv``) keeps each question's passthrough fields
+    beside its ``KC``, so a bank that ships an expert labeling (ScienceQA's
+    ``skill``) can score every model built on it without a DataShop template.
+    :param kc_dir: A directory of KC files, searched recursively: a result dir's ``kc/``
+        sorts its models into subfolders
+    :param true_kc: The column holding the 'ground-truth' labels, e.g., "skill"
+    :param random_kc: Whether to compare with a random KC model
+    :return: One row of metrics per KC model, named ``<model> (<n> KCs)``
+    """
+    results = dict()
+    for path in sorted(glob.glob(os.path.join(kc_dir, "**", "*-kc.csv"), recursive=True)):
+        kc = pd.read_csv(path)
+        # Drop the dataset prefix so rows keep the short model name, e.g. "kcluster-unnorm"
+        name = os.path.basename(path).removesuffix("-kc.csv").split("_", 1)[-1]
+        results |= _score(name, kc[true_kc].to_list(), kc["KC"].to_list(), random_kc, **kwargs)
+
+    return pd.DataFrame.from_dict(results, orient="index")
+
+
+def _score(name: str, true_kcs: Sequence[str], pred_kcs: Sequence[str], random_kc: bool, **kwargs) -> dict:
+    """The metric rows of one KC model: its own and, with ``random_kc``, its shuffled baseline's."""
+    num_kcs = pd.Series(pred_kcs).nunique()
+    rows = {f"{name} ({num_kcs} KCs)": compute_clustering_metrics(true_kcs, pred_kcs)}
+    if random_kc:
+        rows[f"{name}-rand ({num_kcs} KCs)"] = evaluate_random_kc(true_kcs, pred_kcs, **kwargs)
+    return rows
 
 
 def evaluate_random_kc(true_kcs: Sequence[str], pred_kcs: Sequence[str],

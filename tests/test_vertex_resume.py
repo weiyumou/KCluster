@@ -12,9 +12,9 @@ import pytest
 
 pytest.importorskip("google.cloud.aiplatform")
 
-import kcluster.engine.vertex as vertex  # noqa: E402
-from kcluster.commands import vertex_build_kc, vertex_launch  # noqa: E402
-from kcluster.engine.vertex import job_rate  # noqa: E402
+import kcluster.engine.vertex as vertex
+from kcluster.commands import vertex_build_kc, vertex_launch
+from kcluster.engine.vertex import job_rate
 
 
 def _jobs_file(tmp_path, entries):
@@ -59,6 +59,14 @@ def test_blank_lines_in_the_job_log_are_tolerated(tmp_path, stub_results):
     path.write_text(json.dumps({"job_id": "bio_1", "data_path": "data/Bio.jsonl"}) + "\n\n")
     stub_results({"bio_1"})
     assert vertex_launch.collected_inputs(str(path), config=None) == {"data/Bio.jsonl": "bio_1"}
+
+
+def test_the_job_log_reads_back_oldest_first_and_needs_to_exist(tmp_path):
+    jobs = _jobs_file(tmp_path, [("bio_1", "data/Bio.jsonl"), ("bio_2", "data/Bio.jsonl")])
+    assert [item["job_id"] for item in vertex.read_job_log(jobs)] == ["bio_1", "bio_2"]
+    # Only a resumed launch may find no log; a build or a retrieve pointed at one has the wrong path
+    with pytest.raises(FileNotFoundError):
+        vertex.read_job_log(str(tmp_path / "absent.jsonl"))
 
 
 # --- which entries a build should use --------------------------------------

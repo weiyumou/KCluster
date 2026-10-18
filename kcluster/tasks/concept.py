@@ -13,7 +13,12 @@ from itertools import batched
 import torch
 from tqdm import tqdm
 
-from kcluster.core.prompts import concept_prompt, congruity_marginal_context
+from kcluster.core.prompts import (
+    CONCEPT_STOP_TOKENS,
+    clean_concept,
+    concept_prompt,
+    congruity_marginal_context,
+)
 from kcluster.core.question import Question
 from kcluster.engine.local import LargeLangModel
 
@@ -25,8 +30,8 @@ def extract_concepts(llm: LargeLangModel, questions: list[Question],
     all_concepts = []
     for batch in tqdm(batched(questions, batch_size), desc="Extracting concepts"):
         prompts = [concept_prompt(q, verbal=verbal) for q in batch]
-        concepts = llm.complete_prompts(prompts, stop_tokens=[".", ","], **kwargs)
-        all_concepts.extend([c.strip().rstrip(".,") for c in concepts])
+        concepts = llm.complete_prompts(prompts, stop_tokens=list(CONCEPT_STOP_TOKENS), **kwargs)
+        all_concepts.extend([clean_concept(c) for c in concepts])
 
     return all_concepts
 

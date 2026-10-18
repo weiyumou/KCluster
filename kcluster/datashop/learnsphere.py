@@ -6,8 +6,8 @@ cross-validation run, holding the fit statistics and the blocked-CV scores. The
 workflow duplicates each KC model once per run, so a ten-run comparison carries
 ten blocks per model, and the numbers a paper reports are their mean.
 
-This is a reader for another tool's artifacts, like :mod:`kcluster.io.datashop`
-— which is also where the ``KC (<name>)`` naming convention it shares comes
+This is a reader for another tool's artifacts, like :mod:`kcluster.datashop.kc_model`,
+which is also where the ``KC (<name>)`` naming convention it shares comes
 from. It stays because those archived runs are the published baselines; fitting
 locally (`kcluster fit`) does not make them unreadable, and the two want to be
 compared. To that end both should speak one column vocabulary — ``kc_model``,
@@ -20,8 +20,9 @@ from collections import defaultdict
 
 import numpy as np
 import pandas as pd
+from bs4 import BeautifulSoup
 
-from kcluster.io.datashop import KC_PAT
+from kcluster.datashop.kc_model import KC_PAT
 
 
 def read_cv_results(res_path: str, num_cv_runs: int = 10) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -35,10 +36,6 @@ def read_cv_results(res_path: str, num_cv_runs: int = 10) -> tuple[pd.DataFrame,
     short count means the workflow's runs and the table's rows disagree about
     what is being averaged.
     """
-    # bs4 ships with the optional [datashop] extra; import lazily so importing
-    # this module does not require it
-    from bs4 import BeautifulSoup
-
     with open(res_path, "r") as f:
         soup = BeautifulSoup(f, features="html.parser")
 

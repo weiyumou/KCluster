@@ -1,27 +1,27 @@
+import ast
 import json
+import pathlib
 import re
 
 import pandas as pd
 import pytest
 
-from kcluster.io.datashop import (
+import kcluster.datashop
+from kcluster.datashop.kc_model import (
     KC_PAT,
     create_datashop_kc,
     create_default_kc,
     create_kc_from_questions,
     load_datashop_temp,
+    load_kc_template,
     merge_student_step_with_kc,
+    save_kc_template,
 )
 
 
-def _write_tsv(df: pd.DataFrame, path) -> str:
-    df.to_csv(path, sep="\t", index=False)
-    return str(path)
-
-
 @pytest.fixture
-def template(tmp_path) -> str:
-    return _write_tsv(
+def template(tmp_path, write_tsv) -> str:
+    return write_tsv(
         pd.DataFrame(
             {
                 "Step ID": [1, 2, 3],
@@ -67,8 +67,20 @@ def test_create_datashop_kc_explodes_tilde_joined_steps(template):
     assert out["KC (MyModel)"].tolist() == ["alpha", "alpha", "beta"]
 
 
-def test_create_datashop_kc_match_other_kc_masks_uncovered_steps(tmp_path):
-    template = _write_tsv(
+def test_create_datashop_kc_leaves_the_callers_frames_alone(template):
+    # The first key column used to be split into lists in place, so a caller
+    # reusing its KC frame (for another model or template) joined on lists
+    kc = pd.DataFrame({"ds-problem-name": ["P1", "P2"], "ds-step-name": ["s1~s2", "s3"], "concept": ["a", "b"]})
+    kc_temp = load_datashop_temp(template)
+    kc_before, kc_temp_before = kc.copy(), kc_temp.copy()
+
+    create_datashop_kc(kc, kc_temp, kc_cols=["concept"], match_other_kc=True, drop_other_kc=True)
+    pd.testing.assert_frame_equal(kc, kc_before)
+    pd.testing.assert_frame_equal(kc_temp, kc_temp_before)
+
+
+def test_create_datashop_kc_match_other_kc_masks_uncovered_steps(tmp_path, write_tsv):
+    template = write_tsv(
         pd.DataFrame(
             {
                 "Problem Hierarchy": ["Unit A", "Unit A", "Unit B"],
@@ -100,7 +112,7 @@ def test_create_kc_from_questions_promotes_question_fields(tmp_path, template):
 
 
 @pytest.fixture
-def filled_kc_and_ss(tmp_path):
+def filled_kc_and_ss(tmp_path, write_tsv):
     kc = pd.DataFrame(
         {
             "Problem Hierarchy": ["(Unit A)", "(Unit A)", "(Unit B)"],
@@ -109,7 +121,7 @@ def filled_kc_and_ss(tmp_path):
             "KC (m)": ["alpha", "alpha", "beta"],
         }
     )
-    ss = _write_tsv(
+    ss = write_tsv(
         pd.DataFrame(
             {
                 "Anon Student Id": ["ST1", "ST1", "ST1", "ST2"],
@@ -148,3 +160,46 @@ def test_merge_student_step_minimal_encodes_identifiers(filled_kc_and_ss):
     assert ss["Anon Student Id"].str.fullmatch(r"ST-\d+").all()
     assert ss["Step Name"].str.fullmatch(r"SN-\d+").all()
     assert ss["KC (m)"].str.fullmatch(r"KC-\d+").all()
+
+
+def test_merge_student_step_reads_both_files_as_unquoted_text(tmp_path):
+    # DataShop writes its files unquoted, so a step name may begin with a quote:
+    # read CSV-style, the student steps would lose it and match no KC. A blank
+    # cell, which DataShop writes as one space, is a step without a KC.
+    step = '"Who" named cells'
+    kc = pd.DataFrame({"Problem Hierarchy": ["U", "U"], "Problem Name": ["P1", "P1"],
+                       "Step Name": [step, "s2"], "KC (m)": ["alpha", " "], "KC (new KC model name)": [" ", " "]})
+    ss_path = tmp_path / "ss.txt"
+    ss_path.write_text("Anon Student Id\tProblem Hierarchy\tProblem Name\tStep Name\t"
+                       "First Transaction Time\tFirst Attempt\n"
+                       f"ST1\tU\tP1\t{step}\tt1\tcorrect\nST1\tU\tP1\ts2\tt2\tcorrect\n")
+    ss = merge_student_step_with_kc(str(ss_path), kc)
+    assert ss["Step Name"].tolist() == [step, "s2"]
+    assert ss["KC (m)"].fillna("").tolist() == ["alpha", ""]
+    assert ss["Opportunity (m)"].tolist() == [1, ""]
+    assert "KC (new KC model name)" not in ss
+
+
+def test_kc_template_round_trips_cell_for_cell(tmp_path):
+    # DataShop's import wants the export's columns back as they were: nothing
+    # parsed, unquoted or dropped, bar the column the header's trailing tab makes
+    path = tmp_path / "kcm.txt"
+    path.write_text('Step ID\tProblem Name\tMax Problem View\tAvg Error Step Duration (sec)\tKC (m)\t\n'
+                    'id1\t"Intro" quiz\t2.0\t\tthe "carrots" approach\n')
+    save_kc_template(load_kc_template(str(path)), str(tmp_path / "out.txt"))
+    assert (tmp_path / "out.txt").read_text() == path.read_text().replace("(m)\t\n", "(m)\n")
+
+
+def test_the_toolbox_imports_only_the_core_and_the_question_reader():
+    """The promise that lets another project use it on the base install: no
+    engine, no task, no command behind any of its modules."""
+    imported = set()
+    for path in pathlib.Path(kcluster.datashop.__file__).parent.glob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom):
+                imported.add(node.module)
+            elif isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+    own = {name for name in imported if name.split(".")[0] == "kcluster"}
+    allowed = ("kcluster.datashop.", "kcluster.core.", "kcluster.io.jsonl")
+    assert {name for name in own if not name.startswith(allowed)} == set()

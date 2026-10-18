@@ -5,7 +5,6 @@ the output directory is the input to ``vertex-retrieve`` and
 ``vertex-build-kc``.
 """
 
-import argparse
 import json
 import logging
 import os
@@ -19,20 +18,20 @@ from kcluster.engine.vertex import (
     wait_for_job_completion,
 )
 from kcluster.io.jsonl import load_questions
-from kcluster.paths import default_result_dir, prepare_output_dir, timestamp
+from kcluster.paths import dataset_name, default_result_dir, prepare_output_dir, timestamp
 
 
 def main(args):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-    config = VertexConfig.load(getattr(args, "config", None))
+    config = VertexConfig.load(args.config)
 
     # The job log sits at the work-dir root; vertex-build-kc later fills the
     # work dir with one result dir per course (D10)
-    output_dir = getattr(args, "output_dir", None) or default_result_dir(getattr(args, "run_dir", None))
+    output_dir = args.output_dir or default_result_dir(args.run_dir)
     args.output_dir = prepare_output_dir(output_dir)
 
     jobs_path = os.path.join(args.output_dir, "launched_jobs.jsonl")
-    done = collected_inputs(jobs_path, config) if getattr(args, "skip_completed", False) else {}
+    done = collected_inputs(jobs_path, config) if args.skip_completed else {}
 
     launched_jobs = []
     for data_path in resolve_input_files(args.data_path):
@@ -44,7 +43,7 @@ def main(args):
         logging.info(f"Loaded {len(questions)} questions from {data_path}")
 
         # Create Job ID based on the data file name and current time
-        job_id = os.path.splitext(os.path.basename(data_path))[0].replace(" ", "-") + "_" + timestamp()
+        job_id = dataset_name(data_path) + "_" + timestamp()
 
         logging.info(f"Launching job '{job_id}'...")
         job, _ = launch_batch_job(questions, config, job_id=job_id, batch_size=args.batch_size,
@@ -60,8 +59,7 @@ def main(args):
     if not launched_jobs:
         logging.info("Nothing to launch — every input already has collected results.")
         return
-    wait_for_job_completion(launched_jobs, config,
-                            stall_after_seconds=getattr(args, "stall_after", DEFAULT_STALL_AFTER_SECONDS))
+    wait_for_job_completion(launched_jobs, config, stall_after_seconds=args.stall_after)
 
 
 def add_arguments(parser):
@@ -79,15 +77,9 @@ def add_arguments(parser):
                         help="Skip inputs whose job in this output directory's launched_jobs.jsonl "
                              "already has collected results, so a partial run can be resumed "
                              "without paying for the finished courses again")
-    parser.add_argument("--output_dir", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--output_dir", default=None, type=str,
                         help="Work directory for the job log (default: --run_dir or a fresh timestamped folder)")
-    parser.add_argument("--run_dir", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--run_dir", default=None, type=str,
                         help="Work directory shared with vertex-build-kc (env: KCLUSTER_RUN_DIR)")
-    parser.add_argument("--config", default=argparse.SUPPRESS, type=str,
+    parser.add_argument("--config", default=None, type=str,
                         help="Path to a vertex TOML config (default: KCLUSTER_VERTEX_* environment)")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

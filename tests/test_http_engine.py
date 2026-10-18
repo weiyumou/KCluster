@@ -10,10 +10,8 @@ import pytest
 pytest.importorskip("fastapi")
 uvicorn = pytest.importorskip("uvicorn")
 
-from test_serve import StubLLM  # noqa: E402
-
-from kcluster.engine.http import HttpLangModel  # noqa: E402
-from kcluster.engine.serve import create_app  # noqa: E402
+from kcluster.engine.http import HttpLangModel
+from kcluster.engine.serve import create_app
 
 
 def _free_port() -> int:
@@ -23,8 +21,8 @@ def _free_port() -> int:
 
 
 @pytest.fixture(scope="module")
-def server():
-    stub = StubLLM()
+def server(make_stub_llm):
+    stub = make_stub_llm()
     port = _free_port()
     config = uvicorn.Config(create_app(stub, model_id="stub-model"), host="127.0.0.1", port=port, log_level="warning")
     srv = uvicorn.Server(config)

@@ -7,32 +7,31 @@ import numpy as np
 import pandas as pd
 import pytest
 
-torch = pytest.importorskip("torch")
+pytest.importorskip("torch")
 
-from kcluster.core.question import Question  # noqa: E402
-from kcluster.io.jsonl import dump_questions, load_questions  # noqa: E402
-from kcluster.tasks.classify import QuestionLO, classify_from_pmi  # noqa: E402
+from kcluster.io.jsonl import dump_questions, load_questions
+from kcluster.tasks.classify import QuestionLO, classify_from_pmi, distinct_los
 
 LOS = ["Explain how levers work.", "Identify the states of matter."]
 
 
-def _questions(n=3) -> list[Question]:
-    return [
-        Question(
-            {
-                "id": f"q-{i}",
-                "type": "Multiple Choice",
-                "question": {"stem": f"Stem {i}?", "choices": [{"label": "a", "text": "x"}]},
-                "answerKey": "a",
-                "lo": LOS[0] if i < 2 else LOS[1],  # q-0/q-1 belong to lo 0; q-2 to lo 1
-            }
-        )
-        for i in range(n)
-    ]
+@pytest.fixture
+def lo_questions(make_questions):
+    """Factory for a bank whose q-0/q-1 belong to lo 0 and q-2 to lo 1."""
+    return lambda n=3: make_questions(n, extra=lambda i: {"lo": LOS[0] if i < 2 else LOS[1]})
 
 
-def test_question_lo_actions_grid():
-    questions = _questions(2)
+def test_distinct_los_keeps_the_order_of_first_appearance(make_questions):
+    # Eight objectives, each on two questions, in an order that is neither
+    # sorted nor likely to fall out of a set: the order is the contract, since
+    # every GPU rank rebuilds the scoring grid from it
+    order = [5, 2, 7, 0, 3, 6, 1, 4]
+    questions = make_questions(16, extra=lambda i: {"lo": f"objective {order[i % 8]}"})
+    assert distinct_los(questions) == [f"objective {k}" for k in order]
+
+
+def test_question_lo_actions_grid(lo_questions):
+    questions = lo_questions(2)
     ds = QuestionLO(questions, LOS, "actions")
 
     assert len(ds) == 2 * 2 + 2
@@ -47,8 +46,8 @@ def test_question_lo_actions_grid():
     assert text == str(questions[0])
 
 
-def test_question_lo_facts_grid():
-    questions = _questions(1)
+def test_question_lo_facts_grid(lo_questions):
+    questions = lo_questions(1)
     ds = QuestionLO(questions, ["Water boils at 100 C.."], "facts")
     context, _ = ds[1]
     # Facts keep their capitalization and gain a line break; trailing periods collapse to one
@@ -56,13 +55,13 @@ def test_question_lo_facts_grid():
                        "Water boils at 100 C.\n\nMultiple Choice:\n")
 
 
-def test_question_lo_rejects_unknown_type():
+def test_question_lo_rejects_unknown_type(lo_questions):
     with pytest.raises(ValueError, match="lo_type"):
-        QuestionLO(_questions(1), LOS, "verbs")
+        QuestionLO(lo_questions(1), LOS, "verbs")
 
 
-def test_classify_from_pmi(tmp_path):
-    questions = _questions(3)
+def test_classify_from_pmi(tmp_path, lo_questions, write_shards):
+    questions = lo_questions(3)
     data_path = tmp_path / "questions.jsonl"
     dump_questions(questions, str(data_path))
 
@@ -76,9 +75,7 @@ def test_classify_from_pmi(tmp_path):
     marginals = np.full(3, -50.0)
     conds = np.array([[-45.0, -45.0, -55.0],
                       [-55.0, -55.0, -45.0]])
-    flat = np.concatenate([marginals, conds.ravel()])
-    torch.save([[torch.arange(len(flat))]], run_dir / "batch_indices_0.pt")
-    torch.save([torch.tensor(flat, dtype=torch.float32)], run_dir / "predictions_0.pt")
+    write_shards(run_dir, np.vstack([marginals, conds]))
 
     res_df = classify_from_pmi(str(run_dir), topk=1)
 
@@ -92,9 +89,9 @@ def test_classify_from_pmi(tmp_path):
     assert saved["pred_lo_1"].tolist() == [LOS[0], LOS[0], LOS[1]]
 
 
-def test_classify_from_pmi_records_misses(tmp_path):
+def test_classify_from_pmi_records_misses(tmp_path, lo_questions, write_shards):
     # Flip the planted alignment for q-2 so its true LO is not predicted
-    questions = _questions(3)
+    questions = lo_questions(3)
     data_path = tmp_path / "questions.jsonl"
     dump_questions(questions, str(data_path))
 
@@ -106,9 +103,7 @@ def test_classify_from_pmi_records_misses(tmp_path):
     marginals = np.full(3, -50.0)
     conds = np.array([[-45.0, -45.0, -45.0],
                       [-55.0, -55.0, -55.0]])
-    flat = np.concatenate([marginals, conds.ravel()])
-    torch.save([[torch.arange(len(flat))]], run_dir / "batch_indices_0.pt")
-    torch.save([torch.tensor(flat, dtype=torch.float32)], run_dir / "predictions_0.pt")
+    write_shards(run_dir, np.vstack([marginals, conds]))
 
     classify_from_pmi(str(run_dir), topk=1)
     matched = load_questions(str(run_dir / "matched-top1.jsonl"))

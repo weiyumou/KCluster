@@ -20,13 +20,12 @@ Each part's labels are namespaced by its bank on the way in, keeping the banks'
 KC spaces disjoint (``kcluster.tasks.tag.namespace_kc``).
 """
 
-import argparse
 import glob
 import os
 
 import pandas as pd
 
-from kcluster.io.student_step import (
+from kcluster.datashop.student_step import (
     KC_COLUMN,
     MINIMAL_SUFFIX,
     TAGGED_SUFFIX,
@@ -48,7 +47,7 @@ from kcluster.tasks.tag import (
 def main(args):
     run = run_dir(args.run_dir)
     kc_paths = [os.path.abspath(path) for path in args.kc_paths]
-    kc_paths += _run_dir_kc_paths(run) if run else []
+    kc_paths += run_dir_kc_paths(run) if run else []
 
     kc_models = load_kc_models(dict.fromkeys(kc_paths))
 
@@ -81,7 +80,7 @@ def _report_scope(ss: pd.DataFrame, tagged: pd.DataFrame, scope_column: str | No
           f"{before:,} student id(s) -> {after:,} subject(s) ***")
 
 
-def _run_dir_kc_paths(run: str) -> list[str]:
+def run_dir_kc_paths(run: str) -> list[str]:
     """The KC files of a result dir: its own ``kc/``, else its result dirs' own.
 
     One level down is where a Vertex work dir keeps them, one result dir per
@@ -151,7 +150,7 @@ def _concat_parts(name: str, paths: list[str], frames: list[pd.DataFrame]) -> pd
 def _default_output(ss_path: str, run: str | None) -> str:
     """``<ds>_student-step-minimal.txt`` -> ``<ds>_student-step-tagged.txt``.
 
-    The two names are the dataset convention (``kcluster.io.student_step``), so a
+    The two names are the dataset convention (``kcluster.datashop.student_step``), so a
     conventionally named input keeps its ``<ds>`` and swaps stage; anything else
     just gains ``-tagged``.
     """
@@ -184,9 +183,3 @@ def add_arguments(parser):
     parser.add_argument("--output", default=None, type=str,
                         help="Output path (default: <ds>_student-step-tagged.txt in --run_dir, which is "
                              "where a tagged file belongs; else beside the input)")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

@@ -28,7 +28,6 @@ dir, so its tables stay at ``<run>/fit/<family>/`` and no root files are written
     kcluster fit --run_dir results/<run> --no_scope   # one pooled fit, as before
 """
 
-import argparse
 import contextlib
 import glob
 import os
@@ -36,7 +35,7 @@ import re
 
 import pandas as pd
 
-from kcluster.io.student_step import (
+from kcluster.datashop.student_step import (
     PREDICTIONS_NAME,
     TAGGED_SUFFIX,
     load_student_step,
@@ -137,8 +136,12 @@ def _write_root(comparisons, predictions, root: str, export: str, family: str) -
     if all(part is not None for part in predictions):
         merged = pd.concat(predictions).sort_index()
         path = f"{prefix}{PREDICTIONS_NAME}"
-        merged.to_csv(path, sep="\t", index=False, float_format="%.6f", lineterminator="\n")
+        _save_predictions(merged, path)
         print(f"*** Wrote {len(merged):,} rows to {path} ***")
+
+
+def _save_predictions(predictions: pd.DataFrame, path: str) -> None:
+    predictions.to_csv(path, sep="\t", index=False, float_format="%.6f", lineterminator="\n")
 
 
 def _slug(value: str) -> str:
@@ -233,8 +236,7 @@ def _write(out, outdir: str, *, with_predictions: bool = True) -> None:
         values.to_csv(os.path.join(values_dir, f"{name.replace('/', '_')}.csv"), index=False)
 
     if with_predictions and out["predictions"] is not None:
-        out["predictions"].to_csv(os.path.join(outdir, PREDICTIONS_NAME), sep="\t", index=False,
-                                  float_format="%.6f", lineterminator="\n")
+        _save_predictions(out["predictions"], os.path.join(outdir, PREDICTIONS_NAME))
 
 
 def _default_export(run: str | None) -> str:
@@ -290,9 +292,3 @@ def add_arguments(parser):
                              f"core (default: {N_JOBS}). Folds are partitioned before any fit "
                              f"starts and collected in order, so this changes the wall clock "
                              f"and not the tables.")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    main(parser.parse_args())

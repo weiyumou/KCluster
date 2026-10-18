@@ -11,14 +11,12 @@ import json
 import os
 import time
 from collections import defaultdict
-from functools import partial
 
 import lightning as L
 import torch
-from torch.utils.data import DataLoader
 from transformers.utils import logging
 
-from kcluster.engine.local import CustomWriter, LargeLangModel, LogProbScorer, collate_pair
+from kcluster.engine.local import LargeLangModel, LogProbScorer, score_pairs
 from kcluster.io.jsonl import load_questions
 from kcluster.tasks.congruity import PairQuestion
 
@@ -53,12 +51,8 @@ def main(args):
             pred_dir = os.path.join(output_dir, f"LO-{idx}")
             os.makedirs(pred_dir, exist_ok=True)
 
-            dl = DataLoader(PairQuestion(all_questions[lo]), batch_size=args.batch_size,
-                            pin_memory=True, shuffle=False, num_workers=2,
-                            collate_fn=partial(collate_pair, tokenizer=tokenizer, pad_to_multiple_of=8))
-            pred_writer = CustomWriter(output_dir=pred_dir, write_interval="epoch")
-            trainer = L.Trainer(accelerator="gpu", devices=1, callbacks=[pred_writer], logger=False)
-            trainer.predict(model, dataloaders=dl, return_predictions=False)
+            score_pairs(model, tokenizer, PairQuestion(all_questions[lo]), pred_dir, batch_size=args.batch_size,
+                        num_workers=2, pad_to_multiple_of=8, devices=1)
 
         with open(os.path.join(output_dir, "lo_mappings.json"), "w") as f:
             json.dump(lo_mappings, f, indent=2)
