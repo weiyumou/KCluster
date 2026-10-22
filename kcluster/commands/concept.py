@@ -20,7 +20,7 @@ def main(args):
     print(f"*** Writing results to {result_dir} ***")
 
     # Load an LLM
-    llm = LargeLangModel(args.llm_path, trust_remote_code=True, torch_dtype=torch.float16)
+    llm = LargeLangModel(args.llm_path, trust_remote_code=True, dtype=torch.float16)
 
     # Read all questions
     questions = load_questions(args.data_path)

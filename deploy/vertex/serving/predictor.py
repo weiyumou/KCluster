@@ -21,7 +21,7 @@ class Phi2Predictor(Predictor):
 
         from kcluster.engine.local import LargeLangModel
 
-        kwargs = dict(trust_remote_code=True, torch_dtype=torch.float16)
+        kwargs = dict(trust_remote_code=True, dtype=torch.float16)
         if is_flash_attn_2_available():
             kwargs["attn_implementation"] = "flash_attention_2"
 

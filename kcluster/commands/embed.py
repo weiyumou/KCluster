@@ -91,7 +91,7 @@ def main(args):
         _save_and_cluster("concept", c_embeds, ds, concept_df, questions, out_concept_kc, out_embed)
 
     if args.llm_path:
-        llm = LargeLangModel(args.llm_path, trust_remote_code=True, torch_dtype=torch.float16)
+        llm = LargeLangModel(args.llm_path, trust_remote_code=True, dtype=torch.float16)
         q_embeds = _as_numpy(extract_question_embeds(llm, questions, args.batch_size))
         _save_and_cluster("llm", q_embeds, ds, concept_df, questions, out_embed_kc, out_embed)
 

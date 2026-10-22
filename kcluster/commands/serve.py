@@ -26,7 +26,7 @@ DTYPES = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch
 
 def model_kwargs(dtype: str, quantize: str, trust_remote_code: bool) -> dict:
     """``from_pretrained`` arguments for the requested precision."""
-    kwargs = {"torch_dtype": DTYPES[dtype], "trust_remote_code": trust_remote_code}
+    kwargs = {"dtype": DTYPES[dtype], "trust_remote_code": trust_remote_code}
     if quantize != "none":
         try:
             import bitsandbytes  # noqa: F401

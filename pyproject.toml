@@ -37,7 +37,7 @@ dependencies = [
 local = [
     "torch>=2.4",
     "lightning>=2.4",
-    "transformers>=4.45",
+    "transformers>=4.56",  # `dtype=` in from_pretrained (torch_dtype is deprecated)
     "accelerate>=1.0",
     "sentence-transformers>=3.0",
 ]

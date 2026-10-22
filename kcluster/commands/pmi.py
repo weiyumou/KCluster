@@ -21,7 +21,7 @@ def main(args):
     tokenizer = LargeLangModel.load_tokenizer(args.llm_path)
 
     # Load model
-    model = LogProbScorer(args.llm_path, trust_remote_code=True, torch_dtype=torch.float16)
+    model = LogProbScorer(args.llm_path, trust_remote_code=True, dtype=torch.float16)
 
     # Compute PMI
     questions = load_questions(args.data_path)
