@@ -150,3 +150,22 @@ def test_score_pairs_feeds_the_grid_to_a_gpu_trainer_in_order(tmp_path, monkeypa
     # Trainer arguments pass through: one device, and no strategy unless asked for
     local.score_pairs("scorer", fake_tokenizer, pairs, str(tmp_path), devices=1)
     assert seen["trainer"]["devices"] == 1 and "strategy" not in seen["trainer"]
+
+
+def test_token_loss_is_computed_in_float32_whatever_the_models_dtype():
+    import torch
+
+    from kcluster.engine.local import _token_loss
+
+    class _Bf16LM(_TinyLM):
+        def forward(self, input_ids, attention_mask=None, logits_to_keep=0):
+            out = super().forward(input_ids, attention_mask, logits_to_keep)
+            out.logits = out.logits.to(torch.bfloat16)
+            return out
+
+        __call__ = forward
+
+    ids = torch.tensor([[1, 2, 3, 4, 5, 6]])
+    labels = torch.tensor([[-100, -100, 3, 4, 5, 6]])
+    loss = _token_loss(_Bf16LM(), {"input_ids": ids}, labels)
+    assert loss.dtype == torch.float32

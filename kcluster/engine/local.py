@@ -124,7 +124,13 @@ def _token_loss(model, inputs, labels, ignore_idx: int = -100):
     keep = _logits_to_keep(model, labels, ignore_idx)
     logits = model(**inputs, **({"logits_to_keep": keep} if keep else {})).logits.transpose(-1, -2)  # (N, V, K)
     kept = logits.size(-1)
-    return F.cross_entropy(logits[..., :-1], labels[:, -(kept - 1):], reduction="none", ignore_index=ignore_idx)
+    # The loss in float32: a bfloat16 log-softmax is good to ~0.4% per token
+    # and a bfloat16 sum of them to whole nats at the magnitudes of a scored
+    # question (ulp 2 at 300), which is the resolution the PMI lives on. The
+    # kept logits are small enough for the upcast (float16 Phi-2 scores move
+    # by at most their old ulp).
+    return F.cross_entropy(logits[..., :-1].float(), labels[:, -(kept - 1):], reduction="none",
+                           ignore_index=ignore_idx)
 
 
 class LargeLangModel:
