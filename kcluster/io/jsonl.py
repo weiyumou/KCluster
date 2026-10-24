@@ -26,6 +26,15 @@ def validate_question(q: Question) -> None:
     for choice in q.choices:
         if not isinstance(choice, dict) or "label" not in choice or "text" not in choice:
             raise ValueError(f"question {q['id']!r} has a malformed choice: {choice!r}")
+    # A figure is a marker in the text plus a file in `figures`, in the same
+    # order; the two must agree or an image-taking engine would show the wrong
+    # figure, or none, at a marker.
+    figures = q.get("figures")
+    if figures is not None and not (isinstance(figures, list) and all(isinstance(f, str) and f for f in figures)):
+        raise ValueError(f"question {q['id']!r} needs 'figures' to be a list of file paths, got {figures!r}")
+    if (n_markers := q.figure_count) != len(q.figures):
+        raise ValueError(f"question {q['id']!r} shows {n_markers} figure marker(s) but lists "
+                         f"{len(q.figures)} file(s) in 'figures'")
 
 
 def load_questions(path: str, validate: bool = True) -> list[Question]:

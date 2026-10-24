@@ -78,7 +78,9 @@ def build_res_df(questions: list[Question], concepts: list[str]) -> pd.DataFrame
     q_dicts = []
     for q, c in zip(questions, concepts, strict=True):
         q_dict = q.flat_dict
+        # File lists are not part of a KC model; the bank keeps them
         q_dict.pop("images", None)
+        q_dict.pop("figures", None)
         q_dict["KC"] = c
         q_dicts.append(q_dict)
 

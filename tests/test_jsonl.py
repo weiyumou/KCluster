@@ -76,6 +76,28 @@ def test_malformed_choice_is_rejected():
         validate_question(Question(bad))
 
 
+def test_figures_must_match_the_markers():
+    q = _mcq_dict()
+    q["question"]["stem"] = "[figure]\nWhich graph is steeper?"
+    with pytest.raises(ValueError, match="shows 1 figure marker.*lists 0 file"):
+        validate_question(Question(q))
+    q["figures"] = ["a.png"]
+    validate_question(Question(q))
+    q["figures"] = ["a.png", "b.png"]
+    with pytest.raises(ValueError, match="shows 1 figure marker.*lists 2 file"):
+        validate_question(Question(q))
+
+
+def test_figures_must_be_a_list_of_paths():
+    q = _mcq_dict()
+    q["figures"] = "a.png"
+    with pytest.raises(ValueError, match="list of file paths"):
+        validate_question(Question(q))
+    q["figures"] = [""]
+    with pytest.raises(ValueError, match="list of file paths"):
+        validate_question(Question(q))
+
+
 def test_invalid_json_reports_line_number(tmp_path):
     path = tmp_path / "broken.jsonl"
     path.write_text("{'single': 'quotes'}\n")

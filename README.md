@@ -122,6 +122,21 @@ Extra fields pass through untouched (e.g. `lo` for learning objectives,
 in the package: `kcluster/datashop/` for DataShop's files, and
 `kcluster/io/loaders/` for others (e.g. OLI HTML).
 
+A question that shows figures writes `[figure]` where each one appears
+(in the stem or a choice) and lists their files in `figures`, in that
+order, as paths relative to the bank's folder (or to `--figure_dir`):
+
+```json
+{"id": "q-2", "type": "Short Answer",
+ "question": {"stem": "[figure]\nThe graph of f is shown. f'(2) = ___"},
+ "answerKey": "3", "figures": ["figures/q-2-1.png"]}
+```
+
+A text-only model reads the marker as those eight characters; a
+multimodal model (e.g. Gemma 4, the `multimodal` extra) sees the image in
+its place. The scored text is the same either way: figures are context,
+never part of what is scored.
+
 ## Repository layout
 
 | path        | contents | shipped in the wheel |
