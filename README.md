@@ -74,7 +74,11 @@ calls the tasks can pass a prompt style instead
 another remark for a concept name to complete, or `ChatPrompts`, which puts
 the same requests in a model's chat template for an instruction-tuned model.
 `extract_concepts`, `PairQuestion` and the Vertex job preparation all take
-`prompts=`.
+`prompts=`. The congruity grid is one case of `ScoringGrid`
+([`kcluster.tasks.congruity`](kcluster/tasks/congruity.py)), the layout of
+(context, text) pairs the scorer and `PointwiseMutualInfo.from_shards`
+share; a grid of other texts, such as concept names after each question,
+is a subclass that writes its own contexts.
 
 **No GPU?** The scoring steps run as Vertex AI batch jobs in your own GCP
 project: deploy the model once ([`deploy/vertex/`](deploy/vertex/README.md)),

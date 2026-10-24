@@ -94,3 +94,41 @@ def test_a_prompt_style_writes_the_contexts(questions):
         f"user: Write an exercise. | assistant: {questions[0]} | user: Write another one. | assistant:",
         str(questions[1]),
     )
+
+
+def test_a_grid_of_other_texts_shares_the_layout(questions):
+    from kcluster.tasks.congruity import ScoringGrid
+
+    class NameGrid(ScoringGrid):
+        """Concept names after each question, and after no question: n rows, m columns."""
+
+        def __init__(self, questions, names):
+            super().__init__([f" {name}." for name in names], len(questions))
+            self.questions = questions
+
+        def marginal(self, col):
+            return "Remark:\nThe above exercise tests"
+
+        def context(self, row, col):
+            return f"{self.questions[row]}\n\nRemark:\nThe above exercise tests"
+
+    grid = NameGrid(questions, ["flexibility", "addition"])
+    assert len(grid) == (3 + 1) * 2
+    assert grid[1] == ("Remark:\nThe above exercise tests", " addition.")
+    assert grid[2 + 2 * 2 + 0] == (f"{questions[2]}\n\nRemark:\nThe above exercise tests", " flexibility.")
+
+    # PairQuestion is the square case, and its parts read the same way
+    ds = PairQuestion(questions)
+    assert (ds.n_rows, ds.texts) == (3, [str(q) for q in questions])
+    assert ds[3 + 1 * 3 + 2] == (ds.context(1, 2), ds.texts[2])
+
+
+def test_longest_input_takes_the_longest_row_with_the_longest_text(questions):
+    class WordTokenizer:
+        def __call__(self, text, text_pair=None):
+            return {"input_ids": (text + " " + (text_pair or "")).split()}
+
+    ds = PairQuestion(questions)
+    tokenizer = WordTokenizer()
+    longest = max(len(tokenizer(*ds[i])["input_ids"]) for i in range(len(ds)))
+    assert ds.longest_input(tokenizer) == longest

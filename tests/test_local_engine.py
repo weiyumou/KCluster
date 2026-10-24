@@ -5,6 +5,8 @@ here we cover the pure helpers and that the module imports cleanly whenever
 torch is available (the [local] extra).
 """
 
+from types import SimpleNamespace
+
 import pytest
 
 pytest.importorskip("torch")
@@ -68,6 +70,9 @@ def test_score_pairs_feeds_the_grid_to_a_gpu_trainer_in_order(tmp_path, monkeypa
     seen = {"pad": []}
 
     class FakeTrainer:
+        is_global_zero = True
+        strategy = SimpleNamespace(barrier=lambda: seen.update(barrier=True))
+
         def __init__(self, **kwargs):
             seen["trainer"] = kwargs
 
@@ -81,8 +86,9 @@ def test_score_pairs_feeds_the_grid_to_a_gpu_trainer_in_order(tmp_path, monkeypa
 
     monkeypatch.setattr(local.L, "Trainer", FakeTrainer)
     pairs = [("c0", "t0"), ("c1", "t1"), ("c2", "t2")]
-    local.score_pairs("scorer", fake_tokenizer, pairs, str(tmp_path), batch_size=2, pad_to_multiple_of=8,
-                      strategy="ddp")
+    first = local.score_pairs("scorer", fake_tokenizer, pairs, str(tmp_path), batch_size=2, pad_to_multiple_of=8,
+                              strategy="ddp")
+    assert first is True and seen["barrier"]  # every rank has written before the first goes on
 
     kwargs = seen["trainer"]
     assert (kwargs["accelerator"], kwargs["devices"], kwargs["strategy"], kwargs["logger"]) == ("gpu", -1, "ddp", False)
@@ -94,6 +100,7 @@ def test_score_pairs_feeds_the_grid_to_a_gpu_trainer_in_order(tmp_path, monkeypa
     assert [labels.tolist() for _, labels in seen["batches"]] == [[[-100, 7], [-100, 7]], [[-100, 7]]]
     assert seen["pad"] == [8, 8]
 
-    # Trainer arguments pass through: one device, and no strategy unless asked for
-    local.score_pairs("scorer", fake_tokenizer, pairs, str(tmp_path), devices=1)
-    assert seen["trainer"]["devices"] == 1 and "strategy" not in seen["trainer"]
+    # Trainer arguments pass through: one device of any kind, and no strategy unless asked for
+    local.score_pairs("scorer", fake_tokenizer, pairs, str(tmp_path), devices=1, accelerator="auto")
+    assert (seen["trainer"]["devices"], seen["trainer"]["accelerator"]) == (1, "auto")
+    assert "strategy" not in seen["trainer"]

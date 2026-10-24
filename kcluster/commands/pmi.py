@@ -25,10 +25,10 @@ def main(args):
 
     # Compute PMI
     questions = load_questions(args.data_path)
-    score_pairs(model, tokenizer, PairQuestion(questions), shard_dir, batch_size=args.batch_size,
-                num_workers=args.num_workers, pad_to_multiple_of=args.pad_to_multiple_of, strategy="ddp")
-
-    save_args(result_dir, "pmi", dataset_name(args.data_path), vars(args))
+    first = score_pairs(model, tokenizer, PairQuestion(questions), shard_dir, batch_size=args.batch_size,
+                        num_workers=args.num_workers, pad_to_multiple_of=args.pad_to_multiple_of, strategy="ddp")
+    if first:
+        save_args(result_dir, "pmi", dataset_name(args.data_path), vars(args))
 
 
 def add_arguments(parser):

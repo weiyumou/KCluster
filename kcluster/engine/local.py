@@ -164,14 +164,19 @@ def score_pairs(model: LogProbScorer, tokenizer, pairs, shard_dir: str, *, batch
                 num_workers: int = 0, pad_to_multiple_of: int = None, **trainer_kwargs) -> None:
     """Score a grid of (context, text) pairs on the GPUs, as shards in ``shard_dir``.
 
-    ``pairs`` is a map-style dataset of (context, text) tuples — ``PairQuestion``,
-    ``QuestionLO`` — and each rank writes the log-prob of every text given its
-    context to its own shard pair, which ``PointwiseMutualInfo.from_shards``
-    reassembles. ``trainer_kwargs`` reach ``L.Trainer``: ``devices`` (every GPU
-    unless given) and ``strategy``.
+    ``pairs`` is a map-style dataset of (context, text) tuples — a
+    ``ScoringGrid`` such as ``PairQuestion`` — and each rank writes the
+    log-prob of every text given its context to its own shard pair, which
+    ``PointwiseMutualInfo.from_shards`` reassembles. ``trainer_kwargs`` reach
+    ``L.Trainer``: ``accelerator`` (``"gpu"`` unless given), ``devices`` (every
+    GPU unless given) and ``strategy``. Returns once every rank has written
+    its shard, True in the first process: what comes after the scores (the
+    reassembly, the KC models) is its to do alone.
     """
     dl = DataLoader(pairs, batch_size=batch_size, pin_memory=True, shuffle=False, num_workers=num_workers,
                     collate_fn=partial(collate_pair, tokenizer=tokenizer, pad_to_multiple_of=pad_to_multiple_of))
-    trainer = L.Trainer(accelerator="gpu", callbacks=[CustomWriter(output_dir=shard_dir, write_interval="epoch")],
-                        logger=False, **{"devices": -1, **trainer_kwargs})
+    trainer = L.Trainer(callbacks=[CustomWriter(output_dir=shard_dir, write_interval="epoch")], logger=False,
+                        **{"accelerator": "gpu", "devices": -1, **trainer_kwargs})
     trainer.predict(model, dataloaders=dl, return_predictions=False)
+    trainer.strategy.barrier()
+    return trainer.is_global_zero
