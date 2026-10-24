@@ -18,6 +18,16 @@ from kcluster.io.jsonl import dump_questions
 from kcluster.tasks.cluster import build_res_df
 
 
+@pytest.fixture(autouse=True)
+def no_run_dir_from_the_environment(monkeypatch):
+    """Every command resolves its folders from these variables when no flag
+    names one, so a suite run inside a pipeline job (which exports them) would
+    otherwise write test output into that job's run dir and then fail to find
+    it under ``tmp_path``."""
+    monkeypatch.delenv("KCLUSTER_RUN_DIR", raising=False)
+    monkeypatch.delenv("KCLUSTER_RESULTS_DIR", raising=False)
+
+
 @pytest.fixture
 def make_questions():
     """Factory for a bank of ``n`` interchangeable one-choice MCQs, ``q-0`` onwards.
