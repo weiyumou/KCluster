@@ -9,6 +9,11 @@ route of the same name — ``/complete_prompts``, ``/log_prob``,
 prompt experiment never needs a server change. Every response carries the
 served ``model_id`` so logged results are self-describing.
 
+Figures ride along as ``figures`` (and ``context_figures`` on the paired
+routes): one list per text of ``data:`` URIs — what ``HttpLangModel`` sends,
+so no filesystem is shared — or paths the server can read. ``/health``
+says whether the served model takes images.
+
 The app is model-agnostic: anything ``LargeLangModel`` loads can be served,
 and ``check_tokenizer`` refuses at startup a tokenizer that cannot mark the
 context/text split the scoring methods rely on. One GPU, one model, one
@@ -56,6 +61,10 @@ class _Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+#: One list of figure sources per text: data URIs, or paths the server can read.
+Figures = list[list[str]] | None
+
+
 class CompleteRequest(BaseModel):
     """Unknown fields are forwarded to ``generate`` (e.g. ``num_beams``)."""
     model_config = ConfigDict(extra="allow")
@@ -63,6 +72,7 @@ class CompleteRequest(BaseModel):
     stop_tokens: list[str] | None = None
     max_new_tokens: int = 200
     pad_to_multiple_of: int | None = None
+    figures: Figures = None
 
 
 class LogProbRequest(_Body):
@@ -71,6 +81,8 @@ class LogProbRequest(_Body):
     ignore_idx: int = -100
     pad_to_multiple_of: int | None = None
     return_ppl: bool = False
+    figures: Figures = None
+    context_figures: Figures = None
 
 
 class NextTokensRequest(_Body):
@@ -78,18 +90,28 @@ class NextTokensRequest(_Body):
     choices: list[str] | None = None
     top_k: int = 1
     pad_to_multiple_of: int | None = None
+    figures: Figures = None
 
 
 class NextLogitsRequest(_Body):
     prompts: list[str]
     normalize: bool = False
     pad_to_multiple_of: int | None = None
+    figures: Figures = None
 
 
 class EncodeRequest(_Body):
     texts: list[str]
     contexts: list[str] | None = None
     pad_to_multiple_of: int | None = None
+    figures: Figures = None
+    context_figures: Figures = None
+
+
+def _kwargs(body: BaseModel) -> dict:
+    """The engine call's keyword arguments: the body, minus figure fields left unset
+    (an engine without them — a stub, an older one — is then called as before)."""
+    return {k: v for k, v in body.model_dump().items() if v is not None or k not in ("figures", "context_figures")}
 
 
 class TokenizeRequest(_Body):
@@ -117,11 +139,14 @@ def create_app(llm, model_id: str) -> FastAPI:
     def health() -> dict:
         now = time.time()
         model = getattr(llm, "model", None)
+        images = getattr(llm, "images", None)
         return {
             "status": "ok",
             "model_id": model_id,
             "device": str(getattr(llm, "device", "unknown")),
             "dtype": str(getattr(model, "dtype", "unknown")),
+            "images": images is not None,
+            "soft_tokens_per_figure": getattr(images, "soft_tokens_per_figure", None),
             "uptime_seconds": round(now - state["started"], 1),
             "idle_seconds": round(now - state["last_request"], 1),
             "requests": state["requests"],
@@ -130,27 +155,27 @@ def create_app(llm, model_id: str) -> FastAPI:
     @app.post("/complete_prompts")
     async def complete_prompts(body: CompleteRequest) -> dict:
         """``result``: one completion string per prompt."""
-        return await run_in_threadpool(run, "complete_prompts", **body.model_dump())
+        return await run_in_threadpool(run, "complete_prompts", **_kwargs(body))
 
     @app.post("/log_prob")
     async def log_prob(body: LogProbRequest) -> dict:
         """``result``: one log-probability (or perplexity) per text, shape (N,)."""
-        return await run_in_threadpool(run, "log_prob", **body.model_dump())
+        return await run_in_threadpool(run, "log_prob", **_kwargs(body))
 
     @app.post("/next_tokens")
     async def next_tokens(body: NextTokensRequest) -> dict:
         """``result``: per prompt, the ``top_k`` most likely next tokens."""
-        return await run_in_threadpool(run, "next_tokens", **body.model_dump())
+        return await run_in_threadpool(run, "next_tokens", **_kwargs(body))
 
     @app.post("/next_logits")
     async def next_logits(body: NextLogitsRequest) -> dict:
         """``result``: next-token logits (or log-probs), shape (N, V)."""
-        return await run_in_threadpool(run, "next_logits", **body.model_dump())
+        return await run_in_threadpool(run, "next_logits", **_kwargs(body))
 
     @app.post("/encode")
     async def encode(body: EncodeRequest) -> dict:
         """``result``: mean-pooled last-layer embeddings, shape (N, H)."""
-        return await run_in_threadpool(run, "encode", **body.model_dump())
+        return await run_in_threadpool(run, "encode", **_kwargs(body))
 
     @app.post("/tokenize")
     async def tokenize(body: TokenizeRequest) -> dict:

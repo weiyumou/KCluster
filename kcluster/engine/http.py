@@ -15,6 +15,10 @@ tasks call (``encode`` and ``__call__`` for id lists); anything needing the
 real tokenizer object — ``generate_mcq`` passes it into ``generate`` — must
 run the model in-process.
 
+Figures are sent as ``data:`` URIs (``figures`` / ``context_figures``, one
+list of paths, bytes or PIL images per text), so the server needs no view of
+the client's files.
+
 Only the standard library is used; the server side is ``kcluster.engine.serve``.
 """
 
@@ -41,6 +45,15 @@ class HttpTokenizer:
         single = isinstance(texts, str)
         ids = self._client._post("/tokenize", {"texts": [texts] if single else list(texts)})
         return {"input_ids": ids[0] if single else ids}
+
+
+def _uris(figures) -> list[list[str]] | None:
+    """Figure sources as data URIs, one list per text; None when there are none to send."""
+    if figures is None or not any(figures):
+        return None
+    from kcluster.engine.vision import data_uri
+
+    return [[data_uri(f) for f in per_text] for per_text in figures]
 
 
 class HttpLangModel:
@@ -113,33 +126,41 @@ class HttpLangModel:
         return HttpTokenizer(self)
 
     def complete_prompts(self, prompts: list[str], stop_tokens: list[str] | None = None, max_new_tokens: int = 200,
-                         pad_to_multiple_of: int | None = None, **kwargs) -> list[str]:
+                         pad_to_multiple_of: int | None = None, figures=None, **kwargs) -> list[str]:
         """Completes a batch of prompts; ``kwargs`` are HF ``generate`` arguments."""
         return self._post("/complete_prompts", {"prompts": list(prompts), "stop_tokens": stop_tokens,
                                                 "max_new_tokens": max_new_tokens,
-                                                "pad_to_multiple_of": pad_to_multiple_of, **kwargs})
+                                                "pad_to_multiple_of": pad_to_multiple_of,
+                                                "figures": _uris(figures), **kwargs})
 
     def log_prob(self, texts: list[str], contexts: list[str] | None = None,
-                 ignore_idx: int = -100, pad_to_multiple_of: int | None = None, return_ppl: bool = False):
+                 ignore_idx: int = -100, pad_to_multiple_of: int | None = None, return_ppl: bool = False,
+                 figures=None, context_figures=None):
         """Log-prob of each text given its context, shape (N,)."""
         return self._tensor(self._post("/log_prob", {"texts": list(texts), "contexts": contexts,
                                                      "ignore_idx": ignore_idx,
                                                      "pad_to_multiple_of": pad_to_multiple_of,
-                                                     "return_ppl": return_ppl}))
+                                                     "return_ppl": return_ppl, "figures": _uris(figures),
+                                                     "context_figures": _uris(context_figures)}))
 
     def next_tokens(self, prompts: list[str], choices: list[str] | None = None,
-                    top_k: int = 1, pad_to_multiple_of: int | None = None) -> list[tuple[str, ...]]:
+                    top_k: int = 1, pad_to_multiple_of: int | None = None, figures=None) -> list[tuple[str, ...]]:
         """The ``top_k`` most likely next tokens (optionally restricted to ``choices``) per prompt."""
         result = self._post("/next_tokens", {"prompts": list(prompts), "choices": choices, "top_k": top_k,
-                                             "pad_to_multiple_of": pad_to_multiple_of})
+                                             "pad_to_multiple_of": pad_to_multiple_of, "figures": _uris(figures)})
         return [tuple(r) for r in result]
 
-    def next_logits(self, prompts: list[str], normalize: bool = False, pad_to_multiple_of: int | None = None):
+    def next_logits(self, prompts: list[str], normalize: bool = False, pad_to_multiple_of: int | None = None,
+                    figures=None):
         """Next-token logits (log-probs with ``normalize``), shape (N, V)."""
         return self._tensor(self._post("/next_logits", {"prompts": list(prompts), "normalize": normalize,
-                                                        "pad_to_multiple_of": pad_to_multiple_of}))
+                                                        "pad_to_multiple_of": pad_to_multiple_of,
+                                                        "figures": _uris(figures)}))
 
-    def encode(self, texts: list[str], contexts: list[str] | None = None, pad_to_multiple_of: int | None = None):
+    def encode(self, texts: list[str], contexts: list[str] | None = None, pad_to_multiple_of: int | None = None,
+               figures=None, context_figures=None):
         """Mean-pooled last-layer embeddings, shape (N, H)."""
         return self._tensor(self._post("/encode", {"texts": list(texts), "contexts": contexts,
-                                                   "pad_to_multiple_of": pad_to_multiple_of}))
+                                                   "pad_to_multiple_of": pad_to_multiple_of,
+                                                   "figures": _uris(figures),
+                                                   "context_figures": _uris(context_figures)}))

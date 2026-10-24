@@ -59,6 +59,19 @@ def test_methods_mirror_the_engine_surface(server):
     assert llm.tokenizer(["one", "two three"])["input_ids"] == [[3], [3, 5]]
 
 
+def test_figures_are_sent_as_data_uris(server, tmp_path):
+    url, stub = server
+    llm = HttpLangModel(url, tensors="list")
+    path = tmp_path / "fig.png"
+    path.write_bytes(b"\x89PNG\r\n\x1a\n")
+    llm.log_prob(["abcd"], contexts=["c"], figures=[[str(path)]], context_figures=[[]])
+    _, kwargs = stub.calls[-1]
+    assert kwargs["figures"] == [["data:image/png;base64,iVBORw0KGgo="]]
+    assert "context_figures" not in kwargs  # nothing to show: not sent
+    llm.log_prob(["abcd"], contexts=["c"], figures=[[]])
+    assert "figures" not in stub.calls[-1][1]
+
+
 def test_tokenizer_shim_refuses_what_it_cannot_do(server):
     url, _ = server
     with pytest.raises(NotImplementedError, match="return_tensors"):
