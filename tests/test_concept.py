@@ -101,8 +101,9 @@ def test_question_embeds_use_the_marginal_context(mcq):
     assert texts == [str(mcq)]
 
 
-def test_build_res_df_adds_kc_and_drops_images(mcq):
+def test_build_res_df_adds_kc_and_drops_file_lists(mcq):
+    mcq["figures"] = []
     df = build_res_df([mcq], ["flexibility"])
     assert df.loc[0, "KC"] == "flexibility"
-    assert "images" not in df.columns
+    assert "images" not in df.columns and "figures" not in df.columns
     assert df.loc[0, "question"] == str(mcq)

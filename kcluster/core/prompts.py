@@ -25,6 +25,14 @@ QUESTION_TYPE_LINE = "{q_type}:"
 CHOICE_LINE = "{label}) {text}"
 ANSWER_TRAILER = "Answer:"
 
+# Where a question shows a figure, its text carries this marker; the
+# question's ``figures`` list names the files, in marker order. A text-only
+# engine reads the marker as these eight characters, exactly as the banks
+# render it; an image-taking engine replaces it with the model's image tokens
+# (engine/vision.py). It is a data literal, not a prompt template: the text
+# around it is unchanged, so it needs no PROMPT_VERSION bump.
+FIGURE_MARKER = "[figure]"
+
 # --- Question congruity (EDM 2025 Tables 3 and 4; decision D2: the
 # marginal scores under the "Exercise 2:" header) ---
 
