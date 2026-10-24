@@ -32,6 +32,7 @@ pip install -e ".[local]"
 | `vertex`   | running the scoring steps as Vertex AI batch jobs in your own GCP project — no local GPU needed |
 | `gemini`   | the Gemini engine: async batched calls with every raw response kept, and multiple-choice answers parsed from text or token log-probabilities (used by dataset drivers and by genval) |
 | `serve`    | `kcluster serve`: the local engine behind an HTTP API, for interactive experiments over an SSH tunnel (see `deploy/vm/`) |
+| `multimodal` | with `local`: showing a bank's figures to an image-taking model such as Gemma 4 (see *Question format*) |
 
 For development: `uv sync --all-extras`, and once per clone
 `git config core.hooksPath .githooks` (a pre-commit guard that keeps data
