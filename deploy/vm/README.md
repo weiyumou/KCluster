@@ -113,3 +113,10 @@ run a second instance on another port and tunnel both. The prompts and
 thresholds in the pipeline are calibrated on Phi-2; a new model needs its
 own calibration, which is what the A/B is for. Every response carries
 `model_id`, so logged results stay self-describing.
+
+A model that takes images (Gemma 4; install the `multimodal` extra beside
+`local`, and pass `--dtype bfloat16`, since Gemma overflows in fp16) shows
+the figures a request carries: `figures` / `context_figures`, one list per
+text of `data:` URIs — what `HttpLangModel` sends for paths, bytes or PIL
+images — or paths the server can read. `/health` reports `images: true`
+and the per-figure token budget. A text-only model refuses figures.

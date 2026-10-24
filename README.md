@@ -68,6 +68,13 @@ question and concept embeddings. `build-datashop-kc` fills a
 KC models, ready to import for AFM evaluation there, and
 `refine-datashop-kc` splits the KCs that fit poorly.
 
+**Figures.** With a model that takes images (Gemma 4, `pip install -e
+".[local,multimodal]"`), the same three steps show each question's figures
+to the model: `--llm_path gemma-4-12B-it --dtype bfloat16` (Gemma overflows
+in fp16), with a small `--batch_size`; `--figure_dir` names the folder the
+bank's figure paths are relative to when it is not the bank's own, and
+`--ignore_figures` runs the text-only baseline. See *Question format*.
+
 **No GPU?** The scoring steps run as Vertex AI batch jobs in your own GCP
 project: deploy the model once ([`deploy/vertex/`](deploy/vertex/README.md)),
 then `kcluster vertex-launch` / `vertex-retrieve` / `vertex-build-kc` with
