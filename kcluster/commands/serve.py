@@ -15,13 +15,10 @@ paired encoding cannot separate context from text, since ``log_prob`` and
 
 import os
 
-import torch
 import uvicorn
 
-from kcluster.engine.local import LargeLangModel
+from kcluster.engine.local import DTYPES, LargeLangModel
 from kcluster.engine.serve import check_tokenizer, create_app
-
-DTYPES = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
 
 
 def model_kwargs(dtype: str, quantize: str, trust_remote_code: bool) -> dict:

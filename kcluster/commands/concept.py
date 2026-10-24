@@ -1,10 +1,10 @@
 import os
 
-import torch
 from transformers.utils import logging
 
 from kcluster.core.prompts import CONCEPT_LENGTH_PENALTY, CONCEPT_NUM_BEAMS
-from kcluster.engine.local import LargeLangModel
+from kcluster.engine.local import DTYPES, LargeLangModel, load_adapter
+from kcluster.io import figures
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import dataset_name, default_result_dir, kc_dir, prepare_output_dir, save_args
 from kcluster.tasks.cluster import build_res_df
@@ -19,14 +19,16 @@ def main(args):
     args.output_dir = result_dir = prepare_output_dir(result_dir)
     print(f"*** Writing results to {result_dir} ***")
 
-    # Load an LLM
-    llm = LargeLangModel(args.llm_path, trust_remote_code=True, dtype=torch.float16)
-
-    # Read all questions
+    # Read all questions, and find their figures (shown to a model that takes images)
     questions = load_questions(args.data_path)
+    figure_root = figures.figure_root(questions, args.data_path, args.figure_dir, args.ignore_figures)
+    load_adapter(args.llm_path, figure_root)  # refuse early if the model cannot show them
+
+    # Load an LLM
+    llm = LargeLangModel(args.llm_path, trust_remote_code=True, dtype=DTYPES[args.dtype])
 
     # Extract concepts
-    concepts = extract_concepts(llm, questions, args.batch_size, verbal=args.verbal,
+    concepts = extract_concepts(llm, questions, args.batch_size, verbal=args.verbal, figure_dir=figure_root,
                                 do_sample=False, pad_to_multiple_of=args.pad_to_multiple_of,
                                 num_beams=args.num_beams, length_penalty=args.length_penalty)
 
@@ -55,3 +57,6 @@ def add_arguments(parser):
     parser.add_argument("--length_penalty", type=float, default=CONCEPT_LENGTH_PENALTY,
                         help="Length penalty for beam search")
     parser.add_argument("--pad_to_multiple_of", type=int, default=None, help="Pad to multiple of")
+    parser.add_argument("--dtype", default="float16", choices=sorted(DTYPES),
+                        help="Precision to load the model in (Gemma wants bfloat16)")
+    figures.add_arguments(parser)

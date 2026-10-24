@@ -27,7 +27,8 @@ import pandas as pd
 import torch
 from sentence_transformers import SentenceTransformer
 
-from kcluster.engine.local import LargeLangModel
+from kcluster.engine.local import DTYPES, LargeLangModel, load_adapter
+from kcluster.io import figures
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import (
     concept_kc_path,
@@ -91,8 +92,10 @@ def main(args):
         _save_and_cluster("concept", c_embeds, ds, concept_df, questions, out_concept_kc, out_embed)
 
     if args.llm_path:
-        llm = LargeLangModel(args.llm_path, trust_remote_code=True, dtype=torch.float16)
-        q_embeds = _as_numpy(extract_question_embeds(llm, questions, args.batch_size))
+        figure_root = figures.figure_root(questions, args.data_path, args.figure_dir, args.ignore_figures)
+        load_adapter(args.llm_path, figure_root)  # refuse early if the model cannot show them
+        llm = LargeLangModel(args.llm_path, trust_remote_code=True, dtype=DTYPES[args.dtype])
+        q_embeds = _as_numpy(extract_question_embeds(llm, questions, args.batch_size, figure_dir=figure_root))
         _save_and_cluster("llm", q_embeds, ds, concept_df, questions, out_embed_kc, out_embed)
 
     save_args(result_dir, "embed", ds, vars(args))
@@ -112,3 +115,6 @@ def add_arguments(parser):
                         help="Question file for this result dir (default: the path recorded in "
                              "args-*.json, which may not exist on this machine)")
     parser.add_argument("--batch_size", type=int, default=16, help="Number of questions to process in a batch")
+    parser.add_argument("--dtype", default="float16", choices=sorted(DTYPES),
+                        help="Precision to load the LLM in (Gemma wants bfloat16)")
+    figures.add_arguments(parser)

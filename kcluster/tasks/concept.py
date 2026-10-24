@@ -21,28 +21,42 @@ from kcluster.core.prompts import (
 )
 from kcluster.core.question import Question
 from kcluster.engine.local import LargeLangModel
+from kcluster.io.figures import figure_paths
+
+
+def _figures(batch, figure_dir: str | None) -> dict:
+    """The ``figures`` argument for a batch, when any of it shows a figure (else nothing is passed)."""
+    figures = [figure_paths(q, figure_dir) if figure_dir else [] for q in batch]
+    return {"figures": figures} if any(figures) else {}
 
 
 @torch.inference_mode()
 def extract_concepts(llm: LargeLangModel, questions: list[Question],
-                     batch_size: int, verbal: bool = False, **kwargs) -> list[str]:
-    """Extracts the key concept for a list of Questions"""
+                     batch_size: int, verbal: bool = False, figure_dir: str | None = None, **kwargs) -> list[str]:
+    """Extracts the key concept for a list of Questions.
+
+    ``figure_dir``: the root the questions' figure paths resolve against; the
+    figures are then shown to the model. None shows none.
+    """
     all_concepts = []
     for batch in tqdm(batched(questions, batch_size), desc="Extracting concepts"):
         prompts = [concept_prompt(q, verbal=verbal) for q in batch]
-        concepts = llm.complete_prompts(prompts, stop_tokens=list(CONCEPT_STOP_TOKENS), **kwargs)
+        concepts = llm.complete_prompts(prompts, stop_tokens=list(CONCEPT_STOP_TOKENS),
+                                        **_figures(batch, figure_dir), **kwargs)
         all_concepts.extend([clean_concept(c) for c in concepts])
 
     return all_concepts
 
 
 @torch.inference_mode()
-def extract_question_embeds(llm: LargeLangModel, questions: list[Question], batch_size: int, **kwargs) -> torch.Tensor:
+def extract_question_embeds(llm: LargeLangModel, questions: list[Question], batch_size: int,
+                            figure_dir: str | None = None, **kwargs) -> torch.Tensor:
+    """Encodes each question under the marginal context (``figure_dir`` as in :func:`extract_concepts`)."""
     all_embeddings = []
     for batch in tqdm(batched(questions, batch_size), desc="Extracting question embeddings"):
         contexts = [congruity_marginal_context(q) for q in batch]
         texts = [str(q) for q in batch]
-        all_embeddings.append(llm.encode(texts, contexts, **kwargs))
+        all_embeddings.append(llm.encode(texts, contexts, **_figures(batch, figure_dir), **kwargs))
 
     return torch.cat(all_embeddings, dim=0)
 

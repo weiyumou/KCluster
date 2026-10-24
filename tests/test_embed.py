@@ -68,7 +68,7 @@ def test_embed_sbert_builds_question_and_concept_models(result_dir, monkeypatch)
 def test_embed_llm_builds_the_llm_model(result_dir, monkeypatch):
     monkeypatch.setattr(embed, "LargeLangModel", lambda path, **kwargs: object())
     monkeypatch.setattr(embed, "extract_question_embeds",
-                        lambda llm, questions, batch_size: torch.tensor(PLANTED))
+                        lambda llm, questions, batch_size, figure_dir=None: torch.tensor(PLANTED))
     cli_main(["embed", "--result_dir", str(result_dir), "--llm_path", "llm-path", "--batch_size", "4"])
 
     _assert_model(result_dir, "llm")

@@ -135,11 +135,16 @@ def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None) -> 
     }
 
     # Prepare the content of each instance, sharing the local engine's
-    # scoring grid (marginals under the "Exercise 2:" header)
+    # scoring grid (marginals under the "Exercise 2:" header). The deployed
+    # model is text-only, so the grid is built without figures: a bank's
+    # markers are scored as literal text, as under --ignore_figures locally.
+    if shown := sum(1 for q in questions if q.figures):
+        logger.warning("%d questions show figures; the Vertex engine is text-only and scores their markers as text",
+                       shown)
     ds = PairQuestion(questions)
     instances = []
     for idx in range(len(ds)):
-        context, text = ds[idx]
+        context, text, _, _ = ds[idx]
         instances.append(
             {"id": f"pmi-{idx}", "text": text, "context": context, "purpose": PURPOSE, "config": parameters[PURPOSE]}
         )

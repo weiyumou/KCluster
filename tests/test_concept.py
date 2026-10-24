@@ -30,7 +30,7 @@ class StubLLM:
     def encode(self, texts, contexts, **kwargs):
         import torch
 
-        self.encode_calls.append((list(texts), list(contexts)))
+        self.encode_calls.append((list(texts), list(contexts), kwargs))
         return torch.zeros(len(texts), 4)
 
 
@@ -74,6 +74,22 @@ def test_concept_prompt_matches_the_paper_template(mcq):
     assert kwargs["stop_tokens"] == [".", ","]
 
 
+def test_figures_are_passed_only_when_shown(mcq):
+    llm = StubLLM()
+    extract_concepts(llm, [mcq], batch_size=1)
+    extract_concepts(llm, [mcq], batch_size=1, figure_dir="/data")
+    assert all("figures" not in kwargs for _, kwargs in llm.complete_calls)  # mcq shows none
+
+    mcq["question"]["stem"] = "[figure]\n" + mcq.stem
+    mcq["figures"] = ["figs/q.png"]
+    extract_concepts(llm, [mcq], batch_size=1)  # no root: the marker is literal text
+    assert "figures" not in llm.complete_calls[-1][1]
+    extract_concepts(llm, [mcq], batch_size=1, figure_dir="/data")
+    assert llm.complete_calls[-1][1]["figures"] == [["/data/figs/q.png"]]
+    extract_question_embeds(llm, [mcq], batch_size=1, figure_dir="/data")
+    assert llm.encode_calls[-1][2:] == ({"figures": [["/data/figs/q.png"]]},)
+
+
 def test_verbal_flag_switches_the_trailer(mcq):
     llm = StubLLM()
     extract_concepts(llm, [mcq], batch_size=1, verbal=True)
@@ -96,7 +112,8 @@ def test_question_embeds_use_the_marginal_context(mcq):
     llm = StubLLM()
     embeds = extract_question_embeds(llm, [mcq, mcq], batch_size=1)
     assert embeds.shape == (2, 4)
-    texts, contexts = llm.encode_calls[0]
+    texts, contexts, kwargs = llm.encode_calls[0]
+    assert kwargs == {}
     assert contexts == ["Exercise 2:\nMultiple Choice:\n"]
     assert texts == [str(mcq)]
 

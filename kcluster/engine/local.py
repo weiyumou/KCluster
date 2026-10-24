@@ -21,6 +21,21 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from kcluster.engine.vision import ImageAdapter
 
+#: The precisions a command loads a model in (``--dtype``). Phi-2 ran in
+#: float16; Gemma overflows in it and wants bfloat16.
+DTYPES = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
+
+
+def load_adapter(llm_path: str, figure_root: str | None) -> ImageAdapter | None:
+    """The model's image adapter when figures are to be shown; None otherwise, or exit for a text-only model."""
+    if figure_root is None:
+        return None
+    adapter = ImageAdapter.load(llm_path)
+    if adapter is None:
+        raise SystemExit(f"{llm_path} takes no images (it has no processor), but the bank shows figures — "
+                         "pass --ignore_figures to score their markers as text")
+    return adapter
+
 
 def _no_figures(figures, n: int) -> bool:
     return figures is None or not any(figures)

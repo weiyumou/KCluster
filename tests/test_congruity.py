@@ -45,15 +45,16 @@ def test_len_is_conditional_grid_plus_marginals(questions):
 
 def test_marginal_uses_bare_exercise_2_header(questions):
     # The marginal template from the paper: "Exercise 2:" alone as context.
-    context, text = PairQuestion(questions)[1]
+    context, text, context_figures, text_figures = PairQuestion(questions)[1]
     assert context == "Exercise 2:\nMultiple Choice:\n"
     assert text == str(questions[1])
+    assert context_figures == [] and text_figures == []
 
 
 def test_conditional_matches_paper_template(questions):
     # Grid item n + 0*n + 1 scores q_star conditioned on q_plus — the paper's
     # worked example of a congruent pair.
-    context, text = PairQuestion(questions)[3 + 0 * 3 + 1]
+    context, text, _, _ = PairQuestion(questions)[3 + 0 * 3 + 1]
     assert context == (
         "Exercise 1:\n"
         "Multiple Choice:\n"
@@ -73,8 +74,23 @@ def test_grid_is_row_major_with_row_as_conditioning(questions):
     ds, n = PairQuestion(questions), len(questions)
     for i in range(n):
         for j in range(n):
-            context, text = ds[n + i * n + j]
+            context, text, _, _ = ds[n + i * n + j]
             # Context carries question i (the conditioning variable) ...
             assert context.startswith(f"{questions[i].header(1)}\n{questions[i]}")
             # ... and the scored text is question j.
             assert text == str(questions[j])
+
+
+def test_items_carry_each_sides_figures_under_the_root(questions):
+    questions[0]["question"]["stem"] = "[figure]\n" + questions[0].stem
+    questions[0]["figures"] = ["figs/plus.png"]
+    ds = PairQuestion(questions, figure_dir="/data")
+    # Marginal of q_plus: its figure is in the scored text (never scored itself)
+    _, _, context_figures, text_figures = ds[0]
+    assert (context_figures, text_figures) == ([], ["/data/figs/plus.png"])
+    # q_star given q_plus: the figure is in the context; q_plus given q_star: in the text
+    assert ds[3 + 0 * 3 + 1][2:] == (["/data/figs/plus.png"], [])
+    assert ds[3 + 1 * 3 + 0][2:] == ([], ["/data/figs/plus.png"])
+    # Without a root the markers stay literal text and no figure is shown
+    assert PairQuestion(questions)[0][2:] == ([], [])
+    assert "[figure]" in PairQuestion(questions)[0][1]
