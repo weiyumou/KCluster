@@ -92,6 +92,7 @@ def test_tasks_run_unmodified_over_http(server):
                                                                     {"label": "b", "text": "y"}]},
                     "answerKey": "a"}) for i in range(3)]
     concepts = extract_concepts(llm, qs, batch_size=2)
-    assert len(concepts) == 3 and all(c.endswith("done") for c in concepts)
+    # The stub echoes the prompt, which the cleaner reads up to its first line break
+    assert concepts == ["Exercise 1:"] * 3
     embeds = extract_question_embeds(llm, qs, batch_size=2)
     assert isinstance(embeds, torch.Tensor) and embeds.shape == (3, 2)

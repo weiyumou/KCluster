@@ -9,7 +9,9 @@ cluster exemplars to their members.
 
 ``prompts`` is the prompt style (``kcluster.core.prompts``): the paper's plain
 text unless a caller passes another, such as a chat style for an
-instruction-tuned model.
+instruction-tuned model. ``num_names`` asks for several names per question
+instead of one: the model's best few under beam search, or draws under
+sampling.
 """
 
 from itertools import batched
@@ -24,13 +26,29 @@ from kcluster.engine.local import LargeLangModel
 
 @torch.inference_mode()
 def extract_concepts(llm: LargeLangModel, questions: list[Question], batch_size: int, verbal: bool = False,
-                     prompts: PromptStyle = STOCK, **kwargs) -> list[str]:
-    """Extracts the key concept for a list of Questions"""
+                     prompts: PromptStyle = STOCK, num_names: int | None = None, **kwargs) -> list:
+    """The key concept of each question, or with ``num_names`` that many names of each.
+
+    ``kwargs`` reach the model's ``generate``. With ``num_names`` the model
+    returns that many completions per prompt (``num_return_sequences``; beam
+    search needs at least as many beams, sampling ``do_sample=True``), and the
+    result is a list of names per question, the completions that name nothing
+    (no letter) left out; a question left with no name raises.
+    """
+    if num_names:
+        kwargs["num_return_sequences"] = num_names
     all_concepts = []
     for batch in tqdm(batched(questions, batch_size), desc="Extracting concepts"):
         texts = [prompts.concept(q, verbal=verbal) for q in batch]
-        concepts = llm.complete_prompts(texts, stop_tokens=list(CONCEPT_STOP_TOKENS), **kwargs)
-        all_concepts.extend([clean_concept(c) for c in concepts])
+        concepts = [clean_concept(c) for c in llm.complete_prompts(texts, stop_tokens=list(CONCEPT_STOP_TOKENS), **kwargs)]
+        if not num_names:
+            all_concepts.extend(concepts)
+            continue
+        for q, group in zip(batch, batched(concepts, num_names)):
+            names = [name for name in group if any(ch.isalpha() for ch in name)]
+            if not names:
+                raise ValueError(f"the model gave no name for question {q.get('id')}")
+            all_concepts.append(names)
 
     return all_concepts
 

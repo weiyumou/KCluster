@@ -85,6 +85,23 @@ def test_concepts_are_stripped_of_trailing_punctuation(mcq):
     assert extract_concepts(StubLLM(" flexibility. "), [mcq], batch_size=1) == ["flexibility"]
 
 
+def test_several_names_per_question_come_back_grouped_and_cleaned(mcq):
+    class SamplingLLM(StubLLM):
+        def complete_prompts(self, prompts, **kwargs):
+            self.complete_calls.append((list(prompts), kwargs))
+            # num_return_sequences completions per prompt, in prompt order
+            return [c for _ in prompts for c in (" flexibility. ", " 42.", "elasticity, of materials", "  ")]
+
+    llm = SamplingLLM()
+    names = extract_concepts(llm, [mcq, mcq], batch_size=2, num_names=4, do_sample=True, temperature=0.7)
+    assert names == [["flexibility", "elasticity"], ["flexibility", "elasticity"]]  # no letter: dropped
+    [(_, kwargs)] = llm.complete_calls
+    assert kwargs["num_return_sequences"] == 4 and kwargs["do_sample"] is True
+
+    with pytest.raises(ValueError, match="no name for question sciqa-0"):
+        extract_concepts(StubLLM(" 3.14"), [mcq], batch_size=1, num_names=1)
+
+
 def test_extraction_batches_the_questions(mcq):
     llm = StubLLM()
     concepts = extract_concepts(llm, [mcq, mcq, mcq], batch_size=2)

@@ -58,6 +58,9 @@ def test_concept_decoding_is_shared_by_both_engines():
     assert prompts.clean_concept(" flexibility. ") == "flexibility"
     assert prompts.clean_concept("states of matter,") == "states of matter"
     assert prompts.clean_concept(" Ohm's law") == "Ohm's law"
+    # A completion is read up to its first stop token or line break, whatever the model put after it
+    assert prompts.clean_concept("the chain rule, applied to\ncomposite functions") == "the chain rule"
+    assert prompts.clean_concept("Newton's  second\nlaw.") == "Newton's second"
 
 
 # --- Prompt styles: the stock strings above, and the same requests written for a chat model ---
