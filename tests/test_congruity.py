@@ -78,3 +78,19 @@ def test_grid_is_row_major_with_row_as_conditioning(questions):
             assert context.startswith(f"{questions[i].header(1)}\n{questions[i]}")
             # ... and the scored text is question j.
             assert text == str(questions[j])
+
+
+def test_a_prompt_style_writes_the_contexts(questions):
+    from kcluster.core.prompts import ChatPrompts
+
+    def render(messages):
+        return " | ".join(f"{m['role']}: {m['content']}" for m in messages) + " | assistant:"
+
+    style = ChatPrompts(render, concept_request="?", first_request="Write an exercise.",
+                        second_request="Write another one.")
+    ds, n = PairQuestion(questions, style), len(questions)
+    assert ds[1] == ("user: Write an exercise. | assistant:", str(questions[1]))
+    assert ds[n + 0 * n + 1] == (
+        f"user: Write an exercise. | assistant: {questions[0]} | user: Write another one. | assistant:",
+        str(questions[1]),
+    )

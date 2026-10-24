@@ -106,3 +106,21 @@ def test_build_res_df_adds_kc_and_drops_images(mcq):
     assert df.loc[0, "KC"] == "flexibility"
     assert "images" not in df.columns
     assert df.loc[0, "question"] == str(mcq)
+
+
+def test_a_prompt_style_writes_the_prompts_and_the_embedding_context(mcq):
+    from kcluster.core.prompts import ChatPrompts
+
+    def render(messages):
+        return "".join(f"<{m['role']}>{m['content']}</{m['role']}>" for m in messages) + "<assistant>"
+
+    style = ChatPrompts(render, concept_request="What does it test?", first_request="Write an exercise.",
+                        second_request="Write another one.")
+    llm = StubLLM()
+    extract_concepts(llm, [mcq], batch_size=1, prompts=style)
+    [(prompts, _)] = llm.complete_calls
+    assert prompts == [style.concept(mcq)]
+    assert prompts[0].startswith(f"<user>{mcq.header(1)}\n{mcq}\n\nWhat does it test?</user><assistant>The above")
+    extract_question_embeds(llm, [mcq], batch_size=1, prompts=style)
+    _, contexts = llm.encode_calls[0]
+    assert contexts == ["<user>Write an exercise.</user><assistant>"]

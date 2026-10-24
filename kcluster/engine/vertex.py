@@ -32,8 +32,9 @@ from kcluster.core.prompts import (
     CONCEPT_LENGTH_PENALTY,
     CONCEPT_NUM_BEAMS,
     CONCEPT_STOP_TOKENS,
+    STOCK,
+    PromptStyle,
     clean_concept,
-    concept_prompt,
 )
 from kcluster.core.question import Question
 from kcluster.tasks.congruity import PairQuestion
@@ -102,7 +103,8 @@ def init(config: VertexConfig) -> None:
     aiplatform.init(project=config.project, location=config.location)
 
 
-def prepare_concept_jobs(questions: list[Question], verbal: bool = False, configs: dict | None = None) -> dict:
+def prepare_concept_jobs(questions: list[Question], verbal: bool = False, configs: dict | None = None,
+                         prompts: PromptStyle = STOCK) -> dict:
     PURPOSE = "complete_prompts"
 
     # Prepare concept-specific parameters, which can be overridden by configs
@@ -118,14 +120,14 @@ def prepare_concept_jobs(questions: list[Question], verbal: bool = False, config
     instances = []
     for idx, q in enumerate(questions):
         instances.append(
-            {"id": f"concept-{idx}", "text": concept_prompt(q, verbal=verbal),
+            {"id": f"concept-{idx}", "text": prompts.concept(q, verbal=verbal),
              "purpose": PURPOSE, "config": parameters[PURPOSE]}
         )
 
     return {"instances": instances, "parameters": parameters}
 
 
-def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None) -> dict:
+def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None, prompts: PromptStyle = STOCK) -> dict:
     # Prepare PMI-specific parameters, which can be overridden by configs
     PURPOSE = "log_prob"
 
@@ -136,7 +138,7 @@ def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None) -> 
 
     # Prepare the content of each instance, sharing the local engine's
     # scoring grid (marginals under the "Exercise 2:" header)
-    ds = PairQuestion(questions)
+    ds = PairQuestion(questions, prompts)
     instances = []
     for idx in range(len(ds)):
         context, text = ds[idx]
@@ -149,15 +151,15 @@ def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None) -> 
 
 def prepare_inputs(questions: list[Question], job_id: str, config: VertexConfig,
                    verbal_concepts: bool = False, concept_configs: dict | None = None,
-                   pmi_configs: dict | None = None) -> tuple[list[dict], dict]:
+                   pmi_configs: dict | None = None, prompts: PromptStyle = STOCK) -> tuple[list[dict], dict]:
     instances, parameters = [], {}
     # Prepare instances for concept extraction
-    concept_jobs = prepare_concept_jobs(questions, verbal=verbal_concepts, configs=concept_configs)
+    concept_jobs = prepare_concept_jobs(questions, verbal=verbal_concepts, configs=concept_configs, prompts=prompts)
     instances.extend(concept_jobs["instances"])
     parameters.update(concept_jobs["parameters"])
 
     # Prepare instances for PMI computation
-    pmi_jobs = prepare_pmi_jobs(questions, configs=pmi_configs)
+    pmi_jobs = prepare_pmi_jobs(questions, configs=pmi_configs, prompts=prompts)
     instances.extend(pmi_jobs["instances"])
     parameters.update(pmi_jobs["parameters"])
 

@@ -99,6 +99,18 @@ def test_prepare_pmi_jobs_uses_the_canonical_grid(make_questions):
     assert all(item["purpose"] == "log_prob" for item in instances)
 
 
+def test_job_preparation_takes_a_prompt_style(make_questions):
+    from kcluster.core.prompts import StockPrompts
+
+    questions = make_questions(2)
+    style = StockPrompts(remark="The above exercise tests {trailer}")
+    concept = prepare_concept_jobs(questions, prompts=style)
+    assert concept["instances"][0]["text"].endswith("Remark:\nThe above exercise tests whether the student "
+                                                    "understands the concept of")
+    pmi = prepare_pmi_jobs(questions, prompts=style)
+    assert pmi["instances"][0]["context"] == f"{questions[0].header(2)}\n"
+
+
 def test_prepare_inputs_uploads_instances_and_questions(gcs, make_questions):
     questions = make_questions(2)
     instances, parameters = prepare_inputs(questions, "job1", CONFIG)

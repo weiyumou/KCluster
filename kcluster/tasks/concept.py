@@ -6,6 +6,10 @@ whether the student can" (verb phrase, ``verbal=True``). Beam search with a
 negative length penalty keeps completions short, and generation stops at the
 first period or comma. Clustering later propagates these concept labels from
 cluster exemplars to their members.
+
+``prompts`` is the prompt style (``kcluster.core.prompts``): the paper's plain
+text unless a caller passes another, such as a chat style for an
+instruction-tuned model.
 """
 
 from itertools import batched
@@ -13,34 +17,30 @@ from itertools import batched
 import torch
 from tqdm import tqdm
 
-from kcluster.core.prompts import (
-    CONCEPT_STOP_TOKENS,
-    clean_concept,
-    concept_prompt,
-    congruity_marginal_context,
-)
+from kcluster.core.prompts import CONCEPT_STOP_TOKENS, STOCK, PromptStyle, clean_concept
 from kcluster.core.question import Question
 from kcluster.engine.local import LargeLangModel
 
 
 @torch.inference_mode()
-def extract_concepts(llm: LargeLangModel, questions: list[Question],
-                     batch_size: int, verbal: bool = False, **kwargs) -> list[str]:
+def extract_concepts(llm: LargeLangModel, questions: list[Question], batch_size: int, verbal: bool = False,
+                     prompts: PromptStyle = STOCK, **kwargs) -> list[str]:
     """Extracts the key concept for a list of Questions"""
     all_concepts = []
     for batch in tqdm(batched(questions, batch_size), desc="Extracting concepts"):
-        prompts = [concept_prompt(q, verbal=verbal) for q in batch]
-        concepts = llm.complete_prompts(prompts, stop_tokens=list(CONCEPT_STOP_TOKENS), **kwargs)
+        texts = [prompts.concept(q, verbal=verbal) for q in batch]
+        concepts = llm.complete_prompts(texts, stop_tokens=list(CONCEPT_STOP_TOKENS), **kwargs)
         all_concepts.extend([clean_concept(c) for c in concepts])
 
     return all_concepts
 
 
 @torch.inference_mode()
-def extract_question_embeds(llm: LargeLangModel, questions: list[Question], batch_size: int, **kwargs) -> torch.Tensor:
+def extract_question_embeds(llm: LargeLangModel, questions: list[Question], batch_size: int,
+                            prompts: PromptStyle = STOCK, **kwargs) -> torch.Tensor:
     all_embeddings = []
     for batch in tqdm(batched(questions, batch_size), desc="Extracting question embeddings"):
-        contexts = [congruity_marginal_context(q) for q in batch]
+        contexts = [prompts.marginal(q) for q in batch]
         texts = [str(q) for q in batch]
         all_embeddings.append(llm.encode(texts, contexts, **kwargs))
 

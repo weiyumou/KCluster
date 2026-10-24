@@ -67,6 +67,15 @@ question and concept embeddings. `build-datashop-kc` fills a
 KC models, ready to import for AFM evaluation there, and
 `refine-datashop-kc` splits the KCs that fit poorly.
 
+**Another model, another prompt style.** The published prompts are plain
+text for a base model to complete, and are what the commands run. Code that
+calls the tasks can pass a prompt style instead
+([`kcluster.core.prompts`](kcluster/core/prompts.py)): `StockPrompts` with
+another remark for a concept name to complete, or `ChatPrompts`, which puts
+the same requests in a model's chat template for an instruction-tuned model.
+`extract_concepts`, `PairQuestion` and the Vertex job preparation all take
+`prompts=`.
+
 **No GPU?** The scoring steps run as Vertex AI batch jobs in your own GCP
 project: deploy the model once ([`deploy/vertex/`](deploy/vertex/README.md)),
 then `kcluster vertex-launch` / `vertex-retrieve` / `vertex-build-kc` with
