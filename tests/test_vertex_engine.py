@@ -100,7 +100,7 @@ def test_prepare_pmi_jobs_uses_the_canonical_grid(make_questions):
 
 
 def test_job_preparation_takes_a_prompt_style(make_questions):
-    from kcluster.core.prompts import StockPrompts
+    from kcluster.core.prompts import ChatPrompts, StockPrompts
 
     questions = make_questions(2)
     style = StockPrompts(remark="The above exercise tests {trailer}")
@@ -109,6 +109,12 @@ def test_job_preparation_takes_a_prompt_style(make_questions):
                                                     "understands the concept of")
     pmi = prepare_pmi_jobs(questions, prompts=style)
     assert pmi["instances"][0]["context"] == f"{questions[0].header(2)}\n"
+
+    # The style's stop tokens reach the job, as they reach the local engine
+    chat = ChatPrompts(lambda messages: "", concept_request="?", first_request="", second_request="",
+                       end_of_turn="<end_of_turn>")
+    concept = prepare_concept_jobs(questions, prompts=chat)
+    assert concept["parameters"]["complete_prompts"]["stop_tokens"] == [".", ",", "<end_of_turn>"]
 
 
 def test_prepare_inputs_uploads_instances_and_questions(gcs, make_questions):

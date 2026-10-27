@@ -19,7 +19,7 @@ from itertools import batched
 import torch
 from tqdm import tqdm
 
-from kcluster.core.prompts import CONCEPT_STOP_TOKENS, STOCK, PromptStyle, clean_concept
+from kcluster.core.prompts import STOCK, PromptStyle, clean_concept
 from kcluster.core.question import Question
 from kcluster.engine.local import LargeLangModel
 
@@ -33,14 +33,20 @@ def extract_concepts(llm: LargeLangModel, questions: list[Question], batch_size:
     returns that many completions per prompt (``num_return_sequences``; beam
     search needs at least as many beams, sampling ``do_sample=True``), and the
     result is a list of names per question, the completions that name nothing
-    (no letter) left out; a question left with no name raises.
+    (no letter) left out; a question left with no name raises. A model that
+    gives any other number of completions per prompt than asked for raises
+    too, rather than pairing names with the wrong questions.
     """
     if num_names:
         kwargs["num_return_sequences"] = num_names
     all_concepts = []
     for batch in tqdm(batched(questions, batch_size), desc="Extracting concepts"):
         texts = [prompts.concept(q, verbal=verbal) for q in batch]
-        concepts = [clean_concept(c) for c in llm.complete_prompts(texts, stop_tokens=list(CONCEPT_STOP_TOKENS), **kwargs)]
+        completions = llm.complete_prompts(texts, stop_tokens=list(prompts.concept_stop_tokens), **kwargs)
+        if len(completions) != len(batch) * (num_names or 1):
+            raise ValueError(f"the model gave {len(completions)} completions for {len(batch)} prompts, "
+                             f"not {num_names or 1} per prompt")
+        concepts = [clean_concept(c) for c in completions]
         if not num_names:
             all_concepts.extend(concepts)
             continue

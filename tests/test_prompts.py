@@ -119,3 +119,12 @@ def test_the_chat_style_puts_the_requests_in_turns():
     plain = prompts.ChatPrompts(_render, concept_request="?", first_request="", second_request="",
                                 remark="The above exercise tests {trailer}")
     assert plain.concept(q1).endswith("<assistant>The above exercise tests whether the student understands the concept of")
+
+
+def test_a_chat_style_also_ends_a_name_at_the_end_of_the_turn():
+    assert prompts.STOCK.concept_stop_tokens == prompts.CONCEPT_STOP_TOKENS
+    plain = prompts.ChatPrompts(_render, concept_request="?", first_request="", second_request="")
+    assert plain.concept_stop_tokens == prompts.CONCEPT_STOP_TOKENS
+    gemma = prompts.ChatPrompts(_render, concept_request="?", first_request="", second_request="",
+                                end_of_turn="<end_of_turn>")
+    assert gemma.concept_stop_tokens == (".", ",", "<end_of_turn>")

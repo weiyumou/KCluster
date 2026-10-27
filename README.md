@@ -72,7 +72,9 @@ text for a base model to complete, and are what the commands run. Code that
 calls the tasks can pass a prompt style instead
 ([`kcluster.core.prompts`](kcluster/core/prompts.py)): `StockPrompts` with
 another remark for a concept name to complete, or `ChatPrompts`, which puts
-the same requests in a model's chat template for an instruction-tuned model.
+the same requests in a model's chat template for an instruction-tuned model
+and, given the model's end-of-turn token (`end_of_turn=`), ends a generated
+name there too.
 `extract_concepts`, `PairQuestion` and the Vertex job preparation all take
 `prompts=`. The congruity grid is one case of `ScoringGrid`
 ([`kcluster.tasks.congruity`](kcluster/tasks/congruity.py)), the layout of

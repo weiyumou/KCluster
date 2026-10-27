@@ -31,7 +31,6 @@ from google.cloud.aiplatform_v1 import JobState
 from kcluster.core.prompts import (
     CONCEPT_LENGTH_PENALTY,
     CONCEPT_NUM_BEAMS,
-    CONCEPT_STOP_TOKENS,
     STOCK,
     PromptStyle,
     clean_concept,
@@ -110,7 +109,7 @@ def prepare_concept_jobs(questions: list[Question], verbal: bool = False, config
     # Prepare concept-specific parameters, which can be overridden by configs
     configs = configs or dict()
     parameters = {
-        PURPOSE: {"stop_tokens": list(CONCEPT_STOP_TOKENS), "do_sample": False, "pad_to_multiple_of": 8,
+        PURPOSE: {"stop_tokens": list(prompts.concept_stop_tokens), "do_sample": False, "pad_to_multiple_of": 8,
                   "max_new_tokens": 20, "num_beams": CONCEPT_NUM_BEAMS, "length_penalty": CONCEPT_LENGTH_PENALTY,
                   **configs}
     }

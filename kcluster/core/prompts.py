@@ -94,8 +94,11 @@ class PromptStyle(Protocol):
     out, so a name can be scored after no question. ``pair`` is the context
     a question is scored after when another question comes first, and
     ``marginal`` the context it is scored after on its own; the scored text
-    is ``str(question)`` in both.
+    is ``str(question)`` in both. ``concept_stop_tokens`` are where a
+    generated name ends.
     """
+
+    concept_stop_tokens: tuple[str, ...]
 
     def concept(self, question, verbal: bool = False) -> str: ...
 
@@ -112,6 +115,8 @@ class StockPrompts:
     ``remark`` is the sentence a concept name completes, a template over
     ``{q_type}`` and ``{trailer}``; the default is the published one.
     """
+
+    concept_stop_tokens = CONCEPT_STOP_TOKENS
 
     def __init__(self, remark: str = CONCEPT_REMARK):
         self.remark = remark
@@ -149,13 +154,20 @@ class ChatPrompts:
         pair              user: ``first_request``; assistant: the context question; user: ``second_request``;
                           and the scored question is what the assistant says next
         marginal          user: ``first_request``; the scored question is the assistant's reply
+
+    ``end_of_turn`` is the token that ends the model's turn (Gemma's
+    ``<end_of_turn>``, Phi-4-mini's ``<|end|>``). A name stops there as well
+    as at a period or comma: the stop tokens take the place of the model's own
+    end of sequence in generation, so without it a reply that ends its turn
+    before any period runs on to the token limit.
     """
 
     def __init__(self, render, *, concept_request: str, first_request: str, second_request: str,
-                 remark: str = CONCEPT_REMARK):
+                 remark: str = CONCEPT_REMARK, end_of_turn: str | None = None):
         self.render = render
         self.concept_request, self.first_request, self.second_request = concept_request, first_request, second_request
         self.remark = remark
+        self.concept_stop_tokens = (*CONCEPT_STOP_TOKENS, *([end_of_turn] if end_of_turn else []))
 
     def concept(self, question, verbal: bool = False) -> str:
         user = f"{question.header(1)}\n{question}\n\n{self.concept_request}"

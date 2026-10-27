@@ -102,6 +102,13 @@ def test_several_names_per_question_come_back_grouped_and_cleaned(mcq):
         extract_concepts(StubLLM(" 3.14"), [mcq], batch_size=1, num_names=1)
 
 
+def test_a_completion_count_other_than_asked_for_raises(mcq):
+    # An engine that ignores num_return_sequences gives one completion per prompt; grouped num_names at a time,
+    # the names would land on the wrong questions
+    with pytest.raises(ValueError, match="2 completions for 2 prompts, not 3 per prompt"):
+        extract_concepts(StubLLM(), [mcq, mcq], batch_size=2, num_names=3)
+
+
 def test_extraction_batches_the_questions(mcq):
     llm = StubLLM()
     concepts = extract_concepts(llm, [mcq, mcq, mcq], batch_size=2)
@@ -132,11 +139,12 @@ def test_a_prompt_style_writes_the_prompts_and_the_embedding_context(mcq):
         return "".join(f"<{m['role']}>{m['content']}</{m['role']}>" for m in messages) + "<assistant>"
 
     style = ChatPrompts(render, concept_request="What does it test?", first_request="Write an exercise.",
-                        second_request="Write another one.")
+                        second_request="Write another one.", end_of_turn="</assistant>")
     llm = StubLLM()
     extract_concepts(llm, [mcq], batch_size=1, prompts=style)
-    [(prompts, _)] = llm.complete_calls
+    [(prompts, kwargs)] = llm.complete_calls
     assert prompts == [style.concept(mcq)]
+    assert kwargs["stop_tokens"] == [".", ",", "</assistant>"]  # a name also ends where the model ends its turn
     assert prompts[0].startswith(f"<user>{mcq.header(1)}\n{mcq}\n\nWhat does it test?</user><assistant>The above")
     extract_question_embeds(llm, [mcq], batch_size=1, prompts=style)
     _, contexts = llm.encode_calls[0]
