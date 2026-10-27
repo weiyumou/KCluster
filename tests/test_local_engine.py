@@ -104,3 +104,43 @@ def test_score_pairs_feeds_the_grid_to_a_gpu_trainer_in_order(tmp_path, monkeypa
     local.score_pairs("scorer", fake_tokenizer, pairs, str(tmp_path), devices=1, accelerator="auto")
     assert (seen["trainer"]["devices"], seen["trainer"]["accelerator"]) == (1, "auto")
     assert "strategy" not in seen["trainer"]
+
+
+@pytest.mark.filterwarnings("ignore:.*pin_memory.*:UserWarning")  # no CUDA on a dev machine
+@pytest.mark.filterwarnings("ignore:GPU available but not used", "ignore:.*does not have many workers",
+                            "ignore:.*LeafSpec.*")  # Lightning's notices on a CPU run
+def test_a_grid_scored_in_shards_comes_back_cell_by_cell(tmp_path):
+    """ScoringGrid's flat order, the shards the scorer writes and from_shards agree: every score lands in its own
+    cell, for a grid with more rows than columns, scored over several batches by a real Trainer."""
+    import lightning as L
+    import numpy as np
+    import torch
+
+    from kcluster.core.pmi import PointwiseMutualInfo
+    from kcluster.engine.local import score_pairs
+    from kcluster.tasks.congruity import ScoringGrid
+
+    class NameGrid(ScoringGrid):
+        def marginal(self, col):
+            return "no question"
+
+        def context(self, row, col):
+            return f"question {row}"
+
+    grid = NameGrid([" flexibility.", " addition."], n_rows=3)
+    contexts = ["no question", "question 0", "question 1", "question 2"]
+
+    def tokenizer(text, text_pair, **kwargs):
+        # One token for the context and one for the text, each its index
+        return {"input_ids": torch.tensor([[contexts.index(c), grid.texts.index(t)] for c, t in zip(text, text_pair)]),
+                "token_type_ids": torch.tensor([[0, 1]] * len(text))}
+
+    class CellScorer(L.LightningModule):
+        def forward(self, batch):
+            inputs, _ = batch
+            return 10.0 * inputs["input_ids"][:, 0] + inputs["input_ids"][:, 1]
+
+    assert score_pairs(CellScorer(), tokenizer, grid, str(tmp_path), batch_size=3, accelerator="cpu", devices=1)
+    PointwiseMutualInfo.from_shards(str(tmp_path), grid.n_rows, len(grid.texts)).save(str(tmp_path / "scores.npy"))
+    # Row 0: each text after no question; row 1 + r: after question r
+    assert np.array_equal(np.load(tmp_path / "scores.npy"), 10.0 * np.arange(4)[:, None] + np.arange(2))
