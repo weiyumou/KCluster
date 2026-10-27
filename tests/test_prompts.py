@@ -61,6 +61,9 @@ def test_concept_decoding_is_shared_by_both_engines():
     # A completion is read up to its first stop token or line break, whatever the model put after it
     assert prompts.clean_concept("the chain rule, applied to\ncomposite functions") == "the chain rule"
     assert prompts.clean_concept("Newton's  second\nlaw.") == "Newton's second"
+    # A line break before the name is leading whitespace, not the end of the name
+    assert prompts.clean_concept("\nfractions.") == "fractions"
+    assert prompts.clean_concept(" \n Ohm's law,") == "Ohm's law"
 
 
 # --- Prompt styles: the stock strings above, and the same requests written for a chat model ---

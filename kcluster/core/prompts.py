@@ -75,8 +75,9 @@ def concept_prompt(question, verbal: bool = False) -> str:
 
 
 def clean_concept(completion: str) -> str:
-    """The concept a completion names: the text before its first stop token or line break, its whitespace
-    collapsed to single spaces."""
+    """The concept a completion names: the text before its first stop token or line break after any leading
+    whitespace, its whitespace collapsed to single spaces."""
+    completion = completion.lstrip()
     for stop in (*CONCEPT_STOP_TOKENS, "\n"):
         completion = completion.split(stop, 1)[0]
     return SPACE.join(completion.split())
