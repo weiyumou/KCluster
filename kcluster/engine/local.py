@@ -30,6 +30,14 @@ token (``image_token``), and every method takes the images at those places
 one list of sources per prompt or text, in reading order. The image's tokens
 are context, never scored or pooled. A model without a processor refuses
 images; a prompt without any reads as before.
+
+Precision: a model runs in the dtype it was loaded in, but its output head
+runs in float32 (``float32_head``, applied by ``load_model``): the last
+hidden states are projected onto the vocabulary in float32, a chunk of the
+vocabulary at a time, and the loss is summed there. A score is then exact to
+float32 given the hidden states. In bfloat16 a logit near 25 has a resolution
+of 0.125 nats and rounds differently with the batch shape, so without this a
+bf16 model's scores moved by that much with the batch they were in.
 """
 
 import inspect
@@ -52,6 +60,70 @@ Prompt = str | list[dict]
 #: The precisions a command loads a model in (``--dtype``). The published
 #: runs scored in float16 (Phi-2); Gemma overflows in it and wants bfloat16.
 DTYPES = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
+
+#: The precision a command loads a model in unless ``--dtype`` says otherwise: the one its config names
+#: (``dtype="auto"``; Phi-2 float16, which the published runs scored in, the Phi-4 and Gemma families bfloat16).
+DEFAULT_DTYPE = "auto"
+
+
+def config_dtype(llm_path: str, trust_remote_code: bool = False) -> torch.dtype:
+    """The precision a model's config names (Phi-2 float16, the Phi-4 and Gemma families bfloat16)."""
+    from transformers import AutoConfig
+
+    dtype = AutoConfig.from_pretrained(llm_path, local_files_only=True, trust_remote_code=trust_remote_code).dtype
+    if dtype is None:
+        raise SystemExit(f"{llm_path}'s config names no dtype; pass --dtype")
+    return getattr(torch, dtype) if isinstance(dtype, str) else dtype
+
+
+def model_kwargs(dtype: str, quantize: str = "none", trust_remote_code: bool = False,
+                 llm_path: str | None = None) -> dict:
+    """``from_pretrained`` arguments for the requested precision: ``auto`` is the model config's own, which
+    quantization reads from ``llm_path`` for its compute dtype."""
+    kwargs = {"dtype": "auto" if dtype == "auto" else DTYPES[dtype], "trust_remote_code": trust_remote_code}
+    if quantize != "none":
+        try:
+            import bitsandbytes  # noqa: F401
+            from transformers import BitsAndBytesConfig
+        except ImportError as e:
+            raise SystemExit(f"--quantize {quantize} needs bitsandbytes (pip install bitsandbytes): {e}") from None
+        if quantize == "8bit":
+            kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+        else:
+            compute = config_dtype(llm_path, trust_remote_code) if dtype == "auto" else DTYPES[dtype]
+            kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True, bnb_4bit_compute_dtype=compute, bnb_4bit_quant_type="nf4")
+    return kwargs
+
+
+def float32_head(model, chunk: int = 16384):
+    """Make the model's output head compute its logits in float32, and return the model.
+
+    The head (``get_output_embeddings``, a ``Linear`` over the vocabulary; the embedding matrix itself when the
+    weights are tied) keeps its weights in the model's dtype and upcasts them ``chunk`` vocabulary rows at a
+    time, so no float32 copy of a 262k-row matrix stays resident; the hidden states are upcast once. What the
+    model does after the head (Gemma's final logit softcapping) then runs on float32 input. A head that is
+    already float32, that is not a ``Linear`` with floating weights (a quantized one), or that is missing is
+    left alone.
+    """
+    get = getattr(model, "get_output_embeddings", None)
+    head = get() if callable(get) else None
+    if head is None:
+        head = getattr(model, "lm_head", None)
+    if not isinstance(head, torch.nn.Linear) or not head.weight.is_floating_point() \
+            or head.weight.dtype == torch.float32:
+        return model
+
+    def forward(hidden):
+        x = hidden.float()
+        out = x.new_empty(*x.shape[:-1], head.out_features)
+        for i in range(0, head.out_features, chunk):
+            bias = head.bias[i:i + chunk].float() if head.bias is not None else None
+            out[..., i:i + chunk] = F.linear(x, head.weight[i:i + chunk].float(), bias)
+        return out
+
+    head.forward = forward
+    return model
 
 
 def render_prompt(tokenizer, prompt: Prompt) -> str:
@@ -212,8 +284,8 @@ def _token_loss(model, inputs, labels, ignore_idx: int = -100):
     # The loss in float32: a bfloat16 log-softmax is good to ~0.4% per token
     # and a bfloat16 sum of them to whole nats at the magnitudes of a scored
     # question (ulp 2 at 300), which is the resolution the PMI lives on. The
-    # kept logits are small enough for the upcast (float16 Phi-2 scores move
-    # by at most their old ulp).
+    # logits already are float32 from a head ``float32_head`` patched; the
+    # upcast here covers a head it left alone, and is cheap on the kept logits.
     return F.cross_entropy(logits[..., :-1].float(), labels[:, -(kept - 1):], reduction="none",
                            ignore_index=ignore_idx)  # (N, K - 1)
 
@@ -259,7 +331,7 @@ class LargeLangModel:
 
     @staticmethod
     def load_model(path: str, **kwargs):
-        return AutoModelForCausalLM.from_pretrained(path, local_files_only=True, **kwargs)
+        return float32_head(AutoModelForCausalLM.from_pretrained(path, local_files_only=True, **kwargs))
 
     @property
     def device(self) -> torch.device:
@@ -349,7 +421,9 @@ class LargeLangModel:
         inputs, mask = self._inputs(contexts, texts, pad_to_multiple_of, images, context_images)  # mask: (N, S)
         indices = torch.cumsum(torch.sum(mask, dim=-1), dim=-1).tolist()  # (N,)
 
-        last_states = self.model(**inputs, output_hidden_states=True).hidden_states[-1]  # (N, S, H)
+        # The logits are not needed: ask a model that can for one position's, not every position's
+        keep = {"logits_to_keep": 1} if _takes_logits_to_keep(type(self.model)) else {}
+        last_states = self.model(**inputs, output_hidden_states=True, **keep).hidden_states[-1]  # (N, S, H)
 
         chunks = torch.vsplit(last_states[mask], indices)[:-1]  # (Nc, H) * N
         embeddings = torch.stack([torch.mean(c, dim=0) for c in chunks], dim=0)  # (N, H)

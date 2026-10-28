@@ -56,7 +56,7 @@ def test_ignore_figures_scores_the_markers_as_text(bank, tmp_path, stubbed):
     grid = stubbed["pairs"]
     assert grid.figure_dir is None and not grid.shows_images and "[figure]" in grid[0][1]
     assert stubbed["scoring_kwargs"]["vision"] is None
-    assert stubbed["model_kwargs"]["dtype"] == pmi.DTYPES["float16"]
+    assert stubbed["model_kwargs"]["dtype"] == "auto"  # the model's own precision unless --dtype says otherwise
 
 
 def test_a_text_only_model_refuses_a_figure_bank(bank, tmp_path, stubbed, monkeypatch):

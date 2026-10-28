@@ -28,7 +28,7 @@ import pandas as pd
 import torch
 from sentence_transformers import SentenceTransformer
 
-from kcluster.engine.local import DTYPES, LargeLangModel
+from kcluster.engine.local import DEFAULT_DTYPE, DTYPES, LargeLangModel, model_kwargs
 from kcluster.io import figures
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import (
@@ -95,7 +95,7 @@ def main(args):
     if args.llm_path:
         figure_root = figures.figure_root(questions, args.data_path, args.figure_dir, args.ignore_figures)
         figures.vision_for(args.llm_path, figure_root)  # refuse early a model that cannot show them
-        llm = LargeLangModel(args.llm_path, add_bos=args.add_bos, trust_remote_code=True, dtype=DTYPES[args.dtype])
+        llm = LargeLangModel(args.llm_path, add_bos=args.add_bos, **model_kwargs(args.dtype, trust_remote_code=True))
         q_embeds = _as_numpy(extract_question_embeds(llm, questions, args.batch_size, figure_dir=figure_root))
         _save_and_cluster("llm", q_embeds, ds, concept_df, questions, out_embed_kc, out_embed)
 
@@ -119,7 +119,7 @@ def add_arguments(parser):
     parser.add_argument("--add_bos", action=argparse.BooleanOptionalAction, default=None,
                         help="Put the model's BOS token before every prompt that lacks one (default: the "
                              "tokenizer's own rule; a tokenizer that adds none, such as Gemma 4's instruction-tuned one, wants it)")
-    parser.add_argument("--dtype", default="float16", choices=sorted(DTYPES),
-                        help="Precision to load the LLM in (default float16, the published runs'; Gemma wants "
-                             "bfloat16)")
+    parser.add_argument("--dtype", default=DEFAULT_DTYPE, choices=["auto", *sorted(DTYPES)],
+                        help="Precision to load the model in (default auto, the one its config names: Phi-2 float16, "
+                             "as the published runs scored it; Gemma bfloat16)")
     figures.add_arguments(parser)

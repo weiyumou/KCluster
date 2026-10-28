@@ -70,9 +70,7 @@ KC models, ready to import for AFM evaluation there, and
 
 **Figures.** With a model that takes images (Gemma 4, `pip install -e
 ".[local,multimodal]"`), the same three steps show each question's figures
-to the model: `--llm_path gemma-4-12B --dtype bfloat16` (the scoring commands
-load a model in fp16, the published runs' precision, unless `--dtype` says
-otherwise; Gemma overflows in fp16), with a small `--batch_size`;
+to the model: `--llm_path gemma-4-12B`, with a small `--batch_size`;
 `--figure_dir` names the folder the bank's figure paths are relative to when
 it is not the bank's own, and `--ignore_figures` runs the text-only baseline.
 See *Question format*.
@@ -103,6 +101,16 @@ prompt (`images=`, `context_images=`), paths, bytes or PIL images, which the
 HTTP client sends as data URIs. An image's tokens are context: never scored,
 never pooled. The tasks put the token at each `[figure]` marker when given a
 figure root (`figure_dir=`) and show no figure otherwise.
+
+**Precision.** A command loads a model in the precision its config names
+(Phi-2 fp16, as the published runs scored it; Gemma bf16, since it overflows
+in fp16) unless `--dtype` says otherwise. The output head runs in float32
+whatever the model's precision: the last hidden states are projected onto
+the vocabulary in float32, a chunk at a time, and the loss is summed there,
+so a score is exact to float32 given the model's hidden states. Without
+that, a bf16 logit near 25 is good to 0.125 nats and rounds differently with
+the batch shape, and the scores moved by that much with the batch they were
+in.
 
 **Any scoring grid.** The congruity grid is one case of `ScoringGrid`
 ([`kcluster.core.grid`](kcluster/core/grid.py)), the layout of (context,

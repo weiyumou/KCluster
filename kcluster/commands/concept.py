@@ -4,7 +4,7 @@ import os
 from transformers.utils import logging
 
 from kcluster.core.prompts import CONCEPT_LENGTH_PENALTY, CONCEPT_NUM_BEAMS
-from kcluster.engine.local import DTYPES, LargeLangModel
+from kcluster.engine.local import DEFAULT_DTYPE, DTYPES, LargeLangModel, model_kwargs
 from kcluster.io import figures
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import dataset_name, default_result_dir, kc_dir, prepare_output_dir, save_args
@@ -26,7 +26,7 @@ def main(args):
     figures.vision_for(args.llm_path, figure_root)  # refuse early a model that cannot show them
 
     # Load an LLM
-    llm = LargeLangModel(args.llm_path, add_bos=args.add_bos, trust_remote_code=True, dtype=DTYPES[args.dtype])
+    llm = LargeLangModel(args.llm_path, add_bos=args.add_bos, **model_kwargs(args.dtype, trust_remote_code=True))
 
     # Extract concepts
     concepts = extract_concepts(llm, questions, args.batch_size, verbal=args.verbal, figure_dir=figure_root,
@@ -61,7 +61,7 @@ def add_arguments(parser):
     parser.add_argument("--length_penalty", type=float, default=CONCEPT_LENGTH_PENALTY,
                         help="Length penalty for beam search")
     parser.add_argument("--pad_to_multiple_of", type=int, default=None, help="Pad to multiple of")
-    parser.add_argument("--dtype", default="float16", choices=sorted(DTYPES),
-                        help="Precision to load the model in (default float16, the published runs'; Gemma wants "
-                             "bfloat16)")
+    parser.add_argument("--dtype", default=DEFAULT_DTYPE, choices=["auto", *sorted(DTYPES)],
+                        help="Precision to load the model in (default auto, the one its config names: Phi-2 float16, "
+                             "as the published runs scored it; Gemma bfloat16)")
     figures.add_arguments(parser)

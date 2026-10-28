@@ -3,7 +3,16 @@ from functools import partial
 
 from transformers.utils import logging
 
-from kcluster.engine.local import DTYPES, LargeLangModel, LogProbScorer, context_length, score_pairs, token_count
+from kcluster.engine.local import (
+    DEFAULT_DTYPE,
+    DTYPES,
+    LargeLangModel,
+    LogProbScorer,
+    context_length,
+    model_kwargs,
+    score_pairs,
+    token_count,
+)
 from kcluster.io import figures
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import dataset_name, default_result_dir, pmi_raw_dir, prepare_output_dir, save_args
@@ -29,7 +38,7 @@ def main(args):
     tokenizer = LargeLangModel.load_tokenizer(args.llm_path)
 
     # Load model
-    model = LogProbScorer(args.llm_path, trust_remote_code=True, dtype=DTYPES[args.dtype])
+    model = LogProbScorer(args.llm_path, **model_kwargs(args.dtype, trust_remote_code=True))
 
     # Compute PMI, once every pair is known to fit the model's context
     grid = PairQuestion(questions, figure_dir=figure_root, image_token=vision.image_token if vision else None)
@@ -60,9 +69,9 @@ def add_arguments(parser):
     parser.add_argument("--batch_size", type=int, default=16,
                         help="Number of pairs to score in a batch (a 262k-token vocabulary such as Gemma 4's wants "
                              "a small one)")
-    parser.add_argument("--dtype", default="float16", choices=sorted(DTYPES),
-                        help="Precision to load the model in (default float16, the published runs'; Gemma wants "
-                             "bfloat16)")
+    parser.add_argument("--dtype", default=DEFAULT_DTYPE, choices=["auto", *sorted(DTYPES)],
+                        help="Precision to load the model in (default auto, the one its config names: Phi-2 float16, "
+                             "as the published runs scored it; Gemma bfloat16)")
     figures.add_arguments(parser)
     parser.add_argument("--output_dir", type=str, default=None,
                         help="The result directory (default: --run_dir or a fresh timestamped folder)")
