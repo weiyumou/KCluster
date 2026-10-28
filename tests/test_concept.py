@@ -18,10 +18,12 @@ from kcluster.tasks.concept import complete_names, embed_texts, extract_concepts
 class StubLLM:
     """Records prompts/kwargs and returns canned completions/embeddings."""
 
+    image_token = None  # text-only unless a test says otherwise
+
     def __init__(self, completion: str = " flexibility. "):
         self.completion = completion
         self.complete_calls: list[tuple[list[str], dict]] = []
-        self.encode_calls: list[tuple[list[str], list[str]]] = []
+        self.encode_calls: list[tuple[list[str], list[str], dict]] = []
 
     def complete_prompts(self, prompts, **kwargs):
         self.complete_calls.append((list(prompts), kwargs))
@@ -30,7 +32,7 @@ class StubLLM:
     def encode(self, texts, contexts, **kwargs):
         import torch
 
-        self.encode_calls.append((list(texts), list(contexts)))
+        self.encode_calls.append((list(texts), list(contexts), kwargs))
         return torch.zeros(len(texts), 4)
 
 
@@ -120,9 +122,10 @@ def test_question_embeds_use_the_marginal_context(mcq):
     llm = StubLLM()
     embeds = extract_question_embeds(llm, [mcq, mcq], batch_size=1)
     assert embeds.shape == (2, 4)
-    texts, contexts = llm.encode_calls[0]
+    texts, contexts, kwargs = llm.encode_calls[0]
     assert contexts == ["Exercise 2:\nMultiple Choice:\n"]
     assert texts == [str(mcq)]
+    assert kwargs == {}  # no figures shown: the call is the text-only one
 
 
 def test_build_res_df_adds_kc_and_drops_file_lists(mcq):
@@ -149,7 +152,7 @@ def test_a_prompt_style_writes_the_prompts_and_the_embedding_context(mcq):
     assert extract_concepts(StubLLM(" **flexibility**."), [mcq], batch_size=1, prompts=style) == ["flexibility"]
     assert extract_concepts(StubLLM(" **flexibility**."), [mcq], batch_size=1) == ["**flexibility**"]
     extract_question_embeds(llm, [mcq], batch_size=1, prompts=style)
-    _, contexts = llm.encode_calls[0]
+    _, contexts, _ = llm.encode_calls[0]
     assert contexts == [[{"role": "user", "content": "Write an exercise."}]]
 
 
@@ -170,4 +173,35 @@ def test_texts_are_embedded_after_their_contexts():
     llm = StubLLM()
     embeds = embed_texts(llm, ["t0", "t1", "t2"], ["c0", [{"role": "user", "content": "c1"}], "c2"], batch_size=2)
     assert embeds.shape == (3, 4)
-    assert llm.encode_calls == [(["t0", "t1"], ["c0", [{"role": "user", "content": "c1"}]]), (["t2"], ["c2"])]
+    assert llm.encode_calls == [(["t0", "t1"], ["c0", [{"role": "user", "content": "c1"}]], {}), (["t2"], ["c2"], {})]
+    # Images go beside the texts and the contexts, batched with them
+    embed_texts(llm, ["t0", "t1"], ["c0", "c1"], batch_size=1, images=[["a.png"], []], context_images=[[], ["b.png"]])
+    assert llm.encode_calls[-2:] == [(["t0"], ["c0"], {"images": [["a.png"]], "context_images": [[]]}),
+                                     (["t1"], ["c1"], {"images": [[]], "context_images": [["b.png"]]})]
+
+
+class ImageLLM(StubLLM):
+    image_token = "<|image|>"
+
+
+def test_figures_are_shown_at_the_models_image_token_when_a_root_is_given(mcq):
+    mcq["question"]["stem"] = "[figure]\n" + mcq.stem
+    mcq["figures"] = ["figs/q.png"]
+    llm = ImageLLM()
+    extract_concepts(llm, [mcq], batch_size=1)  # no root: the marker is literal text, no image is passed
+    prompts, kwargs = llm.complete_calls[-1]
+    assert "[figure]" in prompts[0] and "images" not in kwargs
+    extract_concepts(llm, [mcq], batch_size=1, figure_dir="/data")
+    prompts, kwargs = llm.complete_calls[-1]
+    assert prompts[0].startswith("Exercise 1:\nMultiple Choice:\n<|image|>\nWhich") and "[figure]" not in prompts[0]
+    assert kwargs["images"] == [["/data/figs/q.png"]]
+    extract_question_embeds(llm, [mcq], batch_size=1, figure_dir="/data")
+    texts, contexts, kwargs = llm.encode_calls[-1]
+    assert texts[0].startswith("<|image|>\n") and kwargs == {"images": [["/data/figs/q.png"]]}
+    assert contexts == ["Exercise 2:\nMultiple Choice:\n"]
+    # Several names per question keep their images with their prompts
+    assert complete_names(llm, ["p0 <|image|>", "p1"], batch_size=1, images=[["a.png"], []]) == ["flexibility"] * 2
+    assert [kw["images"] for _, kw in llm.complete_calls[-2:]] == [[["a.png"]], [[]]]
+    # A text-only model cannot show them
+    with pytest.raises(ValueError, match="takes no images"):
+        extract_concepts(StubLLM(), [mcq], batch_size=1, figure_dir="/data")

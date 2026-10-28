@@ -40,9 +40,10 @@ ANSWER_TRAILER = "Answer:"
 # Where a question shows a figure, its text carries this marker; the
 # question's ``figures`` list names the files, in marker order. A text-only
 # engine reads the marker as these eight characters, exactly as the banks
-# render it; an image-taking engine replaces it with the model's image tokens
-# (engine/vision.py). It is a data literal, not a prompt template: the text
-# around it is unchanged, so it needs no PROMPT_VERSION bump.
+# render it; to show the figure, a task puts the model's image token in its
+# place (``show_figures``) and gives the file beside the prompt, as the engine
+# takes images (``kcluster.engine.vision``). It is a data literal, not a prompt
+# template: the text around it is unchanged, so it needs no PROMPT_VERSION bump.
 FIGURE_MARKER = "[figure]"
 
 # --- Question congruity (EDM 2025 Tables 3 and 4; decision D2: the
@@ -119,6 +120,15 @@ def clean_chat_concept(completion: str) -> str:
 
 #: What a model reads: text, or a conversation as messages (``kcluster.engine``).
 Prompt = str | list[dict]
+
+
+def show_figures(prompt: Prompt, image_token: str) -> Prompt:
+    """The prompt with each figure marker replaced by ``image_token``, where the engine places an image: in a
+    string, or in the content of each message of a conversation. The figures themselves go beside the prompt."""
+    if isinstance(prompt, str):
+        return prompt.replace(FIGURE_MARKER, image_token)
+    return [{**m, "content": m["content"].replace(FIGURE_MARKER, image_token)}
+            if isinstance(m.get("content"), str) else m for m in prompt]
 
 
 class PromptStyle(Protocol):

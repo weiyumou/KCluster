@@ -68,6 +68,20 @@ def test_conversations_go_over_the_wire_as_they_are(server):
     assert llm.complete_prompts([messages, "p"]) == ["[{'role': 'user', 'content': 'Write an exercise.'}] done", "p done"]
 
 
+def test_images_are_sent_as_data_uris(server, tmp_path):
+    url, stub = server
+    llm = HttpLangModel(url, tensors="list")
+    assert llm.image_token is None  # the stub serves a text-only model
+    path = tmp_path / "fig.png"
+    path.write_bytes(b"\x89PNG\r\n\x1a\n")
+    llm.log_prob(["abcd"], contexts=["c"], images=[[str(path)]], context_images=[[]])
+    _, kwargs = stub.calls[-1]
+    assert kwargs["images"] == [["data:image/png;base64,iVBORw0KGgo="]]
+    assert "context_images" not in kwargs  # nothing to show: not sent
+    llm.log_prob(["abcd"], contexts=["c"], images=[[]])
+    assert "images" not in stub.calls[-1][1]
+
+
 def test_tokenizer_shim_refuses_what_it_cannot_do(server):
     url, _ = server
     with pytest.raises(NotImplementedError, match="return_tensors"):

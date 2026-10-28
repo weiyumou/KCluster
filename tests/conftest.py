@@ -214,8 +214,12 @@ class StubLLM:
         self.calls.append(("complete_prompts", kwargs))
         return [f"{p} done" for p in prompts]  # a prompt may be a conversation
 
-    def log_prob(self, texts, contexts=None, ignore_idx=-100, pad_to_multiple_of=None, return_ppl=False):
-        self.calls.append(("log_prob", {"contexts": contexts, "return_ppl": return_ppl}))
+    def log_prob(self, texts, contexts=None, ignore_idx=-100, pad_to_multiple_of=None, return_ppl=False,
+                 images=None, context_images=None):
+        self.calls.append(("log_prob", {"contexts": contexts, "return_ppl": return_ppl,
+                                        **({"images": images} if images is not None else {}),
+                                        **({"context_images": context_images} if context_images is not None
+                                           else {})}))
         return [-float(len(t)) for t in texts]
 
     def next_tokens(self, prompts, choices=None, top_k=1, pad_to_multiple_of=None):

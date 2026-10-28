@@ -6,7 +6,7 @@ import os
 import pytest
 
 from kcluster.core.question import Question
-from kcluster.io.figures import check_figures, figure_dir, figure_paths, has_figures
+from kcluster.io.figures import check_figures, figure_dir, figure_paths, figure_root, has_figures, vision_for
 
 
 def _with_figures(files: list[str]) -> Question:
@@ -35,3 +35,34 @@ def test_check_figures_counts_questions_and_names_missing_files(tmp_path):
     assert shown == 1
     with pytest.raises(FileNotFoundError, match=r"lib/b\.png.*--figure_dir"):
         check_figures([_with_figures(["raw/figures/a.png", "lib/b.png"])], str(tmp_path))
+
+
+def test_figure_root_is_none_for_text_only_runs(tmp_path, capsys):
+    bank = str(tmp_path / "bank.jsonl")
+    assert figure_root([_with_figures([])], bank) is None
+    assert figure_root([_with_figures(["a.png"])], bank, ignore=True) is None
+    assert "--ignore_figures" in capsys.readouterr().out
+
+
+def test_figure_root_checks_the_files_then_names_the_root(tmp_path, capsys):
+    bank = str(tmp_path / "bank.jsonl")
+    with pytest.raises(SystemExit, match=r"a\.png"):
+        figure_root([_with_figures(["a.png"])], bank)
+    (tmp_path / "a.png").write_bytes(b"png")
+    assert figure_root([_with_figures(["a.png"]), _with_figures([])], bank) == str(tmp_path)
+    assert "figures of 1 questions" in capsys.readouterr().out
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "a.png").write_bytes(b"png")
+    assert figure_root([_with_figures(["a.png"])], bank, str(elsewhere)) == str(elsewhere)
+
+
+def test_vision_for_loads_the_models_adapter_only_to_show_figures(monkeypatch):
+    from kcluster.engine import vision
+
+    assert vision_for("phi-2", None) is None  # nothing to show: not even asked
+    monkeypatch.setattr(vision.ImageAdapter, "load", classmethod(lambda cls, path, **kw: None))
+    with pytest.raises(SystemExit, match="takes no images.*--ignore_figures"):
+        vision_for("phi-2", "/data")
+    monkeypatch.setattr(vision.ImageAdapter, "load", classmethod(lambda cls, path, **kw: ("adapter", path)))
+    assert vision_for("gemma", "/data") == ("adapter", "gemma")

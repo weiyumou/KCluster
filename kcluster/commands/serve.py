@@ -20,10 +20,9 @@ import os
 import torch
 import uvicorn
 
-from kcluster.engine.local import LargeLangModel
+from kcluster.engine.local import DTYPES, LargeLangModel
 from kcluster.engine.serve import check_tokenizer, create_app
 
-DTYPES = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
 #: The precision a model is loaded in unless asked otherwise: the one its config names (``dtype="auto"``).
 DEFAULT_DTYPE = "auto"
 
@@ -62,7 +61,8 @@ def main(args):
     llm = LargeLangModel(args.llm_path, device=args.device, add_bos=args.add_bos,
                          **model_kwargs(args.dtype, args.quantize, args.trust_remote_code, args.llm_path))
     check_tokenizer(llm.tokenizer)
-    print(f"Serving {model_id!r} ({llm.model.dtype}, {llm.device}) on http://{args.host}:{args.port} "
+    images = f"images at {llm.image_token}" if llm.image_token else "text only"
+    print(f"Serving {model_id!r} ({llm.model.dtype}, {llm.device}, {images}) on http://{args.host}:{args.port} "
           f"— OpenAPI schema at /openapi.json, docs at /docs")
     uvicorn.run(create_app(llm, model_id), host=args.host, port=args.port, log_level=args.log_level)
 

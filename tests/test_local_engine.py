@@ -199,6 +199,76 @@ def test_collate_pair_masks_context_and_padding_out_of_labels(make_tokenizer):
     assert labels.tolist() == [[-100, ids["b"], ids["c"]], [-100, -100, ids["c"]]]
 
 
+class _TinyLM:
+    """A deterministic stand-in for a causal LM: logits from cumulative embeddings, kept or all."""
+
+    def __init__(self, vocab: int = 7, dim: int = 4):
+        import torch
+
+        gen = torch.Generator().manual_seed(0)
+        self.emb = torch.randn(vocab, dim, generator=gen)
+        self.head = torch.randn(dim, vocab, generator=gen)
+
+    def forward(self, input_ids, attention_mask=None, logits_to_keep: int = 0):
+        hidden = self.emb[input_ids].cumsum(dim=1)
+        if logits_to_keep:
+            hidden = hidden[:, -logits_to_keep:]
+        return SimpleNamespace(logits=hidden @ self.head)
+
+    __call__ = forward
+
+
+class _TinyLMAllLogits(_TinyLM):
+    def forward(self, input_ids, attention_mask=None):
+        return super().forward(input_ids)
+
+    __call__ = forward
+
+
+def test_token_loss_keeps_only_the_logits_the_labels_need():
+    import torch
+
+    from kcluster.engine.local import _logits_to_keep, _token_loss
+
+    ids = torch.tensor([[1, 2, 3, 4, 5, 6], [0, 0, 2, 3, 4, 5]])
+    # Left-padded scoring: labelled tokens are a suffix, with a gap where an
+    # image's soft tokens would sit (row 0, position 4)
+    labels = torch.tensor([[-100, -100, -100, 4, -100, 6], [-100, -100, -100, -100, 4, 5]])
+    inputs = {"input_ids": ids, "attention_mask": torch.ones_like(ids)}
+
+    # From just before the first labelled column (3) to the end: 4 positions
+    assert _logits_to_keep(_TinyLM(), labels, -100) == 4
+    assert _logits_to_keep(_TinyLMAllLogits(), labels, -100) == 0
+    assert _logits_to_keep(_TinyLM(), torch.full_like(labels, -100), -100) == 0
+    # A label in the first or second column needs every logit anyway
+    assert _logits_to_keep(_TinyLM(), torch.where(labels == -100, 0, labels), -100) == 0
+
+    kept = _token_loss(_TinyLM(), inputs, labels)
+    full = _token_loss(_TinyLMAllLogits(), inputs, labels)
+    assert kept.shape == (2, 3) and full.shape == (2, 5)
+    assert torch.allclose(kept.sum(dim=-1), full.sum(dim=-1))
+    assert (full[:, :2] == 0).all()  # ignored positions contribute nothing either way
+
+
+def test_token_loss_is_computed_in_float32_whatever_the_models_dtype():
+    import torch
+
+    from kcluster.engine.local import _token_loss
+
+    class _Bf16LM(_TinyLM):
+        def forward(self, input_ids, attention_mask=None, logits_to_keep=0):
+            out = super().forward(input_ids, attention_mask, logits_to_keep)
+            out.logits = out.logits.to(torch.bfloat16)
+            return out
+
+        __call__ = forward
+
+    ids = torch.tensor([[1, 2, 3, 4, 5, 6]])
+    labels = torch.tensor([[-100, -100, 3, 4, 5, 6]])
+    loss = _token_loss(_Bf16LM(), {"input_ids": ids}, labels)
+    assert loss.dtype == torch.float32
+
+
 def test_custom_writer_shard_filenames_are_rank_stamped(tmp_path):
     # PointwiseMutualInfo.from_shards discovers shards by these exact names.
     import torch

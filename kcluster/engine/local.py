@@ -22,11 +22,20 @@ are found by their character offsets, so the split is the engine's and owes
 nothing to a tokenizer's pair template (which may insert a BOS between the
 two, as Llama's does). A text must start at a token boundary: give it the
 leading space or line break it needs, as a completion would have.
+
+Images: a model with a processor (``ImageAdapter``, ``kcluster.engine.vision``)
+takes them. A prompt or a text places each image with the model's image
+token (``image_token``), and every method takes the images at those places
+(``images``, and ``context_images`` for the contexts of the paired methods),
+one list of sources per prompt or text, in reading order. The image's tokens
+are context, never scored or pooled. A model without a processor refuses
+images; a prompt without any reads as before.
 """
 
+import inspect
 import itertools
 import os
-from functools import partial
+from functools import lru_cache, partial
 
 import lightning as L
 import torch
@@ -35,8 +44,14 @@ from lightning.pytorch.callbacks import BasePredictionWriter
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from kcluster.engine.vision import ImageAdapter
+
 #: What a model reads before a text: the text itself, or a conversation as messages.
 Prompt = str | list[dict]
+
+#: The precisions a command loads a model in (``--dtype``). The published
+#: runs scored in float16 (Phi-2); Gemma overflows in it and wants bfloat16.
+DTYPES = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
 
 
 def render_prompt(tokenizer, prompt: Prompt) -> str:
@@ -67,9 +82,9 @@ def _with_specials(tokenizer, text: str, add_bos: bool | None) -> tuple[str, boo
     return text, add_bos
 
 
-def _encode_pair(tokenizer, context: Prompt, text: str, add_bos: bool | None) -> tuple[list[int], list[bool]]:
-    """Token ids of a context and text read together, and the mask of the text's tokens."""
-    context, specials = _with_specials(tokenizer, render_prompt(tokenizer, context), add_bos)
+def _encode_pair(tokenizer, context: str, text: str, add_bos: bool | None) -> tuple[list[int], list[bool]]:
+    """Token ids of a rendered context and its text read together, and the mask of the text's tokens."""
+    context, specials = _with_specials(tokenizer, context, add_bos)
     enc = tokenizer(context + text, add_special_tokens=specials, return_offsets_mapping=True)
     boundary = len(context)
     if any(start < boundary < end for start, end in enc["offset_mapping"]):
@@ -82,17 +97,38 @@ def _encode_pair(tokenizer, context: Prompt, text: str, add_bos: bool | None) ->
     return enc["input_ids"], is_text
 
 
+def _rows(tokenizer, contexts: list[Prompt], texts: list[str], vision: ImageAdapter | None,
+          context_images, images) -> tuple[list[tuple[str, str]], dict]:
+    """The (context, text) strings of a batch as the model reads them, their images in place, and the pixel
+    inputs that go with them (empty without images)."""
+    rendered = [render_prompt(tokenizer, c) for c in contexts]
+    given = [per_row for per_row in (context_images, images) if per_row is not None and any(per_row)]
+    if vision is None:
+        if given:
+            raise ValueError("images were given, but this model takes no images (it has no processor)")
+        return list(zip(rendered, texts, strict=True)), {}
+    n = len(texts)
+    rows = [[(c, ci), (t, ti)] for c, t, ci, ti in zip(rendered, texts, context_images or [[]] * n,
+                                                       images or [[]] * n, strict=True)]
+    expanded, extra = vision.prepare(rows)
+    return [(c, t) for c, t in expanded], extra
+
+
 def pair_inputs(tokenizer, contexts: list[Prompt], texts: list[str] | None = None,
-                pad_to_multiple_of: int = None, device=None, *, add_bos: bool | None = None):
+                pad_to_multiple_of: int = None, device=None, *, add_bos: bool | None = None,
+                vision: ImageAdapter | None = None, context_images=None, images=None):
     """Model inputs for a batch of prompts, or of (context, text) pairs, and the mask of each text's tokens.
 
     Rows are padded on the left to one length, a multiple of ``pad_to_multiple_of`` if given. The mask covers the
-    text alone, leaving out the context, the special tokens and the padding; with no texts it is all False.
+    text alone, leaving out the context, the special tokens and the padding; with no texts it is all False. With
+    images, ``vision`` puts each in its place and adds the pixel inputs, and the mask also leaves out the image
+    soft tokens: a text's own tokens are what is scored.
     """
     texts = texts if texts is not None else [""] * len(contexts)
     if len(texts) != len(contexts):
         raise ValueError("Contexts and texts must have the equal length")
-    rows = [_encode_pair(tokenizer, c, t, add_bos) for c, t in zip(contexts, texts, strict=True)]
+    pairs, extra = _rows(tokenizer, contexts, texts, vision, context_images, images)
+    rows = [_encode_pair(tokenizer, c, t, add_bos) for c, t in pairs]
     length = max(len(ids) for ids, _ in rows)
     if pad_to_multiple_of:
         length = -(-length // pad_to_multiple_of) * pad_to_multiple_of
@@ -104,16 +140,30 @@ def pair_inputs(tokenizer, contexts: list[Prompt], texts: list[str] | None = Non
     inputs = {"input_ids": torch.tensor(padded([ids for ids, _ in rows], pad_id)),
               "attention_mask": torch.tensor(padded([[1] * len(ids) for ids, _ in rows], 0))}
     is_text = torch.tensor(padded([mask for _, mask in rows], False))
+    if extra:
+        inputs.update(extra)
+        if (mm_ids := vision.mm_token_type_ids(inputs["input_ids"])) is not None:
+            inputs["mm_token_type_ids"] = mm_ids
+        is_text &= ~vision.soft_token_mask(inputs["input_ids"])
     if device is not None:
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+        inputs = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}
         is_text = is_text.to(device)
     return inputs, is_text
 
 
-def token_count(tokenizer, context: Prompt, text: str = "", add_bos: bool | None = None) -> int:
-    """Tokens a model reads for a text after its context, as ``pair_inputs`` tokenizes them."""
-    ids, _ = _encode_pair(tokenizer, context, text, add_bos)
-    return len(ids)
+def token_count(tokenizer, context: Prompt, text: str = "", add_bos: bool | None = None,
+                vision: ImageAdapter | None = None) -> int:
+    """Tokens a model reads for a text after its context, as ``pair_inputs`` tokenizes them.
+
+    An image at its place counts at most ``vision.tokens_per_image``, the processor's budget, in place of its token:
+    the count is an upper bound for a prompt with images, exact without.
+    """
+    rendered = render_prompt(tokenizer, context)
+    ids, _ = _encode_pair(tokenizer, rendered, text, add_bos)
+    count = len(ids)
+    if vision is not None and (per_image := vision.tokens_per_image) is not None:
+        count += (per_image - 1) * vision.count(rendered + text)
+    return count
 
 
 def context_length(model) -> int | None:
@@ -126,10 +176,46 @@ def context_length(model) -> int | None:
     return None
 
 
+@lru_cache(maxsize=None)
+def _takes_logits_to_keep(model_class) -> bool:
+    forward = getattr(model_class, "forward", model_class.__call__)
+    return "logits_to_keep" in inspect.signature(forward).parameters
+
+
+def _logits_to_keep(model, labels, ignore_idx: int) -> int:
+    """How many trailing positions' logits the loss needs, or 0 for all of them.
+
+    Scoring pads on the left, so the labelled tokens sit at the end of every
+    row; only the logits from just before the first labelled column onward
+    enter the loss. A vocabulary of 262k tokens (Gemma 4) makes the full
+    ``(N, S, V)`` logits the largest tensor of a scoring job, so a model whose
+    forward takes ``logits_to_keep`` is asked for that suffix only.
+    """
+    if not _takes_logits_to_keep(type(model)):
+        return 0
+    labelled = (labels != ignore_idx).any(dim=0)
+    if not labelled.any():
+        return 0
+    keep = labels.size(1) - int(labelled.nonzero()[0]) + 1
+    return keep if keep < labels.size(1) else 0
+
+
 def _token_loss(model, inputs, labels, ignore_idx: int = -100):
-    """Per-token cross-entropy of each label given the tokens before it, 0 where ignored."""
-    logits = model(**inputs).logits.transpose(-1, -2)  # (N, V, S)
-    return F.cross_entropy(logits[..., :-1], labels[:, 1:], reduction="none", ignore_index=ignore_idx)  # (N, S)
+    """Per-token cross-entropy of each label given the tokens before it, 0 where ignored.
+
+    One column per position the loss needs (see ``_logits_to_keep``): the
+    trailing ones, or all of them. Each row's sum is the same either way.
+    """
+    keep = _logits_to_keep(model, labels, ignore_idx)
+    logits = model(**inputs, **({"logits_to_keep": keep} if keep else {})).logits.transpose(-1, -2)  # (N, V, K)
+    kept = logits.size(-1)
+    # The loss in float32: a bfloat16 log-softmax is good to ~0.4% per token
+    # and a bfloat16 sum of them to whole nats at the magnitudes of a scored
+    # question (ulp 2 at 300), which is the resolution the PMI lives on. The
+    # kept logits are small enough for the upcast (float16 Phi-2 scores move
+    # by at most their old ulp).
+    return F.cross_entropy(logits[..., :-1].float(), labels[:, -(kept - 1):], reduction="none",
+                           ignore_index=ignore_idx)  # (N, K - 1)
 
 
 def _check_preceded(inputs, is_text) -> None:
@@ -141,16 +227,22 @@ def _check_preceded(inputs, is_text) -> None:
 
 
 class LargeLangModel:
-    """Encapsulates a downloaded LLM and its tokenizer.
+    """Encapsulates a downloaded LLM and its tokenizer, and the processor of a model that takes images.
 
     ``add_bos`` is the engine's BOS rule for string prompts (module docstring): None follows the tokenizer's default,
-    True puts the model's BOS token before every prompt that lacks one, False adds no special tokens.
+    True puts the model's BOS token before every prompt that lacks one, False adds no special tokens. ``vision``
+    is the model's ``ImageAdapter``, or None for a text-only model; ``image_token`` is where a prompt places an
+    image.
     """
 
+    vision: ImageAdapter | None = None
+
     def __init__(self, model_path: str, device: str = "auto", add_bos: bool | None = None, **model_args):
-        # Load tokenizer
+        # Load tokenizer, and the processor of a model that takes images
         self.tokenizer = LargeLangModel.load_tokenizer(model_path)
         self.add_bos = add_bos
+        self.vision = ImageAdapter.load(model_path, **({"trust_remote_code": model_args["trust_remote_code"]}
+                                                       if "trust_remote_code" in model_args else {}))
 
         # Load model
         self.model = LargeLangModel.load_model(model_path, device_map=device, **model_args).eval()
@@ -177,22 +269,30 @@ class LargeLangModel:
     def pad_token(self) -> str:
         return self.tokenizer.pad_token
 
-    def _inputs(self, contexts, texts=None, pad_to_multiple_of=None):
-        return pair_inputs(self.tokenizer, contexts, texts, pad_to_multiple_of, self.device, add_bos=self.add_bos)
+    @property
+    def image_token(self) -> str | None:
+        """The token a prompt places an image with, or None for a model that takes no images."""
+        return self.vision.image_token if self.vision is not None else None
 
-    def next_logits(self, prompts: list[Prompt], normalize: bool = False, pad_to_multiple_of: int = None):
+    def _inputs(self, contexts, texts=None, pad_to_multiple_of=None, images=None, context_images=None):
+        return pair_inputs(self.tokenizer, contexts, texts, pad_to_multiple_of, self.device, add_bos=self.add_bos,
+                           vision=self.vision, context_images=context_images, images=images)
+
+    def next_logits(self, prompts: list[Prompt], normalize: bool = False, pad_to_multiple_of: int = None,
+                    images: list[list] | None = None):
         """Returns the next-token logits for a batch of prompts"""
-        inputs, _ = self._inputs(prompts, pad_to_multiple_of=pad_to_multiple_of)
+        inputs, _ = self._inputs(prompts, pad_to_multiple_of=pad_to_multiple_of, context_images=images)
         logits = self.model(**inputs).logits[:, -1]  # (N, V)
         return torch.log_softmax(logits, dim=-1) if normalize else logits
 
     def next_tokens(self, prompts: list[Prompt], choices: list[str] = None,
-                    top_k: int = 1, pad_to_multiple_of: int = None) -> list[tuple[str, ...]]:
+                    top_k: int = 1, pad_to_multiple_of: int = None,
+                    images: list[list] | None = None) -> list[tuple[str, ...]]:
         """Returns the most likely next tokens (optionally restricted) for a batch of prompts"""
         assert (not choices) or (top_k <= len(choices)), \
             f"{len(choices)} choices are insufficient for Top-{top_k} selection"
 
-        logits = self.next_logits(prompts, pad_to_multiple_of=pad_to_multiple_of)
+        logits = self.next_logits(prompts, pad_to_multiple_of=pad_to_multiple_of, images=images)
 
         # if only some tokens are allowed, mask out the other logits
         if choices:
@@ -206,7 +306,7 @@ class LargeLangModel:
         return list(itertools.batched(next_tokens, top_k))
 
     def complete_prompts(self, prompts: list[Prompt], stop_tokens: list[str] = None, max_new_tokens: int = 200,
-                         pad_to_multiple_of: int = None, **kwargs) -> list[str]:
+                         pad_to_multiple_of: int = None, images: list[list] | None = None, **kwargs) -> list[str]:
         """Completes a batch of prompts.
 
         Generation ends at the model's own end of sequence, or where the completion ends with one of the
@@ -216,7 +316,7 @@ class LargeLangModel:
         stops = [*(stop_tokens or []), *(kwargs.pop("stop_strings", None) or [])]
         if stops:
             kwargs.update(stop_strings=stops, tokenizer=kwargs.get("tokenizer", self.tokenizer))
-        inputs, _ = self._inputs(prompts, pad_to_multiple_of=pad_to_multiple_of)
+        inputs, _ = self._inputs(prompts, pad_to_multiple_of=pad_to_multiple_of, context_images=images)
         outputs = self.model.generate(**inputs,
                                       pad_token_id=self.tokenizer.pad_token_id,
                                       max_new_tokens=max_new_tokens, **kwargs)
@@ -224,14 +324,15 @@ class LargeLangModel:
         return self.tokenizer.batch_decode(outputs[:, -num_new_tokens:], skip_special_tokens=True)
 
     def log_prob(self, texts: list[str], contexts: list[Prompt] = None,
-                 ignore_idx: int = -100, pad_to_multiple_of: int = None, return_ppl: bool = False):
+                 ignore_idx: int = -100, pad_to_multiple_of: int = None, return_ppl: bool = False,
+                 images: list[list] | None = None, context_images: list[list] | None = None):
         """Computes the log-prob of a batch of texts, each given its context.
 
         With no contexts a text follows the BOS token alone, on a tokenizer that adds one; a text with nothing
-        before it cannot be scored and raises.
+        before it cannot be scored and raises. ``images`` are the texts' images and ``context_images`` the contexts'.
         """
         contexts = contexts if contexts is not None else [""] * len(texts)
-        inputs, is_text = self._inputs(contexts, texts, pad_to_multiple_of)
+        inputs, is_text = self._inputs(contexts, texts, pad_to_multiple_of, images, context_images)
         _check_preceded(inputs, is_text)
         labels = torch.masked_fill(inputs["input_ids"], ~is_text, ignore_idx)
         loss = _token_loss(self.model, inputs, labels, ignore_idx)  # (N, S)
@@ -241,10 +342,11 @@ class LargeLangModel:
 
         return -torch.sum(loss, dim=-1)  # (N,)
 
-    def encode(self, texts: list[str], contexts: list[Prompt] = None, pad_to_multiple_of: int = None) -> torch.Tensor:
+    def encode(self, texts: list[str], contexts: list[Prompt] = None, pad_to_multiple_of: int = None,
+               images: list[list] | None = None, context_images: list[list] | None = None) -> torch.Tensor:
         """Encodes a batch of texts (each after its context, if any) as mean-pooled last-layer hidden states"""
         contexts = contexts if contexts is not None else [""] * len(texts)
-        inputs, mask = self._inputs(contexts, texts, pad_to_multiple_of)  # mask: (N, S)
+        inputs, mask = self._inputs(contexts, texts, pad_to_multiple_of, images, context_images)  # mask: (N, S)
         indices = torch.cumsum(torch.sum(mask, dim=-1), dim=-1).tolist()  # (N,)
 
         last_states = self.model(**inputs, output_hidden_states=True).hidden_states[-1]  # (N, S, H)
@@ -254,10 +356,13 @@ class LargeLangModel:
         return embeddings
 
 
-def collate_pair(batch: list[tuple[Prompt, str]], tokenizer,
-                 pad_to_multiple_of: int = None, ignore_idx: int = -100, add_bos: bool | None = None):
-    contexts, texts = list(zip(*batch))
-    inputs, is_text = pair_inputs(tokenizer, list(contexts), list(texts), pad_to_multiple_of, add_bos=add_bos)
+def collate_pair(batch: list[tuple], tokenizer, pad_to_multiple_of: int = None, ignore_idx: int = -100,
+                 add_bos: bool | None = None, vision: ImageAdapter | None = None):
+    """A batch of ``(context, text)`` items, or of ``(context, text, context_images, images)`` ones."""
+    contexts, texts, *per_side = zip(*batch)
+    context_images, images = per_side if per_side else (None, None)
+    inputs, is_text = pair_inputs(tokenizer, list(contexts), list(texts), pad_to_multiple_of, add_bos=add_bos,
+                                  vision=vision, context_images=context_images, images=images)
     return inputs, torch.masked_fill(inputs["input_ids"], ~is_text, ignore_idx)
 
 
@@ -286,22 +391,24 @@ class CustomWriter(BasePredictionWriter):
 
 def score_pairs(model: LogProbScorer, tokenizer, pairs, shard_dir: str, *, batch_size: int = 16,
                 num_workers: int = 0, pad_to_multiple_of: int = None, add_bos: bool | None = None,
-                **trainer_kwargs) -> None:
+                vision: ImageAdapter | None = None, **trainer_kwargs) -> None:
     """Score a grid of (context, text) pairs on the GPUs, as shards in ``shard_dir``.
 
     ``pairs`` is a map-style dataset of (context, text) tuples — a
-    ``ScoringGrid`` (``kcluster.core.grid``) such as ``PairQuestion`` — and
-    each rank writes the log-prob of every text given its context to its own
-    shard pair, which ``PointwiseMutualInfo.from_shards`` reassembles.
-    ``add_bos`` is the engine's BOS rule for string contexts.
-    ``trainer_kwargs`` reach ``L.Trainer``: ``accelerator`` (``"gpu"`` unless
-    given), ``devices`` (every GPU unless given) and ``strategy``. Returns
-    once every rank has written its shard, True in the first process: what
-    comes after the scores (the reassembly, the KC models) is its to do alone.
+    ``ScoringGrid`` (``kcluster.core.grid``) such as ``PairQuestion`` — each
+    optionally followed by the two sides' images, and each rank writes the
+    log-prob of every text given its context to its own shard pair, which
+    ``PointwiseMutualInfo.from_shards`` reassembles. ``add_bos`` is the
+    engine's BOS rule for string contexts; with images, ``vision``
+    (``ImageAdapter.load``) shows them to the model. ``trainer_kwargs`` reach
+    ``L.Trainer``: ``accelerator`` (``"gpu"`` unless given), ``devices``
+    (every GPU unless given) and ``strategy``. Returns once every rank has
+    written its shard, True in the first process: what comes after the
+    scores (the reassembly, the KC models) is its to do alone.
     """
     dl = DataLoader(pairs, batch_size=batch_size, pin_memory=True, shuffle=False, num_workers=num_workers,
                     collate_fn=partial(collate_pair, tokenizer=tokenizer, pad_to_multiple_of=pad_to_multiple_of,
-                                       add_bos=add_bos))
+                                       add_bos=add_bos, vision=vision))
     trainer = L.Trainer(callbacks=[CustomWriter(output_dir=shard_dir, write_interval="epoch")], logger=False,
                         **{"accelerator": "gpu", "devices": -1, **trainer_kwargs})
     trainer.predict(model, dataloaders=dl, return_predictions=False)
