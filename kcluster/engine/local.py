@@ -37,7 +37,12 @@ hidden states are projected onto the vocabulary in float32, a chunk of the
 vocabulary at a time, and the loss is summed there. A score is then exact to
 float32 given the hidden states. In bfloat16 a logit near 25 has a resolution
 of 0.125 nats and rounds differently with the batch shape, so without this a
-bf16 model's scores moved by that much with the batch they were in.
+bf16 model's scores moved by that much with the batch they were in. A padded
+row is scored at its own positions (``position_ids`` counted from its first
+real token, for a model that takes them): without that a left-padded row's
+tokens sit at shifted positions, which is the same text to a rotary model in
+exact arithmetic but not in bfloat16. What is left is the bfloat16 forward's
+own variation with the batch shape, which only a float32 forward removes.
 """
 
 import inspect
@@ -249,9 +254,31 @@ def context_length(model) -> int | None:
 
 
 @lru_cache(maxsize=None)
-def _takes_logits_to_keep(model_class) -> bool:
+def _takes(model_class, name: str) -> bool:
+    """Whether the model class's forward takes the keyword ``name``."""
     forward = getattr(model_class, "forward", model_class.__call__)
-    return "logits_to_keep" in inspect.signature(forward).parameters
+    return name in inspect.signature(forward).parameters
+
+
+def _takes_logits_to_keep(model_class) -> bool:
+    return _takes(model_class, "logits_to_keep")
+
+
+def _forward_inputs(model, inputs: dict) -> dict:
+    """The inputs for a forward pass: with ``position_ids`` counting each row's tokens from its first real one,
+    when a row is padded and the model takes them.
+
+    Left padding puts a row's tokens at positions shifted by the pad count. A rotary model reads the same text
+    there in exact arithmetic (its attention depends on position differences), but not in bfloat16: the
+    rotations differ, and a padded row's score moved with the pad count (Llama-2-7b, bf16: by up to 0.07
+    nats; with the positions given, a padded row's offset no longer depends on the padding). A model with
+    absolute position embeddings reads a different text altogether. ``generate`` derives the positions itself,
+    so this is for the scoring passes.
+    """
+    mask = inputs.get("attention_mask")
+    if mask is None or bool(mask.all()) or not _takes(type(model), "position_ids"):
+        return inputs
+    return {**inputs, "position_ids": (mask.cumsum(dim=-1) - 1).clamp(min=0)}
 
 
 def _logits_to_keep(model, labels, ignore_idx: int) -> int:
@@ -279,7 +306,8 @@ def _token_loss(model, inputs, labels, ignore_idx: int = -100):
     trailing ones, or all of them. Each row's sum is the same either way.
     """
     keep = _logits_to_keep(model, labels, ignore_idx)
-    logits = model(**inputs, **({"logits_to_keep": keep} if keep else {})).logits.transpose(-1, -2)  # (N, V, K)
+    logits = model(**_forward_inputs(model, inputs),
+                   **({"logits_to_keep": keep} if keep else {})).logits.transpose(-1, -2)  # (N, V, K)
     kept = logits.size(-1)
     # The loss in float32: a bfloat16 log-softmax is good to ~0.4% per token
     # and a bfloat16 sum of them to whole nats at the magnitudes of a scored
@@ -354,7 +382,7 @@ class LargeLangModel:
                     images: list[list] | None = None):
         """Returns the next-token logits for a batch of prompts"""
         inputs, _ = self._inputs(prompts, pad_to_multiple_of=pad_to_multiple_of, context_images=images)
-        logits = self.model(**inputs).logits[:, -1]  # (N, V)
+        logits = self.model(**_forward_inputs(self.model, inputs)).logits[:, -1]  # (N, V)
         return torch.log_softmax(logits, dim=-1) if normalize else logits
 
     def next_tokens(self, prompts: list[Prompt], choices: list[str] = None,
@@ -423,7 +451,8 @@ class LargeLangModel:
 
         # The logits are not needed: ask a model that can for one position's, not every position's
         keep = {"logits_to_keep": 1} if _takes_logits_to_keep(type(self.model)) else {}
-        last_states = self.model(**inputs, output_hidden_states=True, **keep).hidden_states[-1]  # (N, S, H)
+        last_states = self.model(**_forward_inputs(self.model, inputs), output_hidden_states=True,
+                                 **keep).hidden_states[-1]  # (N, S, H)
 
         chunks = torch.vsplit(last_states[mask], indices)[:-1]  # (Nc, H) * N
         embeddings = torch.stack([torch.mean(c, dim=0) for c in chunks], dim=0)  # (N, H)

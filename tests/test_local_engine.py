@@ -359,3 +359,60 @@ def test_a_grid_scored_in_shards_comes_back_cell_by_cell(tmp_path, make_tokenize
     PointwiseMutualInfo.from_shards(str(tmp_path), *grid.shape).save(str(tmp_path / "scores.npy"))
     # Row 0: each text after no question; row 1 + r: after question r
     assert np.array_equal(np.load(tmp_path / "scores.npy"), 10.0 * np.arange(4)[:, None] + np.arange(2))
+
+
+class _PositionedLM(_TinyLM):
+    """A stand-in whose forward takes position ids, and records what it was given."""
+
+    def __init__(self):
+        super().__init__()
+        self.seen = {}
+
+    def forward(self, input_ids, attention_mask=None, position_ids=None, logits_to_keep: int = 0, **kwargs):
+        self.seen = dict(position_ids=position_ids, **kwargs)
+        return super().forward(input_ids, attention_mask, logits_to_keep)
+
+    __call__ = forward
+
+
+def test_a_padded_row_is_scored_at_its_own_positions():
+    import torch
+
+    from kcluster.engine.local import _forward_inputs, _token_loss
+
+    ids = torch.tensor([[0, 0, 2, 3, 4], [1, 2, 3, 4, 5]])
+    mask = torch.tensor([[0, 0, 1, 1, 1], [1, 1, 1, 1, 1]])
+    inputs = {"input_ids": ids, "attention_mask": mask}
+    model = _PositionedLM()
+    # The padded row counts from its first real token; the pads get position 0, which the mask hides anyway
+    assert _forward_inputs(model, inputs)["position_ids"].tolist() == [[0, 0, 0, 1, 2], [0, 1, 2, 3, 4]]
+    # Unpadded rows need none, and a model whose forward takes none is called as before
+    assert "position_ids" not in _forward_inputs(model, {"input_ids": ids, "attention_mask": torch.ones_like(mask)})
+    assert "position_ids" not in _forward_inputs(_TinyLM(), inputs)
+    # The scoring pass carries them
+    _token_loss(model, inputs, torch.masked_fill(ids, mask == 0, -100))
+    assert model.seen["position_ids"].tolist() == [[0, 0, 0, 1, 2], [0, 1, 2, 3, 4]]
+
+
+def test_next_logits_and_encode_score_a_padded_row_at_its_own_positions(make_tokenizer):
+    import torch
+
+    from kcluster.engine.local import LargeLangModel
+
+    class Recorder(_PositionedLM):
+        device = torch.device("cpu")
+
+        def forward(self, input_ids, attention_mask=None, position_ids=None, output_hidden_states=False, **kwargs):
+            self.seen = dict(position_ids=position_ids)
+            out = super().forward(input_ids, attention_mask, position_ids)
+            out.hidden_states = (torch.ones(*input_ids.shape, 2),)
+            return out
+
+        __call__ = forward
+
+    llm = LargeLangModel.__new__(LargeLangModel)
+    llm.tokenizer, llm.model, llm.add_bos = make_tokenizer(["ctx", "a", "b"]), Recorder(), None
+    llm.next_logits(["ctx a b", "ctx"])
+    assert llm.model.seen["position_ids"].tolist() == [[0, 1, 2], [0, 0, 0]]
+    llm.encode([" b"], ["ctx a"], pad_to_multiple_of=4)
+    assert llm.model.seen["position_ids"].tolist() == [[0, 0, 1, 2]]

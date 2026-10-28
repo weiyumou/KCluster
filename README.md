@@ -110,7 +110,12 @@ the vocabulary in float32, a chunk at a time, and the loss is summed there,
 so a score is exact to float32 given the model's hidden states. Without
 that, a bf16 logit near 25 is good to 0.125 nats and rounds differently with
 the batch shape, and the scores moved by that much with the batch they were
-in.
+in. A padded row is scored at its own positions, counted from its first real
+token, as a rotary model reads shifted positions as the same text in exact
+arithmetic but not in bf16. What remains is the bf16 forward's own variation
+with the batch shape, a few tenths of a nat per text for Gemma 4 on a GPU,
+which only a float32 forward would remove; a run repeats exactly when every
+batch has the same shape (`--batch_size`, `--pad_to_multiple_of`).
 
 **Any scoring grid.** The congruity grid is one case of `ScoringGrid`
 ([`kcluster.core.grid`](kcluster/core/grid.py)), the layout of (context,
