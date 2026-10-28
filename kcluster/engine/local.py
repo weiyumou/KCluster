@@ -8,7 +8,8 @@ What it takes is a *prompt*, the text a model reads, in either of two forms:
   ``<bos>``) are added as its default says, unless the string already begins
   with the BOS token, so a prompt rendered from a chat template, which carries
   its own, is never given a second one. ``add_bos`` overrides the default
-  either way: a base model whose tokenizer adds none (Gemma) wants ``True``.
+  either way: a tokenizer that adds none (Gemma 4's instruction-tuned one; its
+  base one adds its own) wants ``True`` for a string prompt.
 - a conversation, as a list of ``{"role", "content"}`` messages, written in
   the model's chat template with the model's turn opened at the end. A last
   message in the assistant's role is a *prefill*: it is written after the

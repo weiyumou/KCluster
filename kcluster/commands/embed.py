@@ -115,4 +115,4 @@ def add_arguments(parser):
     parser.add_argument("--batch_size", type=int, default=16, help="Number of questions to process in a batch")
     parser.add_argument("--add_bos", action=argparse.BooleanOptionalAction, default=None,
                         help="Put the model's BOS token before every prompt that lacks one (default: the "
-                             "tokenizer's own rule; a base model whose tokenizer adds none, such as Gemma, wants it)")
+                             "tokenizer's own rule; a tokenizer that adds none, such as Gemma 4's instruction-tuned one, wants it)")

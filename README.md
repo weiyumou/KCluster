@@ -82,8 +82,9 @@ and the Vertex job preparation all take `prompts=`; the steps under them,
 `complete_names` and `embed_texts`, take any prompts at all. A context and
 the text scored after it are tokenized together, as the model reads them,
 and the text's tokens found by their character offsets; the commands'
-`--add_bos` puts the model's BOS token before every prompt for a base model
-whose tokenizer adds none (Gemma).
+`--add_bos` puts the model's BOS token before every string prompt when the
+tokenizer adds none (Gemma 4's instruction-tuned tokenizer; its base one adds
+its own).
 
 **Any scoring grid.** The congruity grid is one case of `ScoringGrid`
 ([`kcluster.core.grid`](kcluster/core/grid.py)), the layout of (context,

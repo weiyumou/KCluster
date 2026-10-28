@@ -79,8 +79,8 @@ def add_arguments(parser):
                         help="bitsandbytes quantization, for models that do not fit in --dtype")
     parser.add_argument("--add_bos", action=argparse.BooleanOptionalAction, default=None,
                         help="Put the model's BOS token before every string prompt that lacks one (--no-add_bos: "
-                             "add no special tokens; default: the tokenizer's own rule). A base model whose "
-                             "tokenizer adds none, such as Gemma, wants --add_bos")
+                             "add no special tokens; default: the tokenizer's own rule). A tokenizer that adds "
+                             "none, such as Gemma 4's instruction-tuned one, wants --add_bos for string prompts")
     parser.add_argument("--trust_remote_code", action="store_true",
                         help="Allow the checkpoint's own modeling code (older Phi-2 checkpoints need it)")
     parser.add_argument("--model_id", default=None, type=str,
