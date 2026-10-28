@@ -8,11 +8,12 @@ it binds to localhost by default and does no authentication of its own.
 
 The model is a startup argument, not a property of the server: swap
 ``--llm_path`` (and ``--quantize`` for models that do not fit in fp16) and
-the same routes serve the new weights. Startup refuses a tokenizer whose
-paired encoding cannot separate context from text, since ``log_prob`` and
+the same routes serve the new weights. Startup refuses a tokenizer the
+engine cannot separate a text from its context with, since ``log_prob`` and
 ``encode`` depend on that.
 """
 
+import argparse
 import os
 
 import torch
@@ -43,7 +44,7 @@ def model_kwargs(dtype: str, quantize: str, trust_remote_code: bool) -> dict:
 
 def main(args):
     model_id = args.model_id or os.path.basename(os.path.normpath(args.llm_path))
-    llm = LargeLangModel(args.llm_path, device=args.device,
+    llm = LargeLangModel(args.llm_path, device=args.device, add_bos=args.add_bos,
                          **model_kwargs(args.dtype, args.quantize, args.trust_remote_code))
     check_tokenizer(llm.tokenizer)
     print(f"Serving {model_id!r} ({llm.model.dtype}, {llm.device}) on http://{args.host}:{args.port} "
@@ -60,6 +61,10 @@ def add_arguments(parser):
     parser.add_argument("--dtype", default="float16", choices=sorted(DTYPES), help="Model precision")
     parser.add_argument("--quantize", default="none", choices=["none", "8bit", "4bit"],
                         help="bitsandbytes quantization, for models that do not fit in --dtype")
+    parser.add_argument("--add_bos", action=argparse.BooleanOptionalAction, default=None,
+                        help="Put the model's BOS token before every string prompt that lacks one (--no-add_bos: "
+                             "add no special tokens; default: the tokenizer's own rule). A base model whose "
+                             "tokenizer adds none, such as Gemma, wants --add_bos")
     parser.add_argument("--trust_remote_code", action="store_true",
                         help="Allow the checkpoint's own modeling code (older Phi-2 checkpoints need it)")
     parser.add_argument("--model_id", default=None, type=str,

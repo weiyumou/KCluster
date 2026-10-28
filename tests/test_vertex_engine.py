@@ -110,11 +110,24 @@ def test_job_preparation_takes_a_prompt_style(make_questions):
     pmi = prepare_pmi_jobs(questions, prompts=style)
     assert pmi["instances"][0]["context"] == f"{questions[0].header(2)}\n"
 
-    # The style's stop tokens reach the job, as they reach the local engine
-    chat = ChatPrompts(lambda messages: "", concept_request="?", first_request="", second_request="",
-                       end_of_turn="<end_of_turn>")
+    # The style's stop tokens reach the job, as they reach the local engine; a chat style's prompts are
+    # conversations, which the serving container's engine writes in the model's template
+    chat = ChatPrompts(concept_request="?", first_request="Write one.", second_request="", end_of_turn="<turn|>")
     concept = prepare_concept_jobs(questions, prompts=chat)
-    assert concept["parameters"]["complete_prompts"]["stop_tokens"] == [".", ",", "<end_of_turn>"]
+    assert concept["parameters"]["complete_prompts"]["stop_tokens"] == [".", ",", "<turn|>"]
+    assert concept["instances"][0]["text"] == chat.concept(questions[0])
+    assert prepare_pmi_jobs(questions, prompts=chat)["instances"][0]["context"] == [{"role": "user", "content": "Write one."}]
+
+
+def test_any_grid_becomes_scoring_jobs_in_its_flat_order():
+    from kcluster.core.grid import ScoringGrid
+    from kcluster.engine.vertex import prepare_scoring_jobs
+
+    grid = ScoringGrid([" a.", " b."], 3, context=lambda row, col: f"q{row}", marginal="none")
+    jobs = prepare_scoring_jobs(grid, configs={"pad_to_multiple_of": 16})
+    assert [item["id"] for item in jobs["instances"]] == [f"pmi-{i}" for i in range(8)]
+    assert [(item["context"], item["text"]) for item in jobs["instances"]] == [grid[i] for i in range(len(grid))]
+    assert jobs["parameters"] == {"log_prob": {"pad_to_multiple_of": 16}}
 
 
 def test_prepare_inputs_uploads_instances_and_questions(gcs, make_questions):
@@ -164,6 +177,17 @@ def test_collect_predictions(gcs):
     assert vertex.download_concepts("job1", CONFIG) == ["algebra", "geometry"]
     assert vertex.download_pmi("job1", CONFIG).shape == (3, 2)
     assert vertex.download_pmi("no-such-job", CONFIG) is None
+
+
+def test_collect_predictions_takes_the_grids_shape(gcs):
+    store = gcs.bucket("my-bucket").store
+    lines = [json.dumps({"instance": {"id": f"concept-{i}"}, "prediction": c}) for i, c in enumerate(["x", "y", "z"])]
+    lines += [json.dumps({"instance": {"id": f"pmi-{i}"}, "prediction": -float(i)}) for i in range(3 * 2 + 2)]
+    store["batch-output/job2/prediction.results-00000-of-00001"] = "\n".join(lines)
+
+    results = collect_predictions("job2", 3, CONFIG, shape=(3, 2))
+    assert results["concept"] == ["x", "y", "z"]
+    assert results["pmi"].shape == (4, 2) and results["pmi"][1].tolist() == [-2.0, -3.0]
 
 
 def test_collect_predictions_rejects_incomplete_results(gcs):

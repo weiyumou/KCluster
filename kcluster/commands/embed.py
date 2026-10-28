@@ -20,6 +20,7 @@ Both question encoders embed the same rendering, so their KC models differ
 only in the encoder.
 """
 
+import argparse
 import os
 
 import numpy as np
@@ -91,7 +92,7 @@ def main(args):
         _save_and_cluster("concept", c_embeds, ds, concept_df, questions, out_concept_kc, out_embed)
 
     if args.llm_path:
-        llm = LargeLangModel(args.llm_path, trust_remote_code=True, dtype=torch.float16)
+        llm = LargeLangModel(args.llm_path, add_bos=args.add_bos, trust_remote_code=True, dtype=torch.float16)
         q_embeds = _as_numpy(extract_question_embeds(llm, questions, args.batch_size))
         _save_and_cluster("llm", q_embeds, ds, concept_df, questions, out_embed_kc, out_embed)
 
@@ -112,3 +113,6 @@ def add_arguments(parser):
                         help="Question file for this result dir (default: the path recorded in "
                              "args-*.json, which may not exist on this machine)")
     parser.add_argument("--batch_size", type=int, default=16, help="Number of questions to process in a batch")
+    parser.add_argument("--add_bos", action=argparse.BooleanOptionalAction, default=None,
+                        help="Put the model's BOS token before every prompt that lacks one (default: the "
+                             "tokenizer's own rule; a base model whose tokenizer adds none, such as Gemma, wants it)")

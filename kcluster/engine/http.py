@@ -8,6 +8,11 @@ unmodified against a served model::
     llm = HttpLangModel("http://localhost:8080")
     concepts = extract_concepts(llm, questions, batch_size=16)
 
+A prompt or context is a string, or a conversation as a list of
+``{"role", "content"}`` messages that the server writes in its model's chat
+template (``kcluster.engine.local``), so a chat model is addressed without
+the tokenizer on this side.
+
 Scoring methods return torch tensors when torch is importable (what the
 tasks expect) and numpy arrays otherwise, so the client itself needs neither
 extra. ``tokenizer`` is a thin shim over ``/tokenize`` that covers what the
@@ -22,6 +27,9 @@ import json
 import urllib.error
 import urllib.request
 from typing import Any
+
+#: A string the model reads as it is, or a conversation as messages.
+Prompt = str | list[dict]
 
 
 class HttpTokenizer:
@@ -112,14 +120,14 @@ class HttpLangModel:
     def tokenizer(self) -> HttpTokenizer:
         return HttpTokenizer(self)
 
-    def complete_prompts(self, prompts: list[str], stop_tokens: list[str] | None = None, max_new_tokens: int = 200,
+    def complete_prompts(self, prompts: list[Prompt], stop_tokens: list[str] | None = None, max_new_tokens: int = 200,
                          pad_to_multiple_of: int | None = None, **kwargs) -> list[str]:
         """Completes a batch of prompts; ``kwargs`` are HF ``generate`` arguments."""
         return self._post("/complete_prompts", {"prompts": list(prompts), "stop_tokens": stop_tokens,
                                                 "max_new_tokens": max_new_tokens,
                                                 "pad_to_multiple_of": pad_to_multiple_of, **kwargs})
 
-    def log_prob(self, texts: list[str], contexts: list[str] | None = None,
+    def log_prob(self, texts: list[str], contexts: list[Prompt] | None = None,
                  ignore_idx: int = -100, pad_to_multiple_of: int | None = None, return_ppl: bool = False):
         """Log-prob of each text given its context, shape (N,)."""
         return self._tensor(self._post("/log_prob", {"texts": list(texts), "contexts": contexts,
@@ -127,19 +135,19 @@ class HttpLangModel:
                                                      "pad_to_multiple_of": pad_to_multiple_of,
                                                      "return_ppl": return_ppl}))
 
-    def next_tokens(self, prompts: list[str], choices: list[str] | None = None,
+    def next_tokens(self, prompts: list[Prompt], choices: list[str] | None = None,
                     top_k: int = 1, pad_to_multiple_of: int | None = None) -> list[tuple[str, ...]]:
         """The ``top_k`` most likely next tokens (optionally restricted to ``choices``) per prompt."""
         result = self._post("/next_tokens", {"prompts": list(prompts), "choices": choices, "top_k": top_k,
                                              "pad_to_multiple_of": pad_to_multiple_of})
         return [tuple(r) for r in result]
 
-    def next_logits(self, prompts: list[str], normalize: bool = False, pad_to_multiple_of: int | None = None):
+    def next_logits(self, prompts: list[Prompt], normalize: bool = False, pad_to_multiple_of: int | None = None):
         """Next-token logits (log-probs with ``normalize``), shape (N, V)."""
         return self._tensor(self._post("/next_logits", {"prompts": list(prompts), "normalize": normalize,
                                                         "pad_to_multiple_of": pad_to_multiple_of}))
 
-    def encode(self, texts: list[str], contexts: list[str] | None = None, pad_to_multiple_of: int | None = None):
+    def encode(self, texts: list[str], contexts: list[Prompt] | None = None, pad_to_multiple_of: int | None = None):
         """Mean-pooled last-layer embeddings, shape (N, H)."""
         return self._tensor(self._post("/encode", {"texts": list(texts), "contexts": contexts,
                                                    "pad_to_multiple_of": pad_to_multiple_of}))

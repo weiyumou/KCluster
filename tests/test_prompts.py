@@ -97,6 +97,29 @@ def test_a_style_can_change_the_remark_a_name_completes():
 
 
 def test_the_chat_style_puts_the_requests_in_turns():
+    style = prompts.ChatPrompts(concept_request="What does it test?", first_request="Write an exercise.",
+                                second_request="Write another one.")
+    q1, q2 = _mcq(), _mcq()
+    exercise = "Exercise 1:\nMultiple Choice:\nWhich is the most flexible?\na) paper\nb) clay tile\nAnswer: a"
+    remark = "The above exercise is a multiple-choice question that tests whether the student understands the concept of"
+    # The prompts are conversations; the engine writes them in the model's template, a last assistant message as
+    # the prefill the name completes
+    assert style.concept(q1) == [{"role": "user", "content": f"{exercise}\n\nWhat does it test?"},
+                                 {"role": "assistant", "content": remark}]
+    assert style.concept(q1, verbal=True)[-1]["content"].endswith("that tests whether the student can")
+    assert style.concept_marginal(q1) == [{"role": "user", "content": "Exercise 1:\nMultiple Choice:\n\nWhat does it test?"},
+                                          {"role": "assistant", "content": remark}]
+    assert style.pair(q1, q2) == [{"role": "user", "content": "Write an exercise."},
+                                  {"role": "assistant", "content": str(q1)},
+                                  {"role": "user", "content": "Write another one."}]
+    assert style.marginal(q2) == [{"role": "user", "content": "Write an exercise."}]
+    # The remark is a parameter here too
+    plain = prompts.ChatPrompts(concept_request="?", first_request="", second_request="",
+                                remark="The above exercise tests {trailer}")
+    assert plain.concept(q1)[-1]["content"] == "The above exercise tests whether the student understands the concept of"
+
+
+def test_a_render_function_writes_the_chat_prompts_as_text():
     style = prompts.ChatPrompts(_render, concept_request="What does it test?", first_request="Write an exercise.",
                                 second_request="Write another one.")
     q1, q2 = _mcq(), _mcq()
@@ -105,26 +128,15 @@ def test_the_chat_style_puts_the_requests_in_turns():
         f"<user>{exercise}\n\nWhat does it test?</user><assistant>"
         "The above exercise is a multiple-choice question that tests whether the student understands the concept of"
     )
-    assert style.concept(q1, verbal=True).endswith("<assistant>The above exercise is a multiple-choice question "
-                                                   "that tests whether the student can")
-    assert style.concept_marginal(q1) == (
-        "<user>Exercise 1:\nMultiple Choice:\n\nWhat does it test?</user><assistant>"
-        "The above exercise is a multiple-choice question that tests whether the student understands the concept of"
-    )
     assert style.pair(q1, q2) == (
         f"<user>Write an exercise.</user><assistant>{q1}</assistant><user>Write another one.</user><assistant>"
     )
     assert style.marginal(q2) == "<user>Write an exercise.</user><assistant>"
-    # The remark is a parameter here too
-    plain = prompts.ChatPrompts(_render, concept_request="?", first_request="", second_request="",
-                                remark="The above exercise tests {trailer}")
-    assert plain.concept(q1).endswith("<assistant>The above exercise tests whether the student understands the concept of")
 
 
 def test_a_chat_style_also_ends_a_name_at_the_end_of_the_turn():
     assert prompts.STOCK.concept_stop_tokens == prompts.CONCEPT_STOP_TOKENS
-    plain = prompts.ChatPrompts(_render, concept_request="?", first_request="", second_request="")
+    plain = prompts.ChatPrompts(concept_request="?", first_request="", second_request="")
     assert plain.concept_stop_tokens == prompts.CONCEPT_STOP_TOKENS
-    gemma = prompts.ChatPrompts(_render, concept_request="?", first_request="", second_request="",
-                                end_of_turn="<end_of_turn>")
-    assert gemma.concept_stop_tokens == (".", ",", "<end_of_turn>")
+    gemma = prompts.ChatPrompts(concept_request="?", first_request="", second_request="", end_of_turn="<turn|>")
+    assert gemma.concept_stop_tokens == (".", ",", "<turn|>")

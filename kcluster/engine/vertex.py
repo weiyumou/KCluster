@@ -28,6 +28,7 @@ import numpy as np
 from google.cloud import aiplatform, storage
 from google.cloud.aiplatform_v1 import JobState
 
+from kcluster.core.grid import ScoringGrid
 from kcluster.core.prompts import (
     CONCEPT_LENGTH_PENALTY,
     CONCEPT_NUM_BEAMS,
@@ -126,8 +127,12 @@ def prepare_concept_jobs(questions: list[Question], verbal: bool = False, config
     return {"instances": instances, "parameters": parameters}
 
 
-def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None, prompts: PromptStyle = STOCK) -> dict:
-    # Prepare PMI-specific parameters, which can be overridden by configs
+def prepare_scoring_jobs(grid: ScoringGrid, configs: dict | None = None) -> dict:
+    """Every (context, text) pair of a scoring grid as a ``log_prob`` instance, in the grid's flat order.
+
+    The instance ids carry the flat index, so ``collect_predictions`` puts each score back in its cell, for a
+    grid of any shape (``collect_predictions(..., shape=grid.shape)``).
+    """
     PURPOSE = "log_prob"
 
     configs = configs or dict()
@@ -135,17 +140,20 @@ def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None, pro
         PURPOSE: {"pad_to_multiple_of": 8, **configs}
     }
 
-    # Prepare the content of each instance, sharing the local engine's
-    # scoring grid (marginals under the "Exercise 2:" header)
-    ds = PairQuestion(questions, prompts)
     instances = []
-    for idx in range(len(ds)):
-        context, text = ds[idx]
+    for idx in range(len(grid)):
+        context, text = grid[idx]
         instances.append(
             {"id": f"pmi-{idx}", "text": text, "context": context, "purpose": PURPOSE, "config": parameters[PURPOSE]}
         )
 
     return {"instances": instances, "parameters": parameters}
+
+
+def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None, prompts: PromptStyle = STOCK) -> dict:
+    """The congruity grid's instances: the local engine's ``PairQuestion`` (marginals under the ``Exercise 2:``
+    header) as scoring jobs."""
+    return prepare_scoring_jobs(PairQuestion(questions, prompts), configs)
 
 
 def prepare_inputs(questions: list[Question], job_id: str, config: VertexConfig,
@@ -179,8 +187,10 @@ def prepare_inputs(questions: list[Question], job_id: str, config: VertexConfig,
     return instances, parameters
 
 
-def collect_predictions(job_id: str, num_questions: int, config: VertexConfig):
-    nrows = ncols = num_questions
+def collect_predictions(job_id: str, num_questions: int, config: VertexConfig, shape: tuple[int, int] | None = None):
+    """Collect a finished job's concepts (one per question) and scores (the grid of ``shape``, rows by columns;
+    the square congruity grid of the questions unless given) into GCS, and return them."""
+    nrows, ncols = shape or (num_questions, num_questions)
     results = {"concept": [None] * num_questions,
                "pmi": np.full((nrows * ncols + ncols,), np.inf, dtype=float)}
 

@@ -12,7 +12,7 @@ pytest.importorskip("torch")
 
 from kcluster.core.question import Question
 from kcluster.tasks.cluster import build_res_df
-from kcluster.tasks.concept import extract_concepts, extract_question_embeds
+from kcluster.tasks.concept import complete_names, embed_texts, extract_concepts, extract_question_embeds
 
 
 class StubLLM:
@@ -135,17 +135,34 @@ def test_build_res_df_adds_kc_and_drops_images(mcq):
 def test_a_prompt_style_writes_the_prompts_and_the_embedding_context(mcq):
     from kcluster.core.prompts import ChatPrompts
 
-    def render(messages):
-        return "".join(f"<{m['role']}>{m['content']}</{m['role']}>" for m in messages) + "<assistant>"
-
-    style = ChatPrompts(render, concept_request="What does it test?", first_request="Write an exercise.",
+    style = ChatPrompts(concept_request="What does it test?", first_request="Write an exercise.",
                         second_request="Write another one.", end_of_turn="</assistant>")
     llm = StubLLM()
     extract_concepts(llm, [mcq], batch_size=1, prompts=style)
     [(prompts, kwargs)] = llm.complete_calls
-    assert prompts == [style.concept(mcq)]
+    assert prompts == [style.concept(mcq)]  # a conversation, for the engine to write in the model's template
     assert kwargs["stop_tokens"] == [".", ",", "</assistant>"]  # a name also ends where the model ends its turn
-    assert prompts[0].startswith(f"<user>{mcq.header(1)}\n{mcq}\n\nWhat does it test?</user><assistant>The above")
+    assert prompts[0][0] == {"role": "user", "content": f"{mcq.header(1)}\n{mcq}\n\nWhat does it test?"}
+    assert prompts[0][1]["content"].startswith("The above exercise is a multiple-choice question that tests")
     extract_question_embeds(llm, [mcq], batch_size=1, prompts=style)
     _, contexts = llm.encode_calls[0]
-    assert contexts == ["<user>Write an exercise.</user><assistant>"]
+    assert contexts == [[{"role": "user", "content": "Write an exercise."}]]
+
+
+def test_names_are_completed_for_any_prompts():
+    """The step under extract_concepts: prompts of any making, their completions read as names."""
+    llm = StubLLM(" the chain rule, applied")
+    prompts = ["Name it:", [{"role": "user", "content": "Name it."}, {"role": "assistant", "content": "It is"}]]
+    assert complete_names(llm, prompts, batch_size=1, stop_tokens=[".", "\n"], num_beams=2) == ["the chain rule"] * 2
+    assert [p for p, _ in llm.complete_calls] == [[prompts[0]], [prompts[1]]]
+    assert all(kw == {"stop_tokens": [".", "\n"], "num_beams": 2} for _, kw in llm.complete_calls)
+
+    with pytest.raises(ValueError, match="no name for prompt 0"):
+        complete_names(StubLLM(" 42."), ["a", "b"], batch_size=2, num_names=1, ids=["prompt 0", "prompt 1"])
+
+
+def test_texts_are_embedded_after_their_contexts():
+    llm = StubLLM()
+    embeds = embed_texts(llm, ["t0", "t1", "t2"], ["c0", [{"role": "user", "content": "c1"}], "c2"], batch_size=2)
+    assert embeds.shape == (3, 4)
+    assert llm.encode_calls == [(["t0", "t1"], ["c0", [{"role": "user", "content": "c1"}]]), (["t2"], ["c2"])]

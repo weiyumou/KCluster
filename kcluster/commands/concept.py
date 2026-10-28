@@ -1,3 +1,4 @@
+import argparse
 import os
 
 import torch
@@ -20,7 +21,7 @@ def main(args):
     print(f"*** Writing results to {result_dir} ***")
 
     # Load an LLM
-    llm = LargeLangModel(args.llm_path, trust_remote_code=True, dtype=torch.float16)
+    llm = LargeLangModel(args.llm_path, add_bos=args.add_bos, trust_remote_code=True, dtype=torch.float16)
 
     # Read all questions
     questions = load_questions(args.data_path)
@@ -50,6 +51,9 @@ def add_arguments(parser):
                         help="Result folder shared by every step of this run (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--verbal", action="store_true", help="Whether the concept should start with a verb")
     parser.add_argument("--batch_size", type=int, default=16, help="Number of questions to process in a batch")
+    parser.add_argument("--add_bos", action=argparse.BooleanOptionalAction, default=None,
+                        help="Put the model's BOS token before every prompt that lacks one (default: the "
+                             "tokenizer's own rule; a base model whose tokenizer adds none, such as Gemma, wants it)")
     parser.add_argument("--num_beams", type=int, default=CONCEPT_NUM_BEAMS,
                         help="Number of beams employed in beam search")
     parser.add_argument("--length_penalty", type=float, default=CONCEPT_LENGTH_PENALTY,

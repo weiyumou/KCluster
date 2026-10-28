@@ -72,15 +72,27 @@ text for a base model to complete, and are what the commands run. Code that
 calls the tasks can pass a prompt style instead
 ([`kcluster.core.prompts`](kcluster/core/prompts.py)): `StockPrompts` with
 another remark for a concept name to complete, or `ChatPrompts`, which puts
-the same requests in a model's chat template for an instruction-tuned model
-and, given the model's end-of-turn token (`end_of_turn=`), ends a generated
-name there too.
-`extract_concepts`, `PairQuestion` and the Vertex job preparation all take
-`prompts=`. The congruity grid is one case of `ScoringGrid`
-([`kcluster.tasks.congruity`](kcluster/tasks/congruity.py)), the layout of
-(context, text) pairs the scorer and `PointwiseMutualInfo.from_shards`
-share; a grid of other texts, such as concept names after each question,
-is a subclass that writes its own contexts.
+the same requests in a conversation for an instruction-tuned model. The
+engine takes a prompt either way: a string, read as it is, or a conversation
+as `{"role", "content"}` messages, which it writes in the model's own chat
+template with the model's turn opened (a last assistant message is the
+prefill the model continues). A served model renders messages with its own
+template, so a client needs no tokenizer. `extract_concepts`, `PairQuestion`
+and the Vertex job preparation all take `prompts=`; the steps under them,
+`complete_names` and `embed_texts`, take any prompts at all. A context and
+the text scored after it are tokenized together, as the model reads them,
+and the text's tokens found by their character offsets; the commands'
+`--add_bos` puts the model's BOS token before every prompt for a base model
+whose tokenizer adds none (Gemma).
+
+**Any scoring grid.** The congruity grid is one case of `ScoringGrid`
+([`kcluster.core.grid`](kcluster/core/grid.py)), the layout of (context,
+text) pairs the scorer, the Vertex jobs and `PointwiseMutualInfo.from_shards`
+share: `m` texts in the columns after each of `n` contexts in the rows, plus
+each text after its marginal context. A grid of other texts, such as concept
+names after each question, is built from two functions of the cell, or by a
+subclass that writes its own contexts; the rectangular PMI is the raw
+estimator.
 
 **No GPU?** The scoring steps run as Vertex AI batch jobs in your own GCP
 project: deploy the model once ([`deploy/vertex/`](deploy/vertex/README.md)),

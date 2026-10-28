@@ -16,10 +16,11 @@ how it is cleaned.
 
 How the prompts are *written* is a prompt style (``PromptStyle``): the
 paper's plain text, which a base model completes (``StockPrompts``, the
-default everywhere), or the same requests as a conversation in a model's
-chat template, for an instruction-tuned model (``ChatPrompts``). Every
-task that builds prompts takes a style and defaults to ``STOCK``, so the
-published strings are what runs unless a caller says otherwise.
+default everywhere), or the same requests as a conversation, which the
+engine writes in a model's chat template, for an instruction-tuned model
+(``ChatPrompts``). Every task that builds prompts takes a style and defaults
+to ``STOCK``, so the published strings are what runs unless a caller says
+otherwise.
 """
 
 from typing import Protocol
@@ -86,8 +87,15 @@ def clean_concept(completion: str) -> str:
 # --- Prompt styles: how the requests above are written for a model ---
 
 
+#: What a model reads: text, or a conversation as messages (``kcluster.engine``).
+Prompt = str | list[dict]
+
+
 class PromptStyle(Protocol):
     """The prompts of the two scoring tasks, written one way.
+
+    A prompt is text for the model to complete, or a conversation as a list
+    of messages, which the engine writes in the model's chat template.
 
     ``concept`` ends where a concept name of the question starts, and
     ``concept_marginal`` is the same prompt with the question's text left
@@ -100,13 +108,13 @@ class PromptStyle(Protocol):
 
     concept_stop_tokens: tuple[str, ...]
 
-    def concept(self, question, verbal: bool = False) -> str: ...
+    def concept(self, question, verbal: bool = False) -> Prompt: ...
 
-    def concept_marginal(self, question, verbal: bool = False) -> str: ...
+    def concept_marginal(self, question, verbal: bool = False) -> Prompt: ...
 
-    def pair(self, context_question, scored_question) -> str: ...
+    def pair(self, context_question, scored_question) -> Prompt: ...
 
-    def marginal(self, scored_question) -> str: ...
+    def marginal(self, scored_question) -> Prompt: ...
 
 
 class StockPrompts:
@@ -140,13 +148,13 @@ STOCK = StockPrompts()
 
 
 class ChatPrompts:
-    """The same requests as a conversation in a model's chat template, for an instruction-tuned model.
+    """The same requests as a conversation, for an instruction-tuned model.
 
-    ``render`` writes a list of ``{"role", "content"}`` messages as the text
-    the model reads, with the assistant's turn opened at the end; for a
-    Hugging Face tokenizer that is
-    ``partial(tokenizer.apply_chat_template, tokenize=False, add_generation_prompt=True)``.
-    The requests are the user's words, and are the caller's to choose:
+    The prompts are conversations, lists of ``{"role", "content"}`` messages,
+    which the engine writes in the model's own chat template with the
+    model's turn opened at the end (``kcluster.engine``); a last message in
+    the assistant's role is the prefill the model continues. The requests are
+    the user's words, and are the caller's to choose:
 
         concept           user: the exercise, then ``concept_request``;
                           assistant: the remark (``remark``, as in ``StockPrompts``), which the name completes
@@ -155,32 +163,43 @@ class ChatPrompts:
                           and the scored question is what the assistant says next
         marginal          user: ``first_request``; the scored question is the assistant's reply
 
-    ``end_of_turn`` is the token that ends the model's turn (Gemma's
-    ``<end_of_turn>``, Phi-4-mini's ``<|end|>``). A name stops there as well
-    as at a period or comma: the stop tokens take the place of the model's own
-    end of sequence in generation, so without it a reply that ends its turn
-    before any period runs on to the token limit.
+    ``render``, if given, writes the prompts as text here instead: a function
+    of the messages before the prefill that returns the text with the model's
+    turn opened, after which the prefill is written. It is for a format the
+    model's template does not write; a served model renders messages with
+    its own template, so a client needs none.
+
+    ``end_of_turn`` is the token that ends the model's turn (Gemma 4's
+    ``<turn|>``, Phi-4-mini's ``<|end|>``), for a model whose generation does
+    not already stop there: a name ends there as well as at a period or comma.
     """
 
-    def __init__(self, render, *, concept_request: str, first_request: str, second_request: str,
+    def __init__(self, render=None, *, concept_request: str, first_request: str, second_request: str,
                  remark: str = CONCEPT_REMARK, end_of_turn: str | None = None):
         self.render = render
         self.concept_request, self.first_request, self.second_request = concept_request, first_request, second_request
         self.remark = remark
         self.concept_stop_tokens = (*CONCEPT_STOP_TOKENS, *([end_of_turn] if end_of_turn else []))
 
-    def concept(self, question, verbal: bool = False) -> str:
+    def _write(self, messages: list[dict], prefill: str = ""):
+        """The prompt for a conversation: the messages, the prefill last in the assistant's role, or the text
+        ``render`` writes for them."""
+        if self.render is None:
+            return [*messages, *([{"role": "assistant", "content": prefill}] if prefill else [])]
+        return self.render(messages) + prefill
+
+    def concept(self, question, verbal: bool = False):
         user = f"{question.header(1)}\n{question}\n\n{self.concept_request}"
-        return self.render([{"role": "user", "content": user}]) + concept_remark(question, verbal, self.remark)
+        return self._write([{"role": "user", "content": user}], concept_remark(question, verbal, self.remark))
 
-    def concept_marginal(self, question, verbal: bool = False) -> str:
+    def concept_marginal(self, question, verbal: bool = False):
         user = f"{question.header(1)}\n\n{self.concept_request}"
-        return self.render([{"role": "user", "content": user}]) + concept_remark(question, verbal, self.remark)
+        return self._write([{"role": "user", "content": user}], concept_remark(question, verbal, self.remark))
 
-    def pair(self, context_question, scored_question) -> str:
-        return self.render([{"role": "user", "content": self.first_request},
+    def pair(self, context_question, scored_question):
+        return self._write([{"role": "user", "content": self.first_request},
                             {"role": "assistant", "content": str(context_question)},
                             {"role": "user", "content": self.second_request}])
 
-    def marginal(self, scored_question) -> str:
-        return self.render([{"role": "user", "content": self.first_request}])
+    def marginal(self, scored_question):
+        return self._write([{"role": "user", "content": self.first_request}])

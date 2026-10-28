@@ -1,8 +1,9 @@
 """Tests for the local engine substrate.
 
-Everything needing a real model is exercised later with a tiny fixture model;
-here we cover the pure helpers and that the module imports cleanly whenever
-torch is available (the [local] extra).
+The tokenization is exercised on a tiny real fast tokenizer (conftest's
+``make_tokenizer``): what the engine reads for a prompt, where a text's
+tokens are, and the BOS rule. Everything needing a real model is left to the
+GPU runs.
 """
 
 from types import SimpleNamespace
@@ -11,7 +12,8 @@ import pytest
 
 pytest.importorskip("torch")
 
-from kcluster.engine.local import LargeLangModel, LogProbScorer
+from kcluster.engine.local import LargeLangModel, LogProbScorer, pair_inputs, render_prompt, token_count
+from tests.conftest import CHAT_TEMPLATE
 
 
 def test_log_prob_scorer_is_a_lightning_module():
@@ -27,27 +29,179 @@ def test_model_wrapper_exposes_the_engine_surface():
         assert callable(getattr(LargeLangModel, method))
 
 
-def test_collate_pair_masks_context_and_padding_out_of_labels():
+# --- prompts: strings as they are, conversations in the chat template ---
+
+def test_a_string_prompt_is_read_as_it_is(make_tokenizer):
+    tokenizer = make_tokenizer(["a", "b"], chat_template=CHAT_TEMPLATE)
+    assert render_prompt(tokenizer, "a b") == "a b"
+
+
+def test_a_conversation_is_written_in_the_chat_template_with_the_turn_opened(make_tokenizer):
+    tokenizer = make_tokenizer(["a"], chat_template=CHAT_TEMPLATE)
+    messages = [{"role": "user", "content": "Write an exercise."}, {"role": "assistant", "content": "Exercise 1"},
+                {"role": "user", "content": "Write another one."}]
+    assert render_prompt(tokenizer, messages) == (
+        "<user>Write an exercise.</user><assistant>Exercise 1</assistant><user>Write another one.</user><assistant>")
+
+
+def test_a_last_assistant_message_is_a_prefill_after_the_opened_turn(make_tokenizer):
+    tokenizer = make_tokenizer(["a"], chat_template=CHAT_TEMPLATE)
+    messages = [{"role": "user", "content": "What does it test?"},
+                {"role": "assistant", "content": "The above exercise tests whether the student can"}]
+    assert render_prompt(tokenizer, messages) == (
+        "<user>What does it test?</user><assistant>The above exercise tests whether the student can")
+    assert render_prompt(tokenizer, messages[:1]) == "<user>What does it test?</user><assistant>"
+
+
+# --- pairs: context and text read together, the text's tokens found by their offsets ---
+
+def test_pair_inputs_mask_the_text_alone_and_pad_on_the_left(make_tokenizer):
+    tokenizer = make_tokenizer(["ctx", "a", "txt", "b", "c"])
+    inputs, is_text = pair_inputs(tokenizer, ["ctx a", "ctx"], [" txt b", " c"], pad_to_multiple_of=8)
+    ids = {w: tokenizer.convert_tokens_to_ids(w) for w in ("ctx", "a", "txt", "b", "c")}
+    pad = tokenizer.pad_token_id
+    assert inputs["input_ids"].tolist() == [[pad] * 4 + [ids["ctx"], ids["a"], ids["txt"], ids["b"]],
+                                            [pad] * 6 + [ids["ctx"], ids["c"]]]
+    assert inputs["attention_mask"].tolist() == [[0] * 4 + [1] * 4, [0] * 6 + [1] * 2]
+    assert is_text.tolist() == [[False] * 6 + [True] * 2, [False] * 7 + [True]]
+
+
+def test_prompts_alone_have_no_text_tokens(make_tokenizer):
+    tokenizer = make_tokenizer(["a", "b"])
+    inputs, is_text = pair_inputs(tokenizer, ["a b", "a"])
+    assert inputs["input_ids"].shape == (2, 2) and not is_text.any()
+
+
+def test_the_split_owes_nothing_to_the_tokenizers_pair_template(make_tokenizer):
+    # Llama's pair template would put a second <s> between context and text; the engine reads the pair as one
+    # string, so the only <s> is the leading one, and it counts as context
+    tokenizer = make_tokenizer(["a", "b"], bos="<s>")
+    inputs, is_text = pair_inputs(tokenizer, ["a"], [" b"])
+    assert tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].tolist()) == ["<s>", "a", "b"]
+    assert is_text.tolist() == [[False, False, True]]
+
+
+def test_a_text_must_start_at_a_token_boundary(make_tokenizer):
+    tokenizer = make_tokenizer(["ab", "a", "b"])
+    with pytest.raises(ValueError, match="does not start at a token boundary"):
+        pair_inputs(tokenizer, ["a"], ["b"])  # "ab" is one token, half of it context
+    with pytest.raises(ValueError, match="tokenizes to nothing"):
+        pair_inputs(tokenizer, ["a"], [" "])
+
+
+def test_contexts_and_texts_must_pair_up(make_tokenizer):
+    with pytest.raises(ValueError, match="equal length"):
+        pair_inputs(make_tokenizer(["a"]), ["a", "a"], ["a"])
+
+
+# --- the BOS rule ---
+
+def test_a_bos_adding_tokenizer_adds_it_once(make_tokenizer):
+    tokenizer = make_tokenizer(["a"], bos="<s>")
+    # The tokenizer's default: one <s> before a bare prompt, none more before one that carries its own
+    for prompt in ("a", "<s> a"):
+        inputs, _ = pair_inputs(tokenizer, [prompt])
+        assert tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].tolist()) == ["<s>", "a"], prompt
+    # add_bos=False: no special tokens at all
+    inputs, _ = pair_inputs(tokenizer, ["a"], add_bos=False)
+    assert tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].tolist()) == ["a"]
+
+
+def test_a_tokenizer_adding_no_bos_adds_it_on_request(make_tokenizer):
+    from tokenizers import processors
+
+    tokenizer = make_tokenizer(["a"], bos="<s>")
+    tokenizer._tokenizer.post_processor = processors.TemplateProcessing(single="$A", pair="$A $B:1")  # Gemma's way
+    inputs, _ = pair_inputs(tokenizer, ["a"])
+    assert tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].tolist()) == ["a"]
+    inputs, _ = pair_inputs(tokenizer, ["a"], add_bos=True)
+    assert tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].tolist()) == ["<s>", "a"]
+    inputs, _ = pair_inputs(tokenizer, ["<s> a"], add_bos=True)  # and not twice
+    assert tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].tolist()) == ["<s>", "a"]
+
+
+def test_token_count_is_what_the_model_reads(make_tokenizer):
+    tokenizer = make_tokenizer(["a", "b"], bos="<s>", chat_template=CHAT_TEMPLATE)
+    assert token_count(tokenizer, "a", " b") == 3
+    assert token_count(tokenizer, "a", " b", add_bos=False) == 2
+    messages = [{"role": "user", "content": "a"}]
+    assert token_count(tokenizer, messages) == len(tokenizer(render_prompt(tokenizer, messages))["input_ids"]) == 2
+
+
+# --- the methods, over a fake model ---
+
+def _engine(tokenizer, model):
+    llm = LargeLangModel.__new__(LargeLangModel)
+    llm.tokenizer, llm.model, llm.add_bos = tokenizer, model, None
+    return llm
+
+
+def test_a_text_with_nothing_before_it_cannot_be_scored(make_tokenizer):
     import torch
 
+    tokenizer = make_tokenizer(["a", "b"])
+    llm = _engine(tokenizer, SimpleNamespace(device=torch.device("cpu")))
+    with pytest.raises(ValueError, match="nothing before it"):
+        llm.log_prob(["a b"])
+    with pytest.raises(ValueError, match="nothing before it"):
+        llm.log_prob([" b", " b"], ["a", ""])  # one row is enough to refuse
+
+
+def test_log_prob_sums_the_text_tokens_losses(make_tokenizer):
+    import torch
+
+    tokenizer = make_tokenizer(["a", "b", "c"])
+    vocab = len(tokenizer)
+
+    class UniformModel:
+        device = torch.device("cpu")
+
+        def __call__(self, input_ids, attention_mask):
+            return SimpleNamespace(logits=torch.zeros(*input_ids.shape, vocab))
+
+    llm = _engine(tokenizer, UniformModel())
+    # Every token is equally likely: -log(V) per text token, the context's and padding's left out
+    scores = llm.log_prob([" b c", " c"], ["a", "a b"])
+    assert torch.allclose(scores, torch.tensor([-2.0, -1.0]) * torch.log(torch.tensor(float(vocab))))
+    assert torch.allclose(llm.log_prob([" b c"], ["a"], return_ppl=True), torch.tensor([float(vocab)]))
+
+
+def test_complete_prompts_stops_at_stop_strings_and_the_models_own_end(make_tokenizer):
+    import torch
+
+    tokenizer = make_tokenizer(["a", "b", "."], chat_template=CHAT_TEMPLATE)
+    seen = {}
+
+    class EchoModel:
+        device = torch.device("cpu")
+
+        def generate(self, input_ids, attention_mask, **kwargs):
+            seen.update(kwargs)
+            new = torch.tensor([[tokenizer.convert_tokens_to_ids("b")]] * len(input_ids))
+            return torch.cat([input_ids, new], dim=1)
+
+    llm = _engine(tokenizer, EchoModel())
+    assert llm.complete_prompts(["a", [{"role": "user", "content": "a"}]], stop_tokens=[".", ","],
+                                stop_strings=["\n\n"], max_new_tokens=5, num_beams=2) == ["b", "b"]
+    # Stop strings are matched on the generated text, beside the model's own end of sequence, which stays
+    assert seen["stop_strings"] == [".", ",", "\n\n"] and seen["tokenizer"] is tokenizer
+    assert "eos_token_id" not in seen and seen["num_beams"] == 2 and seen["max_new_tokens"] == 5
+
+
+# --- the batch scorer ---
+
+def test_collate_pair_masks_context_and_padding_out_of_labels(make_tokenizer):
     from kcluster.engine.local import collate_pair
 
-    def fake_tokenizer(text, text_pair, **kwargs):
-        # Two rows: token_type_ids mark text tokens with 1; context and
-        # right-padding carry 0 and must be ignored in the labels.
-        return {
-            "input_ids": torch.tensor([[11, 12, 21, 22], [13, 23, 24, 0]]),
-            "token_type_ids": torch.tensor([[0, 0, 1, 1], [0, 1, 1, 0]]),
-            "attention_mask": torch.tensor([[1, 1, 1, 1], [1, 1, 1, 0]]),
-        }
-
-    inputs, labels = collate_pair([("ctx a", "txt a"), ("ctx b", "txt b")], tokenizer=fake_tokenizer)
-    assert "token_type_ids" not in inputs
-    assert labels.tolist() == [[-100, -100, 21, 22], [-100, 23, 24, -100]]
+    tokenizer = make_tokenizer(["a", "b", "c"])
+    inputs, labels = collate_pair([("a", " b c"), ("a b", " c")], tokenizer=tokenizer)
+    ids = {w: tokenizer.convert_tokens_to_ids(w) for w in "abc"}
+    assert inputs["input_ids"].tolist() == [[ids["a"], ids["b"], ids["c"]], [ids["a"], ids["b"], ids["c"]]]
+    assert labels.tolist() == [[-100, ids["b"], ids["c"]], [-100, -100, ids["c"]]]
 
 
 def test_custom_writer_shard_filenames_are_rank_stamped(tmp_path):
-    # PointwiseMutualInfo.load_probs discovers shards by these exact names.
+    # PointwiseMutualInfo.from_shards discovers shards by these exact names.
     import torch
 
     from kcluster.engine.local import CustomWriter
@@ -62,12 +216,10 @@ def test_custom_writer_shard_filenames_are_rank_stamped(tmp_path):
 
 
 @pytest.mark.filterwarnings("ignore:.*pin_memory.*:UserWarning")  # no CUDA on a dev machine
-def test_score_pairs_feeds_the_grid_to_a_gpu_trainer_in_order(tmp_path, monkeypatch):
-    import torch
-
+def test_score_pairs_feeds_the_grid_to_a_gpu_trainer_in_order(tmp_path, monkeypatch, make_tokenizer):
     from kcluster.engine import local
 
-    seen = {"pad": []}
+    seen = {}
 
     class FakeTrainer:
         is_global_zero = True
@@ -79,14 +231,10 @@ def test_score_pairs_feeds_the_grid_to_a_gpu_trainer_in_order(tmp_path, monkeypa
         def predict(self, model, dataloaders, return_predictions):
             seen.update(model=model, batches=list(dataloaders), return_predictions=return_predictions)
 
-    def fake_tokenizer(text, text_pair, **kwargs):
-        seen["pad"].append(kwargs["pad_to_multiple_of"])
-        return {"input_ids": torch.tensor([[int(t[1:]), 7] for t in text_pair]),
-                "token_type_ids": torch.tensor([[0, 1]] * len(text))}
-
     monkeypatch.setattr(local.L, "Trainer", FakeTrainer)
-    pairs = [("c0", "t0"), ("c1", "t1"), ("c2", "t2")]
-    first = local.score_pairs("scorer", fake_tokenizer, pairs, str(tmp_path), batch_size=2, pad_to_multiple_of=8,
+    tokenizer = make_tokenizer(["c0", "c1", "c2", "t"])
+    pairs = [("c0", " t"), ("c1", " t"), ("c2", " t")]
+    first = local.score_pairs("scorer", tokenizer, pairs, str(tmp_path), batch_size=2, pad_to_multiple_of=4,
                               strategy="ddp")
     assert first is True and seen["barrier"]  # every rank has written before the first goes on
 
@@ -96,12 +244,13 @@ def test_score_pairs_feeds_the_grid_to_a_gpu_trainer_in_order(tmp_path, monkeypa
     assert isinstance(writer, local.CustomWriter) and writer.output_dir == str(tmp_path)
     assert seen["model"] == "scorer" and seen["return_predictions"] is False
     # Unshuffled, in dataset order: from_shards puts each score back by its flat index
-    assert [inputs["input_ids"][:, 0].tolist() for inputs, _ in seen["batches"]] == [[0, 1], [2]]
-    assert [labels.tolist() for _, labels in seen["batches"]] == [[[-100, 7], [-100, 7]], [[-100, 7]]]
-    assert seen["pad"] == [8, 8]
+    ids = {w: tokenizer.convert_tokens_to_ids(w) for w in ("c0", "c1", "c2", "t")}
+    assert [inputs["input_ids"][:, -2].tolist() for inputs, _ in seen["batches"]] == [[ids["c0"], ids["c1"]], [ids["c2"]]]
+    assert [labels[:, -1].tolist() for _, labels in seen["batches"]] == [[ids["t"], ids["t"]], [ids["t"]]]
+    assert all(inputs["input_ids"].shape[1] == 4 for inputs, _ in seen["batches"])  # padded to the multiple
 
     # Trainer arguments pass through: one device of any kind, and no strategy unless asked for
-    local.score_pairs("scorer", fake_tokenizer, pairs, str(tmp_path), devices=1, accelerator="auto")
+    local.score_pairs("scorer", tokenizer, pairs, str(tmp_path), devices=1, accelerator="auto")
     assert (seen["trainer"]["devices"], seen["trainer"]["accelerator"]) == (1, "auto")
     assert "strategy" not in seen["trainer"]
 
@@ -109,38 +258,35 @@ def test_score_pairs_feeds_the_grid_to_a_gpu_trainer_in_order(tmp_path, monkeypa
 @pytest.mark.filterwarnings("ignore:.*pin_memory.*:UserWarning")  # no CUDA on a dev machine
 @pytest.mark.filterwarnings("ignore:GPU available but not used", "ignore:.*does not have many workers",
                             "ignore:.*LeafSpec.*")  # Lightning's notices on a CPU run
-def test_a_grid_scored_in_shards_comes_back_cell_by_cell(tmp_path):
+def test_a_grid_scored_in_shards_comes_back_cell_by_cell(tmp_path, make_tokenizer):
     """ScoringGrid's flat order, the shards the scorer writes and from_shards agree: every score lands in its own
     cell, for a grid with more rows than columns, scored over several batches by a real Trainer."""
     import lightning as L
     import numpy as np
-    import torch
 
+    from kcluster.core.grid import ScoringGrid
     from kcluster.core.pmi import PointwiseMutualInfo
     from kcluster.engine.local import score_pairs
-    from kcluster.tasks.congruity import ScoringGrid
 
-    class NameGrid(ScoringGrid):
-        def marginal(self, col):
-            return "no question"
-
-        def context(self, row, col):
-            return f"question {row}"
-
-    grid = NameGrid([" flexibility.", " addition."], n_rows=3)
-    contexts = ["no question", "question 0", "question 1", "question 2"]
-
-    def tokenizer(text, text_pair, **kwargs):
-        # One token for the context and one for the text, each its index
-        return {"input_ids": torch.tensor([[contexts.index(c), grid.texts.index(t)] for c, t in zip(text, text_pair)]),
-                "token_type_ids": torch.tensor([[0, 1]] * len(text))}
+    contexts = ["q0", "q1", "q2", "q3"]  # the no-question row, then one per question
+    texts = [" flexibility", " addition"]
+    grid = ScoringGrid(texts, n_rows=3, context=lambda row, col: contexts[row + 1], marginal=contexts[0])
+    tokenizer = make_tokenizer([*contexts, *(t.strip() for t in texts)])
 
     class CellScorer(L.LightningModule):
         def forward(self, batch):
+            # One token for the context and one for the text: the cell's row and column, as a number
             inputs, _ = batch
-            return 10.0 * inputs["input_ids"][:, 0] + inputs["input_ids"][:, 1]
+            ids = inputs["input_ids"][:, -2:].tolist()
+            return 10.0 * self._t([contexts.index(tokenizer.convert_ids_to_tokens(c)) for c, _ in ids]) \
+                + self._t([texts.index(" " + tokenizer.convert_ids_to_tokens(t)) for _, t in ids])
+
+        @staticmethod
+        def _t(values):
+            import torch
+            return torch.tensor(values, dtype=torch.float32)
 
     assert score_pairs(CellScorer(), tokenizer, grid, str(tmp_path), batch_size=3, accelerator="cpu", devices=1)
-    PointwiseMutualInfo.from_shards(str(tmp_path), grid.n_rows, len(grid.texts)).save(str(tmp_path / "scores.npy"))
+    PointwiseMutualInfo.from_shards(str(tmp_path), *grid.shape).save(str(tmp_path / "scores.npy"))
     # Row 0: each text after no question; row 1 + r: after question r
     assert np.array_equal(np.load(tmp_path / "scores.npy"), 10.0 * np.arange(4)[:, None] + np.arange(2))

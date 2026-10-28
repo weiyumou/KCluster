@@ -1,3 +1,5 @@
+import argparse
+
 import torch
 from transformers.utils import logging
 
@@ -26,7 +28,8 @@ def main(args):
     # Compute PMI
     questions = load_questions(args.data_path)
     first = score_pairs(model, tokenizer, PairQuestion(questions), shard_dir, batch_size=args.batch_size,
-                        num_workers=args.num_workers, pad_to_multiple_of=args.pad_to_multiple_of, strategy="ddp")
+                        num_workers=args.num_workers, pad_to_multiple_of=args.pad_to_multiple_of,
+                        add_bos=args.add_bos, strategy="ddp")
     if first:
         save_args(result_dir, "pmi", dataset_name(args.data_path), vars(args))
 
@@ -41,3 +44,6 @@ def add_arguments(parser):
                         help="Result folder shared by every step of this run (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--num_workers", type=int, default=0, help="Number of workers for DataLoader")
     parser.add_argument("--pad_to_multiple_of", type=int, default=None, help="Pad to multiple of")
+    parser.add_argument("--add_bos", action=argparse.BooleanOptionalAction, default=None,
+                        help="Put the model's BOS token before every context that lacks one (default: the "
+                             "tokenizer's own rule; a base model whose tokenizer adds none, such as Gemma, wants it)")

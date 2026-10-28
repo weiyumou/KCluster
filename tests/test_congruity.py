@@ -83,21 +83,26 @@ def test_grid_is_row_major_with_row_as_conditioning(questions):
 def test_a_prompt_style_writes_the_contexts(questions):
     from kcluster.core.prompts import ChatPrompts
 
-    def render(messages):
-        return " | ".join(f"{m['role']}: {m['content']}" for m in messages) + " | assistant:"
-
-    style = ChatPrompts(render, concept_request="?", first_request="Write an exercise.",
-                        second_request="Write another one.")
+    style = ChatPrompts(concept_request="?", first_request="Write an exercise.", second_request="Write another one.")
     ds, n = PairQuestion(questions, style), len(questions)
-    assert ds[1] == ("user: Write an exercise. | assistant:", str(questions[1]))
+    # A chat style's contexts are conversations, which the engine writes in the model's template
+    assert ds[1] == ([{"role": "user", "content": "Write an exercise."}], str(questions[1]))
     assert ds[n + 0 * n + 1] == (
-        f"user: Write an exercise. | assistant: {questions[0]} | user: Write another one. | assistant:",
+        [{"role": "user", "content": "Write an exercise."}, {"role": "assistant", "content": str(questions[0])},
+         {"role": "user", "content": "Write another one."}],
         str(questions[1]),
     )
 
+    def render(messages):
+        return " | ".join(f"{m['role']}: {m['content']}" for m in messages) + " | assistant:"
+
+    rendered = PairQuestion(questions, ChatPrompts(render, concept_request="?", first_request="Write an exercise.",
+                                                   second_request="Write another one."))
+    assert rendered[1] == ("user: Write an exercise. | assistant:", str(questions[1]))
+
 
 def test_a_grid_of_other_texts_shares_the_layout(questions):
-    from kcluster.tasks.congruity import ScoringGrid
+    from kcluster.core.grid import ScoringGrid
 
     class NameGrid(ScoringGrid):
         """Concept names after each question, and after no question: n rows, m columns."""
@@ -124,11 +129,9 @@ def test_a_grid_of_other_texts_shares_the_layout(questions):
 
 
 def test_longest_input_takes_the_longest_row_with_the_longest_text(questions):
-    class WordTokenizer:
-        def __call__(self, text, text_pair=None):
-            return {"input_ids": (text + " " + (text_pair or "")).split()}
+    def count(context, text):
+        return len((context + " " + text).split())
 
     ds = PairQuestion(questions)
-    tokenizer = WordTokenizer()
-    longest = max(len(tokenizer(*ds[i])["input_ids"]) for i in range(len(ds)))
-    assert ds.longest_input(tokenizer) == longest
+    longest = max(count(*ds[i]) for i in range(len(ds)))
+    assert ds.longest_input(count) == longest
