@@ -87,6 +87,27 @@ def test_the_stock_style_writes_the_published_prompts():
     )
 
 
+def test_a_typeless_question_gets_the_remark_without_its_type_clause():
+    # As the header goes without its type line: no published bank is typeless, so no published string changes
+    q = _mcq()
+    del q["type"]
+    assert q.header(1) == "Exercise 1:"
+    assert prompts.concept_remark(q) == "The above exercise tests whether the student understands the concept of"
+    assert prompts.concept_remark(q, verbal=True) == "The above exercise tests whether the student can"
+    assert prompts.STOCK.concept(q) == (
+        "Exercise 1:\nWhich is the most flexible?\na) paper\nb) clay tile\nAnswer: a"
+        "\n\nRemark:\nThe above exercise tests whether the student understands the concept of"
+    )
+    assert prompts.STOCK.concept_marginal(q) == (
+        "Exercise 1:\n\nRemark:\nThe above exercise tests whether the student understands the concept of"
+    )
+    chat = prompts.ChatPrompts(concept_request="?", first_request="", second_request="")
+    assert chat.concept(q)[-1]["content"] == "The above exercise tests whether the student understands the concept of"
+    # A remark given is used as written, typed question or not
+    assert prompts.concept_remark(q, remark="It tests {trailer}") == "It tests whether the student understands the concept of"
+    assert prompts.concept_remark(_mcq(), remark="It tests {trailer}") == "It tests whether the student understands the concept of"
+
+
 def test_a_style_can_change_the_remark_a_name_completes():
     style = prompts.StockPrompts(remark="The above exercise tests {trailer}")
     assert style.concept(_mcq()).endswith("\n\nRemark:\nThe above exercise tests whether the student understands the concept of")

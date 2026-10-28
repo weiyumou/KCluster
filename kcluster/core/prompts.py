@@ -51,8 +51,11 @@ def congruity_pair_context(context_question, scored_question) -> str:
 CONCEPT_TRAILER_NOUN = "whether the student understands the concept of"
 CONCEPT_TRAILER_VERBAL = "whether the student can"
 # The remark is the sentence a concept name completes; the concept prompt
-# puts it after the exercise, and the marginal prompt after no exercise.
+# puts it after the exercise, and the marginal prompt after no exercise. A
+# question without a type gets the remark without its type clause, as its
+# header goes without the type line (no published bank is typeless).
 CONCEPT_REMARK = "The above exercise is a {q_type} question that tests {trailer}"
+CONCEPT_REMARK_UNTYPED = "The above exercise tests {trailer}"
 CONCEPT_PROMPT = "{header}\n{question}\n\nRemark:\n{remark}"
 CONCEPT_MARGINAL_PROMPT = "{header}\n\nRemark:\n{remark}"
 
@@ -64,10 +67,16 @@ CONCEPT_NUM_BEAMS = 5
 CONCEPT_LENGTH_PENALTY = -0.1
 
 
-def concept_remark(question, verbal: bool = False, remark: str = CONCEPT_REMARK) -> str:
-    """The remark for a question: the template with its type and the noun or verbal trailer filled in."""
+def concept_remark(question, verbal: bool = False, remark: str | None = None) -> str:
+    """The remark for a question: the template with its type and the noun or verbal trailer filled in.
+
+    ``remark`` is the published one unless given: ``CONCEPT_REMARK``, or ``CONCEPT_REMARK_UNTYPED`` for a question
+    without a type. A remark given is used as written, for any question.
+    """
     trailer = CONCEPT_TRAILER_VERBAL if verbal else CONCEPT_TRAILER_NOUN
     q_type = question.q_type.lower().replace(SPACE, "-")
+    if remark is None:
+        remark = CONCEPT_REMARK if q_type else CONCEPT_REMARK_UNTYPED
     return remark.format(q_type=q_type, trailer=trailer)
 
 
@@ -121,12 +130,13 @@ class StockPrompts:
     """The paper's prompts: plain text for a base model to complete.
 
     ``remark`` is the sentence a concept name completes, a template over
-    ``{q_type}`` and ``{trailer}``; the default is the published one.
+    ``{q_type}`` and ``{trailer}``; the default is the published one, in its
+    typed or untyped form by the question (``concept_remark``).
     """
 
     concept_stop_tokens = CONCEPT_STOP_TOKENS
 
-    def __init__(self, remark: str = CONCEPT_REMARK):
+    def __init__(self, remark: str | None = None):
         self.remark = remark
 
     def concept(self, question, verbal: bool = False) -> str:
@@ -175,7 +185,7 @@ class ChatPrompts:
     """
 
     def __init__(self, render=None, *, concept_request: str, first_request: str, second_request: str,
-                 remark: str = CONCEPT_REMARK, end_of_turn: str | None = None):
+                 remark: str | None = None, end_of_turn: str | None = None):
         self.render = render
         self.concept_request, self.first_request, self.second_request = concept_request, first_request, second_request
         self.remark = remark
