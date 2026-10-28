@@ -1165,7 +1165,7 @@ requires-dist = [
     { name = "sentence-transformers", marker = "extra == 'local'", specifier = ">=3.0" },
     { name = "torch", marker = "extra == 'local'", specifier = ">=2.4" },
     { name = "tqdm", specifier = ">=4.66" },
-    { name = "transformers", marker = "extra == 'local'", specifier = ">=4.45" },
+    { name = "transformers", marker = "extra == 'local'", specifier = ">=4.56" },
     { name = "uvicorn", marker = "extra == 'serve'", specifier = ">=0.30" },
 ]
 provides-extras = ["local", "vertex", "gemini", "fit", "serve"]
