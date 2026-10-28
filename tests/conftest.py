@@ -176,9 +176,11 @@ def make_tokenizer():
     return make
 
 
-#: A stand-in chat template: ``<role>content</role>`` per turn, the model's turn opened at the end.
-CHAT_TEMPLATE = ("{% for m in messages %}<{{ m['role'] }}>{{ m['content'] }}</{{ m['role'] }}>{% endfor %}"
-                 "{% if add_generation_prompt %}<assistant>{% endif %}")
+@pytest.fixture
+def chat_template() -> str:
+    """A stand-in chat template: ``<role>content</role>`` per turn, the model's turn opened at the end."""
+    return ("{% for m in messages %}<{{ m['role'] }}>{{ m['content'] }}</{{ m['role'] }}>{% endfor %}"
+            "{% if add_generation_prompt %}<assistant>{% endif %}")
 
 
 # --- a stand-in for the local engine, for the server and its client ---

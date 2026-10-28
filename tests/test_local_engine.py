@@ -13,7 +13,6 @@ import pytest
 pytest.importorskip("torch")
 
 from kcluster.engine.local import LargeLangModel, LogProbScorer, pair_inputs, render_prompt, token_count
-from tests.conftest import CHAT_TEMPLATE
 
 
 def test_log_prob_scorer_is_a_lightning_module():
@@ -31,21 +30,21 @@ def test_model_wrapper_exposes_the_engine_surface():
 
 # --- prompts: strings as they are, conversations in the chat template ---
 
-def test_a_string_prompt_is_read_as_it_is(make_tokenizer):
-    tokenizer = make_tokenizer(["a", "b"], chat_template=CHAT_TEMPLATE)
+def test_a_string_prompt_is_read_as_it_is(make_tokenizer, chat_template):
+    tokenizer = make_tokenizer(["a", "b"], chat_template=chat_template)
     assert render_prompt(tokenizer, "a b") == "a b"
 
 
-def test_a_conversation_is_written_in_the_chat_template_with_the_turn_opened(make_tokenizer):
-    tokenizer = make_tokenizer(["a"], chat_template=CHAT_TEMPLATE)
+def test_a_conversation_is_written_in_the_chat_template_with_the_turn_opened(make_tokenizer, chat_template):
+    tokenizer = make_tokenizer(["a"], chat_template=chat_template)
     messages = [{"role": "user", "content": "Write an exercise."}, {"role": "assistant", "content": "Exercise 1"},
                 {"role": "user", "content": "Write another one."}]
     assert render_prompt(tokenizer, messages) == (
         "<user>Write an exercise.</user><assistant>Exercise 1</assistant><user>Write another one.</user><assistant>")
 
 
-def test_a_last_assistant_message_is_a_prefill_after_the_opened_turn(make_tokenizer):
-    tokenizer = make_tokenizer(["a"], chat_template=CHAT_TEMPLATE)
+def test_a_last_assistant_message_is_a_prefill_after_the_opened_turn(make_tokenizer, chat_template):
+    tokenizer = make_tokenizer(["a"], chat_template=chat_template)
     messages = [{"role": "user", "content": "What does it test?"},
                 {"role": "assistant", "content": "The above exercise tests whether the student can"}]
     assert render_prompt(tokenizer, messages) == (
@@ -120,8 +119,8 @@ def test_a_tokenizer_adding_no_bos_adds_it_on_request(make_tokenizer):
     assert tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].tolist()) == ["<s>", "a"]
 
 
-def test_token_count_is_what_the_model_reads(make_tokenizer):
-    tokenizer = make_tokenizer(["a", "b"], bos="<s>", chat_template=CHAT_TEMPLATE)
+def test_token_count_is_what_the_model_reads(make_tokenizer, chat_template):
+    tokenizer = make_tokenizer(["a", "b"], bos="<s>", chat_template=chat_template)
     assert token_count(tokenizer, "a", " b") == 3
     assert token_count(tokenizer, "a", " b", add_bos=False) == 2
     messages = [{"role": "user", "content": "a"}]
@@ -166,10 +165,10 @@ def test_log_prob_sums_the_text_tokens_losses(make_tokenizer):
     assert torch.allclose(llm.log_prob([" b c"], ["a"], return_ppl=True), torch.tensor([float(vocab)]))
 
 
-def test_complete_prompts_stops_at_stop_strings_and_the_models_own_end(make_tokenizer):
+def test_complete_prompts_stops_at_stop_strings_and_the_models_own_end(make_tokenizer, chat_template):
     import torch
 
-    tokenizer = make_tokenizer(["a", "b", "."], chat_template=CHAT_TEMPLATE)
+    tokenizer = make_tokenizer(["a", "b", "."], chat_template=chat_template)
     seen = {}
 
     class EchoModel:
