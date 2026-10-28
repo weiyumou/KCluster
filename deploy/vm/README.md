@@ -106,9 +106,10 @@ run those in-process on the VM.
 ## Swapping the model
 
 `kcluster serve --llm_path /opt/models/<other> [--dtype bfloat16] [--quantize 4bit]`
-(4-/8-bit needs `pip install bitsandbytes` in the VM's env). Startup checks
-that the tokenizer marks context/text pairs with `token_type_ids`, which
-`log_prob` and `encode` rely on, and refuses otherwise. To A/B two models,
+(4-/8-bit needs `pip install bitsandbytes` in the VM's env). The model loads
+in the precision its config names unless `--dtype` says otherwise. Startup
+checks that the engine can split a text from its context with the
+tokenizer, which `log_prob` and `encode` rely on, and refuses otherwise. To A/B two models,
 run a second instance on another port and tunnel both. The prompts and
 thresholds in the pipeline are calibrated on Phi-2; a new model needs its
 own calibration, which is what the A/B is for. Every response carries
