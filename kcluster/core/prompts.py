@@ -12,7 +12,9 @@ this module import-free.
 
 What fixes a prompt's *reading* sits beside it, because both engines must
 agree on it as exactly as on the string: where a concept completion stops and
-how it is cleaned.
+how it is cleaned. A style owns both halves of the reading, since a model
+written to in another form answers in another form: an instruction-tuned
+model ends a name at its end of turn and marks it up as it would a reply.
 
 How the prompts are *written* is a prompt style (``PromptStyle``): the
 paper's plain text, which a base model completes (``StockPrompts``, the
@@ -93,6 +95,17 @@ def clean_concept(completion: str) -> str:
     return SPACE.join(completion.split())
 
 
+# The marks an instruction-tuned model puts around a name, none of which is ever part of one: emphasis (bold or
+# italic, possibly left open where the completion stopped first), code, and quotation. Underscores stay, as a
+# name in a mathematics bank may carry one.
+CHAT_MARKUP = str.maketrans("", "", "*`\"\u201c\u201d")
+
+
+def clean_chat_concept(completion: str) -> str:
+    """``clean_concept`` of a completion with its markup (``CHAT_MARKUP``) taken out first."""
+    return clean_concept(completion.translate(CHAT_MARKUP))
+
+
 # --- Prompt styles: how the requests above are written for a model ---
 
 
@@ -112,10 +125,13 @@ class PromptStyle(Protocol):
     a question is scored after when another question comes first, and
     ``marginal`` the context it is scored after on its own; the scored text
     is ``str(question)`` in both. ``concept_stop_tokens`` are where a
-    generated name ends.
+    generated name ends, and ``clean_concept`` reads the name out of the
+    completion.
     """
 
     concept_stop_tokens: tuple[str, ...]
+
+    def clean_concept(self, completion: str) -> str: ...
 
     def concept(self, question, verbal: bool = False) -> Prompt: ...
 
@@ -135,6 +151,7 @@ class StockPrompts:
     """
 
     concept_stop_tokens = CONCEPT_STOP_TOKENS
+    clean_concept = staticmethod(clean_concept)
 
     def __init__(self, remark: str | None = None):
         self.remark = remark
@@ -182,7 +199,11 @@ class ChatPrompts:
     ``end_of_turn`` is the token that ends the model's turn (Gemma 4's
     ``<turn|>``, Phi-4-mini's ``<|end|>``), for a model whose generation does
     not already stop there: a name ends there as well as at a period or comma.
+    A name is read with the markup such a model puts around it taken out
+    (``clean_chat_concept``: bold, quotation marks).
     """
+
+    clean_concept = staticmethod(clean_chat_concept)
 
     def __init__(self, render=None, *, concept_request: str, first_request: str, second_request: str,
                  remark: str | None = None, end_of_turn: str | None = None):

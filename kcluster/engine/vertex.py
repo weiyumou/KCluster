@@ -34,7 +34,6 @@ from kcluster.core.prompts import (
     CONCEPT_NUM_BEAMS,
     STOCK,
     PromptStyle,
-    clean_concept,
 )
 from kcluster.core.question import Question
 from kcluster.tasks.congruity import PairQuestion
@@ -187,9 +186,11 @@ def prepare_inputs(questions: list[Question], job_id: str, config: VertexConfig,
     return instances, parameters
 
 
-def collect_predictions(job_id: str, num_questions: int, config: VertexConfig, shape: tuple[int, int] | None = None):
+def collect_predictions(job_id: str, num_questions: int, config: VertexConfig, shape: tuple[int, int] | None = None,
+                        prompts: PromptStyle = STOCK):
     """Collect a finished job's concepts (one per question) and scores (the grid of ``shape``, rows by columns;
-    the square congruity grid of the questions unless given) into GCS, and return them."""
+    the square congruity grid of the questions unless given) into GCS, and return them. The concepts are read out
+    of the completions by the style the job's prompts were written in (``prompts.clean_concept``)."""
     nrows, ncols = shape or (num_questions, num_questions)
     results = {"concept": [None] * num_questions,
                "pmi": np.full((nrows * ncols + ncols,), np.inf, dtype=float)}
@@ -210,7 +211,7 @@ def collect_predictions(job_id: str, num_questions: int, config: VertexConfig, s
     bucket = storage_client.bucket(config.bucket)
 
     # Save the concepts to a jsonl file in GCS
-    results["concept"] = [clean_concept(c) for c in results["concept"]]
+    results["concept"] = [prompts.clean_concept(c) for c in results["concept"]]
     concept_blob = bucket.blob(f"{config.output_prefix}/{job_id}/concepts.jsonl")
     with concept_blob.open("w") as f:
         f.write("\n".join(json.dumps({"concept": c}) for c in results["concept"]))

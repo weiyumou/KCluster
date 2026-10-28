@@ -144,6 +144,9 @@ def test_a_prompt_style_writes_the_prompts_and_the_embedding_context(mcq):
     assert kwargs["stop_tokens"] == [".", ",", "</assistant>"]  # a name also ends where the model ends its turn
     assert prompts[0][0] == {"role": "user", "content": f"{mcq.header(1)}\n{mcq}\n\nWhat does it test?"}
     assert prompts[0][1]["content"].startswith("The above exercise is a multiple-choice question that tests")
+    # The style reads the name too: a chat model's bold is not part of it
+    assert extract_concepts(StubLLM(" **flexibility**."), [mcq], batch_size=1, prompts=style) == ["flexibility"]
+    assert extract_concepts(StubLLM(" **flexibility**."), [mcq], batch_size=1) == ["**flexibility**"]
     extract_question_embeds(llm, [mcq], batch_size=1, prompts=style)
     _, contexts = llm.encode_calls[0]
     assert contexts == [[{"role": "user", "content": "Write an exercise."}]]
@@ -156,6 +159,7 @@ def test_names_are_completed_for_any_prompts():
     assert complete_names(llm, prompts, batch_size=1, stop_tokens=[".", "\n"], num_beams=2) == ["the chain rule"] * 2
     assert [p for p, _ in llm.complete_calls] == [[prompts[0]], [prompts[1]]]
     assert all(kw == {"stop_tokens": [".", "\n"], "num_beams": 2} for _, kw in llm.complete_calls)
+    assert complete_names(llm, prompts, batch_size=2, clean=str.upper) == [" THE CHAIN RULE, APPLIED"] * 2
 
     with pytest.raises(ValueError, match="no name for prompt 0"):
         complete_names(StubLLM(" 42."), ["a", "b"], batch_size=2, num_names=1, ids=["prompt 0", "prompt 1"])

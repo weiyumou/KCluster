@@ -19,7 +19,7 @@ prompt: ``complete_names`` names what a batch of prompts asks about, and
 engine does (``kcluster.engine``): strings, or conversations as messages.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from itertools import batched
 
 import torch
@@ -33,10 +33,12 @@ from kcluster.engine.local import LargeLangModel, Prompt
 @torch.inference_mode()
 def complete_names(llm: LargeLangModel, prompts: Sequence[Prompt], batch_size: int,
                    stop_tokens: Sequence[str] = CONCEPT_STOP_TOKENS, num_names: int | None = None,
-                   ids: Sequence | None = None, desc: str = "Naming", **kwargs) -> list:
+                   ids: Sequence | None = None, desc: str = "Naming", clean: Callable[[str], str] = clean_concept,
+                   **kwargs) -> list:
     """The name each prompt asks the model to complete, or with ``num_names`` that many names per prompt.
 
-    A name is the completion up to its first stop token or line break, cleaned (``clean_concept``). ``kwargs``
+    A name is what ``clean`` reads out of a completion: the published reading (``clean_concept``) takes the text
+    up to its first stop token or line break; a prompt style has its own (``PromptStyle.clean_concept``). ``kwargs``
     reach the model's ``generate``. With ``num_names`` the model returns that many completions per prompt
     (``num_return_sequences``; beam search needs at least as many beams, sampling ``do_sample=True``), and the
     result is a list of names per prompt, the completions that name nothing (no letter) left out; a prompt left
@@ -53,7 +55,7 @@ def complete_names(llm: LargeLangModel, prompts: Sequence[Prompt], batch_size: i
         if len(completions) != len(batch) * (num_names or 1):
             raise ValueError(f"the model gave {len(completions)} completions for {len(batch)} prompts, "
                              f"not {num_names or 1} per prompt")
-        names = [clean_concept(c) for c in completions]
+        names = [clean(c) for c in completions]
         if not num_names:
             all_names.extend(names)
             continue
@@ -71,7 +73,8 @@ def extract_concepts(llm: LargeLangModel, questions: list[Question], batch_size:
     """The key concept of each question, or with ``num_names`` that many names of each (``complete_names``)."""
     return complete_names(llm, [prompts.concept(q, verbal=verbal) for q in questions], batch_size,
                           stop_tokens=prompts.concept_stop_tokens, num_names=num_names,
-                          ids=[f"question {q.get('id')}" for q in questions], desc="Extracting concepts", **kwargs)
+                          ids=[f"question {q.get('id')}" for q in questions], desc="Extracting concepts",
+                          clean=prompts.clean_concept, **kwargs)
 
 
 @torch.inference_mode()

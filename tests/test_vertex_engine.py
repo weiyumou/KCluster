@@ -165,6 +165,11 @@ def test_collect_predictions(gcs):
     results = collect_predictions("job1", 2, CONFIG)
 
     assert results["concept"] == ["algebra", "geometry"]  # stripped of whitespace and trailing punctuation
+
+    from kcluster.core.prompts import ChatPrompts
+    _fill_predictions(store, "job1-chat", 2, [" **algebra**. ", '"geometry",'])
+    chat = ChatPrompts(concept_request="?", first_request="", second_request="")
+    assert collect_predictions("job1-chat", 2, CONFIG, prompts=chat)["concept"] == ["algebra", "geometry"]
     assert results["pmi"].shape == (3, 2)  # [marginals; conditionals] stack
     assert results["pmi"][0].tolist() == [-1.0, -2.0]
 

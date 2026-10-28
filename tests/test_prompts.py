@@ -155,6 +155,17 @@ def test_a_render_function_writes_the_chat_prompts_as_text():
     assert style.marginal(q2) == "<user>Write an exercise.</user><assistant>"
 
 
+def test_a_chat_style_reads_a_name_without_the_models_markup():
+    """Seen on Gemma 4 -it (2026-10-28): bold, left open where the period stopped the completion first, and quotes."""
+    assert prompts.STOCK.clean_concept(" **flexibility**.") == "**flexibility**"  # the published reading, as it was
+    chat = prompts.ChatPrompts(concept_request="?", first_request="", second_request="")
+    assert chat.clean_concept(" **Instructional Alignment**.") == "Instructional Alignment"
+    assert chat.clean_concept(" **visual attention in graphic design.**") == "visual attention in graphic design"
+    assert chat.clean_concept(' "Expert Blind Spot" in Contextual Inquiry.') == "Expert Blind Spot in Contextual Inquiry"
+    assert chat.clean_concept(" `x_1` and \u201cy\u201d, then") == "x_1 and y"
+    assert chat.clean_concept("  the chain rule,  applied\n") == "the chain rule"
+
+
 def test_a_chat_style_also_ends_a_name_at_the_end_of_the_turn():
     assert prompts.STOCK.concept_stop_tokens == prompts.CONCEPT_STOP_TOKENS
     plain = prompts.ChatPrompts(concept_request="?", first_request="", second_request="")

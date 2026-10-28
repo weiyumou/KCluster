@@ -72,7 +72,9 @@ text for a base model to complete, and are what the commands run. Code that
 calls the tasks can pass a prompt style instead
 ([`kcluster.core.prompts`](kcluster/core/prompts.py)): `StockPrompts` with
 another remark for a concept name to complete, or `ChatPrompts`, which puts
-the same requests in a conversation for an instruction-tuned model. The
+the same requests in a conversation for an instruction-tuned model. A style
+also reads the name out of the completion: the chat style takes out the
+bold and quotation marks such a model puts around a name. The
 engine takes a prompt either way: a string, read as it is, or a conversation
 as `{"role", "content"}` messages, which it writes in the model's own chat
 template with the model's turn opened (a last assistant message is the
