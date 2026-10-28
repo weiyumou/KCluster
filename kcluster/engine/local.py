@@ -115,6 +115,16 @@ def token_count(tokenizer, context: Prompt, text: str = "", add_bos: bool | None
     return len(ids)
 
 
+def context_length(model) -> int | None:
+    """Tokens the model reads at most, as its config names them; None when the config names no limit."""
+    config = getattr(model, "config", model)
+    for name in ("max_position_embeddings", "n_positions"):
+        limit = getattr(config, name, None)
+        if limit is not None:
+            return int(limit)
+    return None
+
+
 def _token_loss(model, inputs, labels, ignore_idx: int = -100):
     """Per-token cross-entropy of each label given the tokens before it, 0 where ignored."""
     logits = model(**inputs).logits.transpose(-1, -2)  # (N, V, S)

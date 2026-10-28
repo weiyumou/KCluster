@@ -92,7 +92,9 @@ share: `m` texts in the columns after each of `n` contexts in the rows, plus
 each text after its marginal context. A grid of other texts, such as concept
 names after each question, is built from two functions of the cell, or by a
 subclass that writes its own contexts; the rectangular PMI is the raw
-estimator.
+estimator. `kcluster pmi` counts the grid's longest pair before scoring and
+stops if it is over the model's context length, since the engine neither
+truncates nor warns.
 
 **No GPU?** The scoring steps run as Vertex AI batch jobs in your own GCP
 project: deploy the model once ([`deploy/vertex/`](deploy/vertex/README.md)),
