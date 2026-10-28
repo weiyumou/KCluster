@@ -59,6 +59,15 @@ def test_methods_mirror_the_engine_surface(server):
     assert llm.tokenizer(["one", "two three"])["input_ids"] == [[3], [3, 5]]
 
 
+def test_conversations_go_over_the_wire_as_they_are(server):
+    url, stub = server
+    llm = HttpLangModel(url, tensors="list")
+    messages = [{"role": "user", "content": "Write an exercise."}]
+    assert llm.log_prob(["abcd"], contexts=[messages]) == [-4.0]
+    assert stub.calls[-1] == ("log_prob", {"contexts": [messages], "return_ppl": False})
+    assert llm.complete_prompts([messages, "p"]) == ["[{'role': 'user', 'content': 'Write an exercise.'}] done", "p done"]
+
+
 def test_tokenizer_shim_refuses_what_it_cannot_do(server):
     url, _ = server
     with pytest.raises(NotImplementedError, match="return_tensors"):
@@ -92,6 +101,7 @@ def test_tasks_run_unmodified_over_http(server):
                                                                     {"label": "b", "text": "y"}]},
                     "answerKey": "a"}) for i in range(3)]
     concepts = extract_concepts(llm, qs, batch_size=2)
-    assert len(concepts) == 3 and all(c.endswith("done") for c in concepts)
+    # The stub echoes the prompt, which the cleaner reads up to its first line break
+    assert concepts == ["Exercise 1:"] * 3
     embeds = extract_question_embeds(llm, qs, batch_size=2)
     assert isinstance(embeds, torch.Tensor) and embeds.shape == (3, 2)

@@ -1,7 +1,10 @@
+import argparse
+from functools import partial
+
 import torch
 from transformers.utils import logging
 
-from kcluster.engine.local import LargeLangModel, LogProbScorer, score_pairs
+from kcluster.engine.local import LargeLangModel, LogProbScorer, context_length, score_pairs, token_count
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import dataset_name, default_result_dir, pmi_raw_dir, prepare_output_dir, save_args
 from kcluster.tasks.congruity import PairQuestion
@@ -23,12 +26,26 @@ def main(args):
     # Load model
     model = LogProbScorer(args.llm_path, trust_remote_code=True, dtype=torch.float16)
 
-    # Compute PMI
-    questions = load_questions(args.data_path)
-    score_pairs(model, tokenizer, PairQuestion(questions), shard_dir, batch_size=args.batch_size,
-                num_workers=args.num_workers, pad_to_multiple_of=args.pad_to_multiple_of, strategy="ddp")
+    # Compute PMI, once every pair is known to fit the model's context
+    grid = PairQuestion(load_questions(args.data_path))
+    longest = check_context(grid, tokenizer, context_length(model.model), add_bos=args.add_bos)
+    print(f"*** Longest input: {longest} tokens ***")
+    first = score_pairs(model, tokenizer, grid, shard_dir, batch_size=args.batch_size,
+                        num_workers=args.num_workers, pad_to_multiple_of=args.pad_to_multiple_of,
+                        add_bos=args.add_bos, strategy="ddp")
+    if first:
+        save_args(result_dir, "pmi", dataset_name(args.data_path), vars(args))
 
-    save_args(result_dir, "pmi", dataset_name(args.data_path), vars(args))
+
+def check_context(grid, tokenizer, limit: int | None, add_bos: bool | None = None) -> int:
+    """The grid's longest input in tokens, which must fit the model's context length (``limit``; None when the
+    model names none). The engine neither truncates nor warns, so a pair over the limit would score as the model
+    reads it past its positions, which is not a score of the question."""
+    longest = grid.longest_input(partial(token_count, tokenizer, add_bos=add_bos))
+    if limit is not None and longest > limit:
+        raise SystemExit(f"the longest pair of questions is {longest} tokens, over the model's context length of "
+                         f"{limit}: leave out the longest questions, or score with a model that reads more")
+    return longest
 
 
 def add_arguments(parser):
@@ -41,3 +58,6 @@ def add_arguments(parser):
                         help="Result folder shared by every step of this run (env: KCLUSTER_RUN_DIR)")
     parser.add_argument("--num_workers", type=int, default=0, help="Number of workers for DataLoader")
     parser.add_argument("--pad_to_multiple_of", type=int, default=None, help="Pad to multiple of")
+    parser.add_argument("--add_bos", action=argparse.BooleanOptionalAction, default=None,
+                        help="Put the model's BOS token before every context that lacks one (default: the "
+                             "tokenizer's own rule; a tokenizer that adds none, such as Gemma 4's instruction-tuned one, wants it)")

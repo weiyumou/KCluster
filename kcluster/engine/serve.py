@@ -9,10 +9,15 @@ route of the same name — ``/complete_prompts``, ``/log_prob``,
 prompt experiment never needs a server change. Every response carries the
 served ``model_id`` so logged results are self-describing.
 
+A prompt, or a context, is a string or a conversation as a list of
+``{"role", "content"}`` messages, which the server writes in the served
+model's chat template (``kcluster.engine.local``): a client needs no
+tokenizer to address a chat model.
+
 The app is model-agnostic: anything ``LargeLangModel`` loads can be served,
-and ``check_tokenizer`` refuses at startup a tokenizer that cannot mark the
-context/text split the scoring methods rely on. One GPU, one model, one
-request at a time (a lock serializes inference; ``/health`` stays live).
+and ``check_tokenizer`` refuses at startup a tokenizer the engine cannot
+split a context from a text with. One GPU, one model, one request at a time
+(a lock serializes inference; ``/health`` stays live).
 
 Requires fastapi + uvicorn (the ``serve`` extra); the model itself needs the
 ``local`` extra. ``kcluster.engine.http.HttpLangModel`` is the matching client.
@@ -28,19 +33,21 @@ from pydantic import BaseModel, ConfigDict
 
 
 def check_tokenizer(tokenizer) -> None:
-    """Raise unless paired encoding yields token_type_ids that separate the two texts.
+    """Raise unless the engine can split a text from its context with this tokenizer.
 
-    ``log_prob`` and ``encode`` tokenize ``(context, text)`` pairs and use
-    ``token_type_ids`` to score or pool only the text. A tokenizer that
-    returns all zeros there would silently treat the whole sequence as text,
-    so a swapped-in model must pass this before it is served.
+    ``log_prob`` and ``encode`` score or pool the text's tokens alone, found
+    by character offsets (``pair_inputs``); a tokenizer that reports none, or
+    whose offsets do not place the text after the context, must not be served.
     """
-    encoded = tokenizer(text=["alpha"], text_pair=["beta"], return_token_type_ids=True)
-    type_ids = encoded.get("token_type_ids")
-    if not type_ids or set(type_ids[0]) != {0, 1}:
-        raise RuntimeError(
-            f"{type(tokenizer).__name__} does not mark context/text pairs with token_type_ids "
-            f"(got {type_ids}); log_prob and encode cannot separate the context from the text with it")
+    from kcluster.engine.local import pair_inputs
+
+    try:
+        inputs, is_text = pair_inputs(tokenizer, ["alpha"], [" beta"])
+    except Exception as e:
+        raise RuntimeError(f"{type(tokenizer).__name__} cannot split a text from its context: {e}") from e
+    if not (is_text.any() and (inputs["attention_mask"].bool() & ~is_text).any()):
+        raise RuntimeError(f"{type(tokenizer).__name__} does not place the text after the context "
+                           f"(text mask {is_text.tolist()}); log_prob and encode cannot score the text alone")
 
 
 def to_jsonable(value: Any) -> Any:
@@ -52,6 +59,10 @@ def to_jsonable(value: Any) -> Any:
     return value
 
 
+#: A string the model reads as it is, or a conversation as messages (``kcluster.engine.local``).
+Prompt = str | list[dict[str, Any]]
+
+
 class _Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -59,7 +70,7 @@ class _Body(BaseModel):
 class CompleteRequest(BaseModel):
     """Unknown fields are forwarded to ``generate`` (e.g. ``num_beams``)."""
     model_config = ConfigDict(extra="allow")
-    prompts: list[str]
+    prompts: list[Prompt]
     stop_tokens: list[str] | None = None
     max_new_tokens: int = 200
     pad_to_multiple_of: int | None = None
@@ -67,28 +78,28 @@ class CompleteRequest(BaseModel):
 
 class LogProbRequest(_Body):
     texts: list[str]
-    contexts: list[str] | None = None
+    contexts: list[Prompt] | None = None
     ignore_idx: int = -100
     pad_to_multiple_of: int | None = None
     return_ppl: bool = False
 
 
 class NextTokensRequest(_Body):
-    prompts: list[str]
+    prompts: list[Prompt]
     choices: list[str] | None = None
     top_k: int = 1
     pad_to_multiple_of: int | None = None
 
 
 class NextLogitsRequest(_Body):
-    prompts: list[str]
+    prompts: list[Prompt]
     normalize: bool = False
     pad_to_multiple_of: int | None = None
 
 
 class EncodeRequest(_Body):
     texts: list[str]
-    contexts: list[str] | None = None
+    contexts: list[Prompt] | None = None
     pad_to_multiple_of: int | None = None
 
 

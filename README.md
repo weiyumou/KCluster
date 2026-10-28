@@ -30,7 +30,7 @@ pip install -e ".[local]"
 |------------|---------|
 | `local`    | running the pipeline on a local GPU (Phi-2 via transformers + Lightning) |
 | `vertex`   | running the scoring steps as Vertex AI batch jobs in your own GCP project — no local GPU needed |
-| `gemini`   | the Gemini engine: async batched calls with every raw response kept, and multiple-choice answers parsed from text or token log-probabilities (used by dataset drivers and by genval) |
+| `gemini`   | the Gemini engine: async batched calls with every raw response kept, and multiple-choice answers parsed from text or token log-probabilities (used by dataset drivers and by genval); it takes the same prompts as the local engine, strings or conversations |
 | `serve`    | `kcluster serve`: the local engine behind an HTTP API, for interactive experiments over an SSH tunnel (see `deploy/vm/`) |
 
 For development: `uv sync --all-extras`, and once per clone
@@ -66,6 +66,38 @@ question and concept embeddings. `build-datashop-kc` fills a
 [DataShop](https://pslcdatashop.web.cmu.edu/) KC-model export with a run's
 KC models, ready to import for AFM evaluation there, and
 `refine-datashop-kc` splits the KCs that fit poorly.
+
+**Another model, another prompt style.** The published prompts are plain
+text for a base model to complete, and are what the commands run. Code that
+calls the tasks can pass a prompt style instead
+([`kcluster.core.prompts`](kcluster/core/prompts.py)): `StockPrompts` with
+another remark for a concept name to complete, or `ChatPrompts`, which puts
+the same requests in a conversation for an instruction-tuned model. A style
+also reads the name out of the completion: the chat style takes out the
+bold and quotation marks such a model puts around a name. The
+engine takes a prompt either way: a string, read as it is, or a conversation
+as `{"role", "content"}` messages, which it writes in the model's own chat
+template with the model's turn opened (a last assistant message is the
+prefill the model continues). A served model renders messages with its own
+template, so a client needs no tokenizer. `extract_concepts`, `PairQuestion`
+and the Vertex job preparation all take `prompts=`; the steps under them,
+`complete_names` and `embed_texts`, take any prompts at all. A context and
+the text scored after it are tokenized together, as the model reads them,
+and the text's tokens found by their character offsets; the commands'
+`--add_bos` puts the model's BOS token before every string prompt when the
+tokenizer adds none (Gemma 4's instruction-tuned tokenizer; its base one adds
+its own).
+
+**Any scoring grid.** The congruity grid is one case of `ScoringGrid`
+([`kcluster.core.grid`](kcluster/core/grid.py)), the layout of (context,
+text) pairs the scorer, the Vertex jobs and `PointwiseMutualInfo.from_shards`
+share: `m` texts in the columns after each of `n` contexts in the rows, plus
+each text after its marginal context. A grid of other texts, such as concept
+names after each question, is built from two functions of the cell, or by a
+subclass that writes its own contexts; the rectangular PMI is the raw
+estimator. `kcluster pmi` counts the grid's longest pair before scoring and
+stops if it is over the model's context length, since the engine neither
+truncates nor warns.
 
 **No GPU?** The scoring steps run as Vertex AI batch jobs in your own GCP
 project: deploy the model once ([`deploy/vertex/`](deploy/vertex/README.md)),

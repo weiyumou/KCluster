@@ -77,38 +77,36 @@ def test_to_jsonable_handles_tensors_and_tuples():
     assert to_jsonable("text") == "text"
 
 
-class PairAwareTokenizer:
-    def __call__(self, text, text_pair=None, return_token_type_ids=False):
-        return {"token_type_ids": [[0, 0, 1, 1]]}
+def test_check_tokenizer_accepts_a_tokenizer_the_engine_can_split_with(make_tokenizer):
+    pytest.importorskip("torch")
+    check_tokenizer(make_tokenizer(["alpha", "beta"]))
+    check_tokenizer(make_tokenizer(["alpha", "beta"], bos="<s>"))
 
 
-class PairBlindTokenizer:
-    def __call__(self, text, text_pair=None, return_token_type_ids=False):
-        return {"token_type_ids": [[0, 0, 0, 0]]}
+def test_check_tokenizer_rejects_a_tokenizer_without_offsets():
+    pytest.importorskip("torch")
+
+    class SlowTokenizer:
+        bos_token = None
+
+        def __call__(self, text, **kwargs):
+            if kwargs.get("return_offsets_mapping"):
+                raise NotImplementedError("return_offset_mapping is not available when using Python tokenizers")
+            return {"input_ids": [1, 2]}
+
+    with pytest.raises(RuntimeError, match="cannot split a text from its context"):
+        check_tokenizer(SlowTokenizer())
 
 
-class NoTypeIdsTokenizer:
-    def __call__(self, text, text_pair=None, return_token_type_ids=False):
-        return {"input_ids": [[1, 2, 3, 4]]}
-
-
-def test_check_tokenizer_accepts_pair_marking_tokenizers():
-    check_tokenizer(PairAwareTokenizer())
-
-
-@pytest.mark.parametrize("tokenizer", [PairBlindTokenizer(), NoTypeIdsTokenizer()])
-def test_check_tokenizer_rejects_tokenizers_that_cannot_split_pairs(tokenizer):
-    with pytest.raises(RuntimeError, match="cannot separate the context"):
-        check_tokenizer(tokenizer)
-
-
-def test_phi2_style_tokenizer_passes_the_guard():
-    """The real check, when transformers is installed: any fast tokenizer marks pairs."""
-    transformers = pytest.importorskip("transformers")
-    from tokenizers import Tokenizer, models, pre_tokenizers
-    from transformers import PreTrainedTokenizerFast
-
-    raw = Tokenizer(models.WordLevel({"alpha": 0, "beta": 1, "[UNK]": 2}, unk_token="[UNK]"))
-    raw.pre_tokenizer = pre_tokenizers.Whitespace()
-    check_tokenizer(PreTrainedTokenizerFast(tokenizer_object=raw))
-    del transformers
+def test_every_route_takes_a_conversation_as_a_prompt(client, stub):
+    """A client addresses a chat model with messages; the server renders them with its own template."""
+    messages = [{"role": "user", "content": "Write an exercise."}]
+    rsp = client.post("/complete_prompts", json={"prompts": [messages, "plain"]})
+    assert rsp.status_code == 200
+    rsp = client.post("/log_prob", json={"texts": ["abc"], "contexts": [messages]})
+    assert rsp.status_code == 200
+    assert stub.calls[-1] == ("log_prob", {"contexts": [messages], "return_ppl": False})
+    rsp = client.post("/encode", json={"texts": ["abc"], "contexts": [messages]})
+    assert rsp.status_code == 200
+    rsp = client.post("/next_tokens", json={"prompts": [messages], "choices": ["a"]})
+    assert rsp.status_code == 200

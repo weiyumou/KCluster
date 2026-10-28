@@ -135,8 +135,9 @@ def test_attach_keeps_matched_questions_and_lists_every_raw_step(tmp_path):
                                  raw_key=lambda r: r.split(" ")[0], step_key=lambda s: s)
 
     [q] = kept
+    # The two steps come in the order their pages were globbed, which is the filesystem's, not a fixed one
     assert sorted(q["step-name"]) == ["mcq-dup_p3", "mcq-one_p1"]
-    assert q["ds-step-name"] == ["mcq-one_p1 Row1", "mcq-one_p1 Row2", "mcq-dup_p3 Row1"]
+    assert sorted(q["ds-step-name"]) == ["mcq-dup_p3 Row1", "mcq-one_p1 Row1", "mcq-one_p1 Row2"]
 
 
 def test_attach_narrows_a_folded_question_to_the_steps_the_dataset_has(tmp_path):

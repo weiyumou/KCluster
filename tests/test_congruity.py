@@ -78,3 +78,60 @@ def test_grid_is_row_major_with_row_as_conditioning(questions):
             assert context.startswith(f"{questions[i].header(1)}\n{questions[i]}")
             # ... and the scored text is question j.
             assert text == str(questions[j])
+
+
+def test_a_prompt_style_writes_the_contexts(questions):
+    from kcluster.core.prompts import ChatPrompts
+
+    style = ChatPrompts(concept_request="?", first_request="Write an exercise.", second_request="Write another one.")
+    ds, n = PairQuestion(questions, style), len(questions)
+    # A chat style's contexts are conversations, which the engine writes in the model's template
+    assert ds[1] == ([{"role": "user", "content": "Write an exercise."}], str(questions[1]))
+    assert ds[n + 0 * n + 1] == (
+        [{"role": "user", "content": "Write an exercise."}, {"role": "assistant", "content": str(questions[0])},
+         {"role": "user", "content": "Write another one."}],
+        str(questions[1]),
+    )
+
+    def render(messages):
+        return " | ".join(f"{m['role']}: {m['content']}" for m in messages) + " | assistant:"
+
+    rendered = PairQuestion(questions, ChatPrompts(render, concept_request="?", first_request="Write an exercise.",
+                                                   second_request="Write another one."))
+    assert rendered[1] == ("user: Write an exercise. | assistant:", str(questions[1]))
+
+
+def test_a_grid_of_other_texts_shares_the_layout(questions):
+    from kcluster.core.grid import ScoringGrid
+
+    class NameGrid(ScoringGrid):
+        """Concept names after each question, and after no question: n rows, m columns."""
+
+        def __init__(self, questions, names):
+            super().__init__([f" {name}." for name in names], len(questions))
+            self.questions = questions
+
+        def marginal(self, col):
+            return "Remark:\nThe above exercise tests"
+
+        def context(self, row, col):
+            return f"{self.questions[row]}\n\nRemark:\nThe above exercise tests"
+
+    grid = NameGrid(questions, ["flexibility", "addition"])
+    assert len(grid) == (3 + 1) * 2
+    assert grid[1] == ("Remark:\nThe above exercise tests", " addition.")
+    assert grid[2 + 2 * 2 + 0] == (f"{questions[2]}\n\nRemark:\nThe above exercise tests", " flexibility.")
+
+    # PairQuestion is the square case, and its parts read the same way
+    ds = PairQuestion(questions)
+    assert (ds.n_rows, ds.texts) == (3, [str(q) for q in questions])
+    assert ds[3 + 1 * 3 + 2] == (ds.context(1, 2), ds.texts[2])
+
+
+def test_longest_input_takes_the_longest_row_with_the_longest_text(questions):
+    def count(context, text):
+        return len((context + " " + text).split())
+
+    ds = PairQuestion(questions)
+    longest = max(count(*ds[i]) for i in range(len(ds)))
+    assert ds.longest_input(count) == longest

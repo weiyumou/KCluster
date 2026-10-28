@@ -150,6 +150,39 @@ def gcs(monkeypatch):
     return FakeStorageClient()
 
 
+# --- a tiny fast tokenizer: one token per whitespace-separated word, offsets and all ---
+
+@pytest.fixture
+def make_tokenizer():
+    """Factory for a word-level fast tokenizer over the given words (``[UNK]`` for any other), as the engine needs
+    one: character offsets, left padding, a pad token. ``bos`` adds that token before every text, as Llama's
+    does; ``chat_template`` is a Jinja template for ``apply_chat_template``."""
+    def make(words, bos: str | None = None, chat_template: str | None = None):
+        from tokenizers import Tokenizer, models, pre_tokenizers, processors
+        from transformers import PreTrainedTokenizerFast
+
+        vocab = {w: i for i, w in enumerate(["[PAD]", "[UNK]", *([bos] if bos else []), *words])}
+        raw = Tokenizer(models.WordLevel(vocab, unk_token="[UNK]"))
+        raw.pre_tokenizer = pre_tokenizers.WhitespaceSplit()
+        if bos:
+            raw.post_processor = processors.TemplateProcessing(single=f"{bos} $A", pair=f"{bos} $A $B:1",
+                                                               special_tokens=[(bos, vocab[bos])])
+        tokenizer = PreTrainedTokenizerFast(tokenizer_object=raw, pad_token="[PAD]", unk_token="[UNK]",
+                                            bos_token=bos, padding_side="left")
+        if chat_template:
+            tokenizer.chat_template = chat_template
+        return tokenizer
+
+    return make
+
+
+@pytest.fixture
+def chat_template() -> str:
+    """A stand-in chat template: ``<role>content</role>`` per turn, the model's turn opened at the end."""
+    return ("{% for m in messages %}<{{ m['role'] }}>{{ m['content'] }}</{{ m['role'] }}>{% endfor %}"
+            "{% if add_generation_prompt %}<assistant>{% endif %}")
+
+
 # --- a stand-in for the local engine, for the server and its client ---
 
 class StubTokenizer:
@@ -169,7 +202,7 @@ class StubLLM:
 
     def complete_prompts(self, prompts, stop_tokens=None, max_new_tokens=200, pad_to_multiple_of=None, **kwargs):
         self.calls.append(("complete_prompts", kwargs))
-        return [p + " done" for p in prompts]
+        return [f"{p} done" for p in prompts]  # a prompt may be a conversation
 
     def log_prob(self, texts, contexts=None, ignore_idx=-100, pad_to_multiple_of=None, return_ppl=False):
         self.calls.append(("log_prob", {"contexts": contexts, "return_ppl": return_ppl}))

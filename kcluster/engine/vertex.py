@@ -28,12 +28,12 @@ import numpy as np
 from google.cloud import aiplatform, storage
 from google.cloud.aiplatform_v1 import JobState
 
+from kcluster.core.grid import ScoringGrid
 from kcluster.core.prompts import (
     CONCEPT_LENGTH_PENALTY,
     CONCEPT_NUM_BEAMS,
-    CONCEPT_STOP_TOKENS,
-    clean_concept,
-    concept_prompt,
+    STOCK,
+    PromptStyle,
 )
 from kcluster.core.question import Question
 from kcluster.tasks.congruity import PairQuestion
@@ -102,13 +102,14 @@ def init(config: VertexConfig) -> None:
     aiplatform.init(project=config.project, location=config.location)
 
 
-def prepare_concept_jobs(questions: list[Question], verbal: bool = False, configs: dict | None = None) -> dict:
+def prepare_concept_jobs(questions: list[Question], verbal: bool = False, configs: dict | None = None,
+                         prompts: PromptStyle = STOCK) -> dict:
     PURPOSE = "complete_prompts"
 
     # Prepare concept-specific parameters, which can be overridden by configs
     configs = configs or dict()
     parameters = {
-        PURPOSE: {"stop_tokens": list(CONCEPT_STOP_TOKENS), "do_sample": False, "pad_to_multiple_of": 8,
+        PURPOSE: {"stop_tokens": list(prompts.concept_stop_tokens), "do_sample": False, "pad_to_multiple_of": 8,
                   "max_new_tokens": 20, "num_beams": CONCEPT_NUM_BEAMS, "length_penalty": CONCEPT_LENGTH_PENALTY,
                   **configs}
     }
@@ -118,15 +119,19 @@ def prepare_concept_jobs(questions: list[Question], verbal: bool = False, config
     instances = []
     for idx, q in enumerate(questions):
         instances.append(
-            {"id": f"concept-{idx}", "text": concept_prompt(q, verbal=verbal),
+            {"id": f"concept-{idx}", "text": prompts.concept(q, verbal=verbal),
              "purpose": PURPOSE, "config": parameters[PURPOSE]}
         )
 
     return {"instances": instances, "parameters": parameters}
 
 
-def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None) -> dict:
-    # Prepare PMI-specific parameters, which can be overridden by configs
+def prepare_scoring_jobs(grid: ScoringGrid, configs: dict | None = None) -> dict:
+    """Every (context, text) pair of a scoring grid as a ``log_prob`` instance, in the grid's flat order.
+
+    The instance ids carry the flat index, so ``collect_predictions`` puts each score back in its cell, for a
+    grid of any shape (``collect_predictions(..., shape=grid.shape)``).
+    """
     PURPOSE = "log_prob"
 
     configs = configs or dict()
@@ -134,12 +139,9 @@ def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None) -> 
         PURPOSE: {"pad_to_multiple_of": 8, **configs}
     }
 
-    # Prepare the content of each instance, sharing the local engine's
-    # scoring grid (marginals under the "Exercise 2:" header)
-    ds = PairQuestion(questions)
     instances = []
-    for idx in range(len(ds)):
-        context, text = ds[idx]
+    for idx in range(len(grid)):
+        context, text = grid[idx]
         instances.append(
             {"id": f"pmi-{idx}", "text": text, "context": context, "purpose": PURPOSE, "config": parameters[PURPOSE]}
         )
@@ -147,17 +149,23 @@ def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None) -> 
     return {"instances": instances, "parameters": parameters}
 
 
+def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None, prompts: PromptStyle = STOCK) -> dict:
+    """The congruity grid's instances: the local engine's ``PairQuestion`` (marginals under the ``Exercise 2:``
+    header) as scoring jobs."""
+    return prepare_scoring_jobs(PairQuestion(questions, prompts), configs)
+
+
 def prepare_inputs(questions: list[Question], job_id: str, config: VertexConfig,
                    verbal_concepts: bool = False, concept_configs: dict | None = None,
-                   pmi_configs: dict | None = None) -> tuple[list[dict], dict]:
+                   pmi_configs: dict | None = None, prompts: PromptStyle = STOCK) -> tuple[list[dict], dict]:
     instances, parameters = [], {}
     # Prepare instances for concept extraction
-    concept_jobs = prepare_concept_jobs(questions, verbal=verbal_concepts, configs=concept_configs)
+    concept_jobs = prepare_concept_jobs(questions, verbal=verbal_concepts, configs=concept_configs, prompts=prompts)
     instances.extend(concept_jobs["instances"])
     parameters.update(concept_jobs["parameters"])
 
     # Prepare instances for PMI computation
-    pmi_jobs = prepare_pmi_jobs(questions, configs=pmi_configs)
+    pmi_jobs = prepare_pmi_jobs(questions, configs=pmi_configs, prompts=prompts)
     instances.extend(pmi_jobs["instances"])
     parameters.update(pmi_jobs["parameters"])
 
@@ -178,8 +186,12 @@ def prepare_inputs(questions: list[Question], job_id: str, config: VertexConfig,
     return instances, parameters
 
 
-def collect_predictions(job_id: str, num_questions: int, config: VertexConfig):
-    nrows = ncols = num_questions
+def collect_predictions(job_id: str, num_questions: int, config: VertexConfig, shape: tuple[int, int] | None = None,
+                        prompts: PromptStyle = STOCK):
+    """Collect a finished job's concepts (one per question) and scores (the grid of ``shape``, rows by columns;
+    the square congruity grid of the questions unless given) into GCS, and return them. The concepts are read out
+    of the completions by the style the job's prompts were written in (``prompts.clean_concept``)."""
+    nrows, ncols = shape or (num_questions, num_questions)
     results = {"concept": [None] * num_questions,
                "pmi": np.full((nrows * ncols + ncols,), np.inf, dtype=float)}
 
@@ -199,7 +211,7 @@ def collect_predictions(job_id: str, num_questions: int, config: VertexConfig):
     bucket = storage_client.bucket(config.bucket)
 
     # Save the concepts to a jsonl file in GCS
-    results["concept"] = [clean_concept(c) for c in results["concept"]]
+    results["concept"] = [prompts.clean_concept(c) for c in results["concept"]]
     concept_blob = bucket.blob(f"{config.output_prefix}/{job_id}/concepts.jsonl")
     with concept_blob.open("w") as f:
         f.write("\n".join(json.dumps({"concept": c}) for c in results["concept"]))
