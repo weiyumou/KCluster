@@ -30,7 +30,7 @@ pip install -e ".[local]"
 |------------|---------|
 | `local`    | running the pipeline on a local GPU (Phi-2 via transformers + Lightning) |
 | `vertex`   | running the scoring steps as Vertex AI batch jobs in your own GCP project — no local GPU needed |
-| `gemini`   | the Gemini engine: async batched calls with every raw response kept, and multiple-choice answers parsed from text or token log-probabilities (used by dataset drivers and by genval) |
+| `gemini`   | the Gemini engine: async batched calls with every raw response kept, and multiple-choice answers parsed from text or token log-probabilities (used by dataset drivers and by genval); it takes the same prompts as the local engine, strings or conversations |
 | `serve`    | `kcluster serve`: the local engine behind an HTTP API, for interactive experiments over an SSH tunnel (see `deploy/vm/`) |
 
 For development: `uv sync --all-extras`, and once per clone
