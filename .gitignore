@@ -11,6 +11,8 @@ results/
 sbatch/
 datasets/**/*.ipynb
 datasets/**/jobs/
+.triton-cache/
+.jupyter/
 
 # Local GCP configuration (identifiers, not credentials — still never committed)
 vertex.toml

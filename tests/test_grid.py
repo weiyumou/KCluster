@@ -59,3 +59,24 @@ def test_longest_input_takes_the_longest_row_with_the_longest_text(grid):
         return len(context) + len(text)
 
     assert grid.longest_input(count) == max(count(*grid[i]) for i in range(len(grid)))
+
+
+def test_a_grid_shows_images_beside_its_pairs():
+    pics = {"t0": ["t0.png"], "t1": []}
+    grid = ScoringGrid(["t0", "t1"], 2, context=lambda row, col: f"c{row}{col}", marginal="m",
+                       images=lambda col: pics[f"t{col}"], context_images=lambda row, col: [f"c{row}.png"])
+    assert grid.shows_images
+    # The marginal context shows nothing unless marginal_images is given; the text's images ride with the text
+    assert grid[0] == ("m", "t0", [], ["t0.png"]) and grid[1] == ("m", "t1", [], [])
+    assert grid[2 + 1 * 2 + 0] == ("c10", "t0", ["c1.png"], ["t0.png"])
+    # Without images the items are the pairs, as before
+    plain = ScoringGrid(["t0"], 1, context=lambda row, col: "c", marginal="m")
+    assert not plain.shows_images and plain[0] == ("m", "t0") and plain[1] == ("c", "t0")
+
+    class Shown(ScoringGrid):
+        shows_images = True
+
+        def marginal_images(self, col):
+            return ["m.png"]
+
+    assert Shown(["t0"], 1, context=lambda row, col: "c", marginal="m")[0] == ("m", "t0", ["m.png"], [])

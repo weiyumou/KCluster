@@ -109,6 +109,21 @@ def test_flat_dict_flattens_question_and_joins_string_lists(mcq):
     assert flat["answerKey"] == "a"
 
 
+def test_figures_follow_the_markers_in_the_body():
+    q = Question({"type": "Short Answer",
+                  "question": {"stem": "[figure]\nThe graph of f is shown.\nf'(2) = ___",
+                               "choices": [{"label": "a", "text": "[figure]"}, {"label": "b", "text": "none"}]},
+                  "answerKey": "a", "figures": ["raw/figures/3.1.11-332-1.png", "lib/choice-a.png"]})
+    assert q.figures == ["raw/figures/3.1.11-332-1.png", "lib/choice-a.png"]
+    assert q.figure_count == 2
+    # The marker is rendered as its literal text: a text-only engine sees exactly this
+    assert str(q) == "[figure]\nThe graph of f is shown.\nf'(2) = ___\na) [figure]\nb) none\nAnswer: a"
+
+
+def test_questions_without_figures_have_none(mcq):
+    assert mcq.figures == [] and mcq.figure_count == 0
+
+
 def test_flat_dict_joins_multi_item_string_lists():
     q = Question({"question": {"stem": "s"}, "ds-step-name": ["step one", "step two"]})
     assert q.flat_dict["ds-step-name"] == "step one~step two"

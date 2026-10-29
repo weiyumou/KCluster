@@ -131,3 +131,77 @@ def test_save_json_responses(tmp_path):
     path = tmp_path / "raw.jsonl"
     save_json_responses(['{"id": "1"}', '{"id": "2"}'], str(path))
     assert path.read_text() == '{"id": "1"}\n{"id": "2"}\n'
+
+
+# --- Images: a prompt places one with the engine's token, the sources go beside it (as the local engine) ---
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8  # the magic is all the engine reads: Gemini decodes the file
+
+
+def _kinds(parts):
+    return [("text", p.text) if p.text is not None else ("image", p.inline_data.mime_type) for p in parts]
+
+
+def test_a_string_prompt_with_images_becomes_the_users_turn_in_parts(tmp_path):
+    (tmp_path / "a.png").write_bytes(PNG)
+    token = GeminiEngine.image_token
+    contents, system = as_contents(f"{token}\nWhat does the graph show? {token}", [str(tmp_path / "a.png"), PNG])
+    assert system is None
+    assert [c.role for c in contents] == ["user"]
+    assert _kinds(contents[0].parts) == [("image", "image/png"), ("text", "\nWhat does the graph show? "),
+                                         ("image", "image/png")]  # an empty piece makes no part
+    assert contents[0].parts[0].inline_data.data == PNG
+    assert as_contents("plain", []) == ("plain", None)  # no images: the string as it was
+
+
+def test_a_conversation_places_images_in_its_messages():
+    token = GeminiEngine.image_token
+    chat = [{"role": "system", "content": "Be brief."},
+            {"role": "user", "content": f"Figure: {token}\nName the concept."},
+            {"role": "assistant", "content": "The concept is"}]
+    contents, system = as_contents(chat, [gemini_data_uri()])
+    assert system == "Be brief."
+    assert [(c.role, _kinds(c.parts)) for c in contents] == [
+        ("user", [("text", "Figure: "), ("image", "image/jpeg"), ("text", "\nName the concept.")]),
+        ("model", [("text", "The concept is")])]
+
+
+def gemini_data_uri():
+    import base64
+    return "data:image/jpeg;base64," + base64.b64encode(b"\xff\xd8\xff" + b"\x00" * 8).decode()
+
+
+def test_images_must_match_the_prompts_places():
+    token = GeminiEngine.image_token
+    with pytest.raises(ValueError, match="places 1 image"):
+        as_contents(f"{token} and?", [])
+    with pytest.raises(ValueError, match="places 0 image"):
+        as_contents([{"role": "user", "content": "no place"}], [PNG])
+    with pytest.raises(ValueError, match="system message"):
+        as_contents([{"role": "system", "content": f"See {token}"}, {"role": "user", "content": "Hi"}], [PNG])
+
+
+def test_show_figures_addresses_gemini_as_it_does_a_local_model():
+    from kcluster.core.prompts import FIGURE_MARKER, show_figures
+
+    shown = show_figures(f"{FIGURE_MARKER}\nWhich graph?", GeminiEngine.image_token)
+    contents, _ = as_contents(shown, [PNG])
+    assert _kinds(contents[0].parts) == [("image", "image/png"), ("text", "\nWhich graph?")]
+
+
+def test_get_response_sends_a_prompts_images_and_refuses_them_on_raw_contents(monkeypatch):
+    engine = _engine(lambda contents: {"ok": True}, monkeypatch)
+    models = engine.client.aio.models
+    token = engine.image_token
+    assert json.loads(asyncio.run(engine.get_response(f"{token} Describe.", None, "r-0", images=[PNG]))) == \
+        {"id": "r-0", "ok": True}
+    contents, _ = models.calls[-1]
+    assert _kinds(contents[0].parts) == [("image", "image/png"), ("text", " Describe.")]
+
+    jobs = [("text only", None, "r-1"), (f"{token} Describe.", None, "r-2", [PNG])]  # three- and four-tuples
+    responses = asyncio.run(engine.gather_responses(jobs, desc="test"))
+    assert [json.loads(r)["id"] for r in responses] == ["r-1", "r-2"]
+    assert models.calls[-2][0] == "text only" and _kinds(models.calls[-1][0][0].parts)[0] == ("image", "image/png")
+
+    with pytest.raises(ValueError, match="google-genai's own contents"):
+        asyncio.run(engine.get_response(["raw", "genai contents"], None, "r-3", images=[PNG]))

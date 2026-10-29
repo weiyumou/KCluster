@@ -46,6 +46,9 @@ vertex = [
     "google-cloud-storage>=2.14",
 ]
 gemini = ["google-genai>=1.0"]
+# Images for a model that takes them (Gemma 4): decoding the files, and the
+# image processor's resizing, which transformers does through torchvision
+multimodal = ["pillow>=10", "torchvision>=0.19"]
 # `kcluster fit` only. Leapfit is released on GitHub but not on PyPI, so this is
 # a direct reference to the release's own wheel.
 # 0.4.0 is the floor because `kcluster fit` summarizes paired cross-validation

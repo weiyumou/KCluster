@@ -40,6 +40,16 @@ class Question(UserDict):
         return self.stem  # body = stem
 
     @property
+    def figures(self) -> list[str]:
+        """The files of the figures the body shows, one per marker, in marker order (relative paths)."""
+        return list(self.get("figures") or [])
+
+    @property
+    def figure_count(self) -> int:
+        """How many figure markers the body renders (stem and choices)."""
+        return self.body.count(prompts.FIGURE_MARKER)
+
+    @property
     def answer(self) -> str:
         return self.get("answerKey", "")
 

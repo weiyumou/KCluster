@@ -38,6 +38,24 @@ def test_every_response_carries_the_model_id(client):
     assert rsp.json() == {"model_id": "stub-model", "result": [-3.0]}
 
 
+def test_health_says_whether_the_model_takes_images(client):
+    body = client.get("/health").json()
+    assert body["image_token"] is None and body["tokens_per_image"] is None
+
+
+def test_images_reach_the_engine_only_when_sent(client, stub):
+    client.post("/log_prob", json={"texts": ["abc"], "contexts": ["c"]})
+    assert stub.calls[-1] == ("log_prob", {"contexts": ["c"], "return_ppl": False})
+    uri = "data:image/png;base64,AAAA"
+    client.post("/log_prob", json={"texts": ["abc", "d"], "contexts": ["c", "c"],
+                                   "images": [[uri], []], "context_images": [[], [uri]]})
+    assert stub.calls[-1] == ("log_prob", {"contexts": ["c", "c"], "return_ppl": False,
+                                           "images": [[uri], []], "context_images": [[], [uri]]})
+    # An engine whose method takes no images (the stub's encode) fails loudly rather than silently ignoring them
+    rsp = client.post("/encode", json={"texts": ["a"], "images": [["x"]]})
+    assert rsp.status_code == 500 and "images" in rsp.json()["detail"]
+
+
 def test_complete_forwards_unknown_fields_to_generate(client, stub):
     rsp = client.post("/complete_prompts", json={"prompts": ["p"], "stop_tokens": ["."],
                                                  "num_beams": 5, "length_penalty": -0.1})

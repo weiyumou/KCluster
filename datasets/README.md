@@ -3,7 +3,12 @@
 KCluster reads a dataset as files that share one stem, the dataset id `<ds>`:
 
 - **`<ds>.jsonl`**: the question bank, in the format the top-level README
-  describes. Every pipeline runs on it.
+  describes. Every pipeline runs on it. A question that shows figures
+  carries one `[figure]` marker per figure in its text and lists the files
+  in `figures`, in marker order, as paths relative to the bank's folder;
+  `validate_question` checks that the counts agree, and the scoring commands
+  check that the files exist (`--figure_dir` names another root when the
+  bank is read away from its data).
 - **`<ds>_student-step-minimal.txt`** (optional): the dataset's interaction log
   reduced to first attempts, carrying no KC model of KCluster's making; the
   contract is in `kcluster.datashop.student_step`. `kcluster tag` joins a run's KC

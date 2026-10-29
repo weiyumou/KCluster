@@ -135,3 +135,23 @@ def test_longest_input_takes_the_longest_row_with_the_longest_text(questions):
     ds = PairQuestion(questions)
     longest = max(count(*ds[i]) for i in range(len(ds)))
     assert ds.longest_input(count) == longest
+
+
+def test_items_carry_each_sides_figures_at_the_models_image_token(questions):
+    questions[0]["question"]["stem"] = "[figure]\n" + questions[0].stem
+    questions[0]["figures"] = ["figs/plus.png"]
+    ds = PairQuestion(questions, figure_dir="/data", image_token="<|image|>")
+    assert ds.shows_images and len(ds[0]) == 4
+    # Marginal of q_plus: its figure is in the scored text, at the model's token (its tokens are never scored)
+    context, text, context_figures, text_figures = ds[0]
+    assert text.startswith("<|image|>\nWhich") and "[figure]" not in text
+    assert (context_figures, text_figures) == ([], ["/data/figs/plus.png"])
+    # q_star given q_plus: the figure is in the context; q_plus given q_star: in the text
+    context, text, context_figures, text_figures = ds[3 + 0 * 3 + 1]
+    assert "<|image|>" in context and (context_figures, text_figures) == (["/data/figs/plus.png"], [])
+    assert ds[3 + 1 * 3 + 0][2:] == ([], ["/data/figs/plus.png"])
+    # Without a root the markers stay literal text, no figure is shown and the items are the pairs
+    plain = PairQuestion(questions)
+    assert not plain.shows_images and len(plain[0]) == 2 and "[figure]" in plain[0][1]
+    with pytest.raises(ValueError, match="image token"):
+        PairQuestion(questions, figure_dir="/data")

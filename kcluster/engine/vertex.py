@@ -151,7 +151,11 @@ def prepare_scoring_jobs(grid: ScoringGrid, configs: dict | None = None) -> dict
 
 def prepare_pmi_jobs(questions: list[Question], configs: dict | None = None, prompts: PromptStyle = STOCK) -> dict:
     """The congruity grid's instances: the local engine's ``PairQuestion`` (marginals under the ``Exercise 2:``
-    header) as scoring jobs."""
+    header) as scoring jobs. The deployed model is text-only, so the grid is built without figures: a bank's
+    markers are scored as literal text, as under ``--ignore_figures`` locally."""
+    if shown := sum(1 for q in questions if q.figures):
+        logger.warning("%d questions show figures; the Vertex engine is text-only and scores their markers as text",
+                       shown)
     return prepare_scoring_jobs(PairQuestion(questions, prompts), configs)
 
 

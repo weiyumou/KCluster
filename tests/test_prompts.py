@@ -172,3 +172,14 @@ def test_a_chat_style_also_ends_a_name_at_the_end_of_the_turn():
     assert plain.concept_stop_tokens == prompts.CONCEPT_STOP_TOKENS
     gemma = prompts.ChatPrompts(concept_request="?", first_request="", second_request="", end_of_turn="<turn|>")
     assert gemma.concept_stop_tokens == (".", ",", "<turn|>")
+
+
+def test_show_figures_puts_the_models_image_token_at_each_marker():
+    assert prompts.FIGURE_MARKER == "[figure]"
+    assert prompts.show_figures("[figure]\nThe graph of f.\n[figure]", "<|image|>") == "<|image|>\nThe graph of f.\n<|image|>"
+    messages = [{"role": "user", "content": "[figure]\nWhat is shown?"}, {"role": "assistant", "content": "A graph"}]
+    assert prompts.show_figures(messages, "<|image|>") == [{"role": "user", "content": "<|image|>\nWhat is shown?"},
+                                                           {"role": "assistant", "content": "A graph"}]
+    assert messages[0]["content"].startswith("[figure]")  # the conversation given is left as it was
+    parts = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "[figure]"}]}]
+    assert prompts.show_figures(parts, "<|image|>") == parts  # content in parts is the template's to write

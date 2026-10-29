@@ -17,44 +17,10 @@ engine cannot separate a text from its context with, since ``log_prob`` and
 import argparse
 import os
 
-import torch
 import uvicorn
 
-from kcluster.engine.local import LargeLangModel
+from kcluster.engine.local import DEFAULT_DTYPE, DTYPES, LargeLangModel, model_kwargs
 from kcluster.engine.serve import check_tokenizer, create_app
-
-DTYPES = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
-#: The precision a model is loaded in unless asked otherwise: the one its config names (``dtype="auto"``).
-DEFAULT_DTYPE = "auto"
-
-
-def config_dtype(llm_path: str, trust_remote_code: bool = False) -> torch.dtype:
-    """The precision a model's config names (Phi-2 float16, the Phi-4 and Gemma families bfloat16)."""
-    from transformers import AutoConfig
-
-    dtype = AutoConfig.from_pretrained(llm_path, local_files_only=True, trust_remote_code=trust_remote_code).dtype
-    if dtype is None:
-        raise SystemExit(f"{llm_path}'s config names no dtype; pass --dtype")
-    return getattr(torch, dtype) if isinstance(dtype, str) else dtype
-
-
-def model_kwargs(dtype: str, quantize: str, trust_remote_code: bool, llm_path: str | None = None) -> dict:
-    """``from_pretrained`` arguments for the requested precision: ``auto`` is the model config's own, which
-    quantization reads from ``llm_path`` for its compute dtype."""
-    kwargs = {"dtype": "auto" if dtype == "auto" else DTYPES[dtype], "trust_remote_code": trust_remote_code}
-    if quantize != "none":
-        try:
-            import bitsandbytes  # noqa: F401
-            from transformers import BitsAndBytesConfig
-        except ImportError as e:
-            raise SystemExit(f"--quantize {quantize} needs bitsandbytes (pip install bitsandbytes): {e}") from None
-        if quantize == "8bit":
-            kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
-        else:
-            compute = config_dtype(llm_path, trust_remote_code) if dtype == "auto" else DTYPES[dtype]
-            kwargs["quantization_config"] = BitsAndBytesConfig(
-                load_in_4bit=True, bnb_4bit_compute_dtype=compute, bnb_4bit_quant_type="nf4")
-    return kwargs
 
 
 def main(args):
@@ -62,7 +28,8 @@ def main(args):
     llm = LargeLangModel(args.llm_path, device=args.device, add_bos=args.add_bos,
                          **model_kwargs(args.dtype, args.quantize, args.trust_remote_code, args.llm_path))
     check_tokenizer(llm.tokenizer)
-    print(f"Serving {model_id!r} ({llm.model.dtype}, {llm.device}) on http://{args.host}:{args.port} "
+    images = f"images at {llm.image_token}" if llm.image_token else "text only"
+    print(f"Serving {model_id!r} ({llm.model.dtype}, {llm.device}, {images}) on http://{args.host}:{args.port} "
           f"— OpenAPI schema at /openapi.json, docs at /docs")
     uvicorn.run(create_app(llm, model_id), host=args.host, port=args.port, log_level=args.log_level)
 

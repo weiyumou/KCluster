@@ -199,6 +199,76 @@ def test_collate_pair_masks_context_and_padding_out_of_labels(make_tokenizer):
     assert labels.tolist() == [[-100, ids["b"], ids["c"]], [-100, -100, ids["c"]]]
 
 
+class _TinyLM:
+    """A deterministic stand-in for a causal LM: logits from cumulative embeddings, kept or all."""
+
+    def __init__(self, vocab: int = 7, dim: int = 4):
+        import torch
+
+        gen = torch.Generator().manual_seed(0)
+        self.emb = torch.randn(vocab, dim, generator=gen)
+        self.head = torch.randn(dim, vocab, generator=gen)
+
+    def forward(self, input_ids, attention_mask=None, logits_to_keep: int = 0):
+        hidden = self.emb[input_ids].cumsum(dim=1)
+        if logits_to_keep:
+            hidden = hidden[:, -logits_to_keep:]
+        return SimpleNamespace(logits=hidden @ self.head)
+
+    __call__ = forward
+
+
+class _TinyLMAllLogits(_TinyLM):
+    def forward(self, input_ids, attention_mask=None):
+        return super().forward(input_ids)
+
+    __call__ = forward
+
+
+def test_token_loss_keeps_only_the_logits_the_labels_need():
+    import torch
+
+    from kcluster.engine.local import _logits_to_keep, _token_loss
+
+    ids = torch.tensor([[1, 2, 3, 4, 5, 6], [0, 0, 2, 3, 4, 5]])
+    # Left-padded scoring: labelled tokens are a suffix, with a gap where an
+    # image's soft tokens would sit (row 0, position 4)
+    labels = torch.tensor([[-100, -100, -100, 4, -100, 6], [-100, -100, -100, -100, 4, 5]])
+    inputs = {"input_ids": ids, "attention_mask": torch.ones_like(ids)}
+
+    # From just before the first labelled column (3) to the end: 4 positions
+    assert _logits_to_keep(_TinyLM(), labels, -100) == 4
+    assert _logits_to_keep(_TinyLMAllLogits(), labels, -100) == 0
+    assert _logits_to_keep(_TinyLM(), torch.full_like(labels, -100), -100) == 0
+    # A label in the first or second column needs every logit anyway
+    assert _logits_to_keep(_TinyLM(), torch.where(labels == -100, 0, labels), -100) == 0
+
+    kept = _token_loss(_TinyLM(), inputs, labels)
+    full = _token_loss(_TinyLMAllLogits(), inputs, labels)
+    assert kept.shape == (2, 3) and full.shape == (2, 5)
+    assert torch.allclose(kept.sum(dim=-1), full.sum(dim=-1))
+    assert (full[:, :2] == 0).all()  # ignored positions contribute nothing either way
+
+
+def test_token_loss_is_computed_in_float32_whatever_the_models_dtype():
+    import torch
+
+    from kcluster.engine.local import _token_loss
+
+    class _Bf16LM(_TinyLM):
+        def forward(self, input_ids, attention_mask=None, logits_to_keep=0):
+            out = super().forward(input_ids, attention_mask, logits_to_keep)
+            out.logits = out.logits.to(torch.bfloat16)
+            return out
+
+        __call__ = forward
+
+    ids = torch.tensor([[1, 2, 3, 4, 5, 6]])
+    labels = torch.tensor([[-100, -100, 3, 4, 5, 6]])
+    loss = _token_loss(_Bf16LM(), {"input_ids": ids}, labels)
+    assert loss.dtype == torch.float32
+
+
 def test_custom_writer_shard_filenames_are_rank_stamped(tmp_path):
     # PointwiseMutualInfo.from_shards discovers shards by these exact names.
     import torch
@@ -289,3 +359,60 @@ def test_a_grid_scored_in_shards_comes_back_cell_by_cell(tmp_path, make_tokenize
     PointwiseMutualInfo.from_shards(str(tmp_path), *grid.shape).save(str(tmp_path / "scores.npy"))
     # Row 0: each text after no question; row 1 + r: after question r
     assert np.array_equal(np.load(tmp_path / "scores.npy"), 10.0 * np.arange(4)[:, None] + np.arange(2))
+
+
+class _PositionedLM(_TinyLM):
+    """A stand-in whose forward takes position ids, and records what it was given."""
+
+    def __init__(self):
+        super().__init__()
+        self.seen = {}
+
+    def forward(self, input_ids, attention_mask=None, position_ids=None, logits_to_keep: int = 0, **kwargs):
+        self.seen = dict(position_ids=position_ids, **kwargs)
+        return super().forward(input_ids, attention_mask, logits_to_keep)
+
+    __call__ = forward
+
+
+def test_a_padded_row_is_scored_at_its_own_positions():
+    import torch
+
+    from kcluster.engine.local import _forward_inputs, _token_loss
+
+    ids = torch.tensor([[0, 0, 2, 3, 4], [1, 2, 3, 4, 5]])
+    mask = torch.tensor([[0, 0, 1, 1, 1], [1, 1, 1, 1, 1]])
+    inputs = {"input_ids": ids, "attention_mask": mask}
+    model = _PositionedLM()
+    # The padded row counts from its first real token; the pads get position 0, which the mask hides anyway
+    assert _forward_inputs(model, inputs)["position_ids"].tolist() == [[0, 0, 0, 1, 2], [0, 1, 2, 3, 4]]
+    # Unpadded rows need none, and a model whose forward takes none is called as before
+    assert "position_ids" not in _forward_inputs(model, {"input_ids": ids, "attention_mask": torch.ones_like(mask)})
+    assert "position_ids" not in _forward_inputs(_TinyLM(), inputs)
+    # The scoring pass carries them
+    _token_loss(model, inputs, torch.masked_fill(ids, mask == 0, -100))
+    assert model.seen["position_ids"].tolist() == [[0, 0, 0, 1, 2], [0, 1, 2, 3, 4]]
+
+
+def test_next_logits_and_encode_score_a_padded_row_at_its_own_positions(make_tokenizer):
+    import torch
+
+    from kcluster.engine.local import LargeLangModel
+
+    class Recorder(_PositionedLM):
+        device = torch.device("cpu")
+
+        def forward(self, input_ids, attention_mask=None, position_ids=None, output_hidden_states=False, **kwargs):
+            self.seen = dict(position_ids=position_ids)
+            out = super().forward(input_ids, attention_mask, position_ids)
+            out.hidden_states = (torch.ones(*input_ids.shape, 2),)
+            return out
+
+        __call__ = forward
+
+    llm = LargeLangModel.__new__(LargeLangModel)
+    llm.tokenizer, llm.model, llm.add_bos = make_tokenizer(["ctx", "a", "b"]), Recorder(), None
+    llm.next_logits(["ctx a b", "ctx"])
+    assert llm.model.seen["position_ids"].tolist() == [[0, 1, 2], [0, 0, 0]]
+    llm.encode([" b"], ["ctx a"], pad_to_multiple_of=4)
+    assert llm.model.seen["position_ids"].tolist() == [[0, 0, 1, 2]]

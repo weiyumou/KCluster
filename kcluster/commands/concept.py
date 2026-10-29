@@ -1,11 +1,11 @@
 import argparse
 import os
 
-import torch
 from transformers.utils import logging
 
 from kcluster.core.prompts import CONCEPT_LENGTH_PENALTY, CONCEPT_NUM_BEAMS
-from kcluster.engine.local import LargeLangModel
+from kcluster.engine.local import DEFAULT_DTYPE, DTYPES, LargeLangModel, model_kwargs
+from kcluster.io import figures
 from kcluster.io.jsonl import load_questions
 from kcluster.paths import dataset_name, default_result_dir, kc_dir, prepare_output_dir, save_args
 from kcluster.tasks.cluster import build_res_df
@@ -20,14 +20,16 @@ def main(args):
     args.output_dir = result_dir = prepare_output_dir(result_dir)
     print(f"*** Writing results to {result_dir} ***")
 
-    # Load an LLM
-    llm = LargeLangModel(args.llm_path, add_bos=args.add_bos, trust_remote_code=True, dtype=torch.float16)
-
-    # Read all questions
+    # Read all questions, and find their figures (shown to a model that takes images)
     questions = load_questions(args.data_path)
+    figure_root = figures.figure_root(questions, args.data_path, args.figure_dir, args.ignore_figures)
+    figures.vision_for(args.llm_path, figure_root)  # refuse early a model that cannot show them
+
+    # Load an LLM
+    llm = LargeLangModel(args.llm_path, add_bos=args.add_bos, **model_kwargs(args.dtype, trust_remote_code=True))
 
     # Extract concepts
-    concepts = extract_concepts(llm, questions, args.batch_size, verbal=args.verbal,
+    concepts = extract_concepts(llm, questions, args.batch_size, verbal=args.verbal, figure_dir=figure_root,
                                 do_sample=False, pad_to_multiple_of=args.pad_to_multiple_of,
                                 num_beams=args.num_beams, length_penalty=args.length_penalty)
 
@@ -59,3 +61,7 @@ def add_arguments(parser):
     parser.add_argument("--length_penalty", type=float, default=CONCEPT_LENGTH_PENALTY,
                         help="Length penalty for beam search")
     parser.add_argument("--pad_to_multiple_of", type=int, default=None, help="Pad to multiple of")
+    parser.add_argument("--dtype", default=DEFAULT_DTYPE, choices=["auto", *sorted(DTYPES)],
+                        help="Precision to load the model in (default auto, the one its config names: Phi-2 float16, "
+                             "as the published runs scored it; Gemma bfloat16)")
+    figures.add_arguments(parser)
