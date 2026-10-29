@@ -31,18 +31,18 @@ one list of sources per prompt or text, in reading order. The image's tokens
 are context, never scored or pooled. A model without a processor refuses
 images; a prompt without any reads as before.
 
-Precision: a model runs in the dtype it was loaded in, but its output head
-runs in float32 (``float32_head``, applied by ``load_model``): the last
-hidden states are projected onto the vocabulary in float32, a chunk of the
-vocabulary at a time, and the loss is summed there. A score is then exact to
-float32 given the hidden states. In bfloat16 a logit near 25 has a resolution
-of 0.125 nats and rounds differently with the batch shape, so without this a
-bf16 model's scores moved by that much with the batch they were in. A padded
-row is scored at its own positions (``position_ids`` counted from its first
-real token, for a model that takes them): without that a left-padded row's
-tokens sit at shifted positions, which is the same text to a rotary model in
-exact arithmetic but not in bfloat16. What is left is the bfloat16 forward's
-own variation with the batch shape, which only a float32 forward removes.
+Precision: a model runs in the dtype it was loaded in, and the loss runs in
+float32: the logits are upcast before the log-softmax, so each token's
+log-prob and their sum over a text are exact to float32 given the logits
+(in bfloat16 the sum alone rounds to whole nats at the magnitude of a
+question). The logits themselves carry the model's precision: a bfloat16
+logit near 25 is good to 0.125 nats, which adds a few tenths of a nat per
+text that move with the batch shape, as the bfloat16 forward's own hidden
+states do. A padded row is scored at its own positions (``position_ids``
+counted from its first real token, for a model that takes them): without
+that a left-padded row's tokens sit at shifted positions, which is the same
+text to a rotary model in exact arithmetic but not in bfloat16. A run
+repeats exactly when every batch has the same shape.
 """
 
 import inspect
@@ -99,36 +99,6 @@ def model_kwargs(dtype: str, quantize: str = "none", trust_remote_code: bool = F
             kwargs["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True, bnb_4bit_compute_dtype=compute, bnb_4bit_quant_type="nf4")
     return kwargs
-
-
-def float32_head(model, chunk: int = 16384):
-    """Make the model's output head compute its logits in float32, and return the model.
-
-    The head (``get_output_embeddings``, a ``Linear`` over the vocabulary; the embedding matrix itself when the
-    weights are tied) keeps its weights in the model's dtype and upcasts them ``chunk`` vocabulary rows at a
-    time, so no float32 copy of a 262k-row matrix stays resident; the hidden states are upcast once. What the
-    model does after the head (Gemma's final logit softcapping) then runs on float32 input. A head that is
-    already float32, that is not a ``Linear`` with floating weights (a quantized one), or that is missing is
-    left alone.
-    """
-    get = getattr(model, "get_output_embeddings", None)
-    head = get() if callable(get) else None
-    if head is None:
-        head = getattr(model, "lm_head", None)
-    if not isinstance(head, torch.nn.Linear) or not head.weight.is_floating_point() \
-            or head.weight.dtype == torch.float32:
-        return model
-
-    def forward(hidden):
-        x = hidden.float()
-        out = x.new_empty(*x.shape[:-1], head.out_features)
-        for i in range(0, head.out_features, chunk):
-            bias = head.bias[i:i + chunk].float() if head.bias is not None else None
-            out[..., i:i + chunk] = F.linear(x, head.weight[i:i + chunk].float(), bias)
-        return out
-
-    head.forward = forward
-    return model
 
 
 def render_prompt(tokenizer, prompt: Prompt) -> str:
@@ -312,8 +282,7 @@ def _token_loss(model, inputs, labels, ignore_idx: int = -100):
     # The loss in float32: a bfloat16 log-softmax is good to ~0.4% per token
     # and a bfloat16 sum of them to whole nats at the magnitudes of a scored
     # question (ulp 2 at 300), which is the resolution the PMI lives on. The
-    # logits already are float32 from a head ``float32_head`` patched; the
-    # upcast here covers a head it left alone, and is cheap on the kept logits.
+    # upcast is cheap on the kept logits.
     return F.cross_entropy(logits[..., :-1].float(), labels[:, -(kept - 1):], reduction="none",
                            ignore_index=ignore_idx)  # (N, K - 1)
 
@@ -359,7 +328,7 @@ class LargeLangModel:
 
     @staticmethod
     def load_model(path: str, **kwargs):
-        return float32_head(AutoModelForCausalLM.from_pretrained(path, local_files_only=True, **kwargs))
+        return AutoModelForCausalLM.from_pretrained(path, local_files_only=True, **kwargs)
 
     @property
     def device(self) -> torch.device:

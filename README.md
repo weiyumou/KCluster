@@ -108,18 +108,17 @@ otherwise.
 
 **Precision.** A command loads a model in the precision its config names
 (Phi-2 fp16, as the published runs scored it; Gemma bf16, since it overflows
-in fp16) unless `--dtype` says otherwise. The output head runs in float32
-whatever the model's precision: the last hidden states are projected onto
-the vocabulary in float32, a chunk at a time, and the loss is summed there,
-so a score is exact to float32 given the model's hidden states. Without
-that, a bf16 logit near 25 is good to 0.125 nats and rounds differently with
-the batch shape, and the scores moved by that much with the batch they were
-in. A padded row is scored at its own positions, counted from its first real
-token, as a rotary model reads shifted positions as the same text in exact
-arithmetic but not in bf16. What remains is the bf16 forward's own variation
-with the batch shape, a few tenths of a nat per text for Gemma 4 on a GPU,
-which only a float32 forward would remove; a run repeats exactly when every
-batch has the same shape (`--batch_size`, `--pad_to_multiple_of`).
+in fp16) unless `--dtype` says otherwise. The loss runs in float32 whatever
+the model's precision: the logits are upcast before the log-softmax, so each
+token's log-prob and their sum over a text are exact given the logits (a
+bf16 sum alone rounds to whole nats at the magnitude of a question). The
+logits keep the model's precision, so a bf16 model's scores carry a few
+tenths of a nat per text that move with the batch shape, from the rounding
+of its logits and of its hidden states alike; a float32 forward is the only
+way to remove that, and a run repeats exactly when every batch has the same
+shape (`--batch_size`, `--pad_to_multiple_of`). A padded row is scored at
+its own positions, counted from its first real token, as a rotary model
+reads shifted positions as the same text in exact arithmetic but not in bf16.
 
 **Any scoring grid.** The congruity grid is one case of `ScoringGrid`
 ([`kcluster.core.grid`](kcluster/core/grid.py)), the layout of (context,
