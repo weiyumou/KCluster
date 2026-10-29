@@ -24,8 +24,12 @@ The soft tokens are never scored or pooled: ``soft_token_mask`` takes them
 out of a text's mask, so an image is context wherever it stands, and the
 tokens that bracket it stay text.
 
+``image_bytes`` is the other reading of a source, for an engine that sends
+images over the wire rather than through a processor (Gemini, the HTTP
+client): the encoded file and its MIME type, without decoding it.
+
 Pillow is imported on use, so the module imports without the ``multimodal``
-extra.
+extra; only a PIL image source needs it.
 """
 
 import base64
@@ -64,20 +68,48 @@ def _open_file(path: str):
         return img.convert("RGB")
 
 
+#: The magic bytes of the image formats a bare ``bytes`` source may be in.
+_MAGIC = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF8", "image/gif"))
+
+
+def _sniff(data: bytes) -> str | None:
+    for magic, mime in _MAGIC:
+        if data.startswith(magic):
+            return mime
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def image_bytes(source) -> tuple[bytes, str]:
+    """An image as its encoded bytes and MIME type: a file read as it is (the type from its name), a ``data:``
+    URI decoded (the type from its header), bytes as they are (the type sniffed from their magic: PNG, JPEG, GIF
+    or WebP), a PIL image saved as PNG. A file of unknown type, or bytes of none of those formats, raise."""
+    if isinstance(source, str) and source.startswith("data:"):
+        header, payload = source.split(",", 1)
+        return base64.b64decode(payload), header[len("data:"):].split(";")[0] or "application/octet-stream"
+    if isinstance(source, str):
+        mime = mimetypes.guess_type(source)[0]
+        if mime is None or not mime.startswith("image/"):
+            raise ValueError(f"not an image file by its name: {source!r}")
+        with open(source, "rb") as f:
+            return f.read(), mime
+    if isinstance(source, (bytes, bytearray)):
+        data = bytes(source)
+        if (mime := _sniff(data)) is None:
+            raise ValueError("bytes of no image format this engine knows (PNG, JPEG, GIF, WebP): give a path or a "
+                             "data: URI with its MIME type")
+        return data, mime
+    buf = io.BytesIO()  # a PIL image
+    source.save(buf, format="PNG")
+    return buf.getvalue(), "image/png"
+
+
 def data_uri(source) -> str:
-    """An image as a ``data:`` URI, for sending over HTTP (a path or bytes are sent as they are; a PIL image as PNG)."""
+    """An image as a ``data:`` URI, for sending over HTTP (``image_bytes`` of the source, base64-encoded)."""
     if isinstance(source, str) and source.startswith("data:"):
         return source
-    if isinstance(source, str):
-        mime = mimetypes.guess_type(source)[0] or "application/octet-stream"
-        with open(source, "rb") as f:
-            data = f.read()
-    elif isinstance(source, (bytes, bytearray)):
-        mime, data = "application/octet-stream", bytes(source)
-    else:  # a PIL image
-        buf = io.BytesIO()
-        source.save(buf, format="PNG")
-        mime, data = "image/png", buf.getvalue()
+    data, mime = image_bytes(source)
     return f"data:{mime};base64,{base64.b64encode(data).decode()}"
 
 

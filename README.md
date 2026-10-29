@@ -30,7 +30,7 @@ pip install -e ".[local]"
 |------------|---------|
 | `local`    | running the pipeline on a local GPU (Phi-2 via transformers + Lightning) |
 | `vertex`   | running the scoring steps as Vertex AI batch jobs in your own GCP project — no local GPU needed |
-| `gemini`   | the Gemini engine: async batched calls with every raw response kept, and multiple-choice answers parsed from text or token log-probabilities (used by dataset drivers and by genval); it takes the same prompts as the local engine, strings or conversations |
+| `gemini`   | the Gemini engine: async batched calls with every raw response kept, and multiple-choice answers parsed from text or token log-probabilities (used by dataset drivers and by genval); it takes the same prompts as the local engine, strings or conversations, and their images |
 | `serve`    | `kcluster serve`: the local engine behind an HTTP API, for interactive experiments over an SSH tunnel (see `deploy/vm/`) |
 | `multimodal` | showing a bank's figures to a model that takes images (Gemma 4): decoding the files, and the resizing the image processor does through torchvision |
 
@@ -99,8 +99,12 @@ the model's image token (`llm.image_token`), an image part in a message is
 the same place written the template's way, and the images go beside the
 prompt (`images=`, `context_images=`), paths, bytes or PIL images, which the
 HTTP client sends as data URIs. An image's tokens are context: never scored,
-never pooled. The tasks put the token at each `[figure]` marker when given a
-figure root (`figure_dir=`) and show no figure otherwise.
+never pooled. The Gemini engine takes the same prompts and images: it has
+no image token of its own, so it lends the prompt one
+(`GeminiEngine.image_token`) and cuts each message there into text and
+inline-image parts. The tasks put the engine's token at each `[figure]`
+marker when given a figure root (`figure_dir=`) and show no figure
+otherwise.
 
 **Precision.** A command loads a model in the precision its config names
 (Phi-2 fp16, as the published runs scored it; Gemma bf16, since it overflows

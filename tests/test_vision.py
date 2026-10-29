@@ -195,3 +195,23 @@ def test_the_engine_names_its_image_token(tokenizer, vision):
 
 def test_adapter_load_is_none_without_a_processor_config(tmp_path):
     assert ImageAdapter.load(str(tmp_path)) is None
+
+
+def test_image_bytes_reads_every_source_form_without_decoding(images):
+    """``image_bytes`` is what an engine sends over the wire: the file as it is and its MIME type."""
+    from kcluster.engine.vision import image_bytes
+
+    path = images[0]
+    with open(path, "rb") as f:
+        raw = f.read()
+    assert image_bytes(path) == (raw, "image/png")
+    assert image_bytes(raw) == (raw, "image/png")  # sniffed from the magic
+    assert image_bytes(data_uri(path)) == (raw, "image/png")
+    data, mime = image_bytes(Image.new("L", (2, 2)))
+    assert mime == "image/png" and data.startswith(b"\x89PNG")
+    assert image_bytes(b"\xff\xd8\xff" + b"\x00" * 4)[1] == "image/jpeg"
+    assert image_bytes(b"RIFF\x00\x00\x00\x00WEBP")[1] == "image/webp"
+    with pytest.raises(ValueError, match="no image format"):
+        image_bytes(b"not an image")
+    with pytest.raises(ValueError, match="not an image file"):
+        image_bytes("notes.txt")
